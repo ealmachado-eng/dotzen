@@ -110,8 +110,21 @@ semgrep:
   stage: security
   image: semgrep/semgrep:latest
   rules: !reference [.default_rules, rules]
+  # Two `auto` community rules are excluded as false positives for a LOCAL,
+  # file-processing CLI (there is no server / privilege boundary):
+  #  - path-join-resolve-traversal: dotzen exists to read the developer's own
+  #    Terraform files at developer-supplied paths — that is intended
+  #    behavior, not a traversal vulnerability.
+  #  - detect-non-literal-regexp: the only dynamic regexes are built from
+  #    escapeRegExp()-escaped input / fixed iterator names (ReDoS-safe; they
+  #    already carry eslint-disable justifications in the source).
+  # Follow-up: replace mutable `--config auto` with a pinned curated ruleset.
   script:
-    - semgrep scan --config auto --error packages/cli/src
+    - >-
+      semgrep scan --config auto --error
+      --exclude-rule javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      --exclude-rule javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+      packages/cli/src
 
 gitleaks:
   stage: security

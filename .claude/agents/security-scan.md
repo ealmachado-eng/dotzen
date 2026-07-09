@@ -17,10 +17,14 @@ remediate. See `/docs/specs/07-development-workflow.md`.
 From the repository root. These tools are dev/CI tooling (not shipped in
 the npm package), so installing/invoking native ones is fine:
 
-1. **SAST** — `semgrep --config auto --error` (or `npx`/CI-provided
-   invocation). Focus on injection, unsafe `child_process`/`execSync`
-   usage (relevant to any HCL-parser subprocess), and path traversal in
-   file discovery.
+1. **SAST** — `semgrep scan --config auto --error` over `packages/cli/src`,
+   matching `.gitlab-ci.yml`: exclude the two rules that are false positives
+   for a local file-processing CLI —
+   `--exclude-rule javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal`
+   and
+   `--exclude-rule javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp`
+   (see the `semgrep` job comment for the rationale). Focus new findings on
+   injection and unsafe `child_process`/`execSync` usage.
 2. **Secrets** — `gitleaks detect --no-banner` over the working tree.
 3. **Supply chain** — `npm audit --audit-level=high`. (osv-scanner is
    intentionally not part of dotzen's gate: dotzen is npm-only, so npm
