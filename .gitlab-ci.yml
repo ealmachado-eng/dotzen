@@ -32,10 +32,19 @@ variables:
   GIT_DEPTH: '0' # full history — gitleaks scans the whole repo
 
 # Shared setup: work inside the CLI package and install deps once.
+#
+# We use `npm install`, not `npm ci`, deliberately. A dev-dep in the test
+# toolchain (vitest → vite → rolldown) ships platform-specific optional
+# native bindings whose transitive `@emnapi` versions resolve differently on
+# the Linux runner than on a lockfile generated on another OS — which makes
+# `npm ci` reject an otherwise-valid lock. `npm install` honors the committed
+# lock but tolerates that per-platform optional resolution. The lock is still
+# committed and is the source of truth; only the platform-specific optional
+# leaves may differ. (Prod deps — @cdktf/hcl2json, jiti — are unaffected.)
 .node:
   before_script:
     - cd packages/cli
-    - npm ci
+    - npm install --no-audit --no-fund
   cache:
     key:
       files:
