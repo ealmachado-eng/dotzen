@@ -1,0 +1,112 @@
+# dotzen CI — the non-bypassable quality/security gate (doc 07).
+# Mirrors the local subagents (test-runner, code-quality, security-scan)
+# with the SAME tools, so local and CI never disagree.
+#
+# Images should be digest-pinned (a governance tool must not float its own
+# CI on mutable tags — doc 07). Renovate (`renovate.json`) is configured to
+# pin and bump image digests + npm deps, the GitLab equivalent of the old
+# SHA-pinned GitHub Actions + Dependabot setup.
+#
+# GitLab-native alternative (not used, to keep local/CI tool parity): the
+# `Security/SAST.gitlab-ci.yml` and `Security/Secret-Detection.gitlab-ci.yml`
+# templates wrap semgrep + gitleaks — the same tools this file runs directly.
+
+# Pipeline creation rules: run for merge requests, the default branch, and
+# tags — and NOT for standalone feature-branch pushes. That prevents the
+# duplicate branch+MR pipelines you'd otherwise get; open an MR to run CI on
+# a feature branch (which pairs with a protected `main` + MR workflow).
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+stages:
+  - test
+  - security
+
+default:
+  image: node:20-bookworm
+
+variables:
+  GIT_DEPTH: '0' # full history — gitleaks scans the whole repo
+
+# Shared setup: work inside the CLI package and install deps once.
+.node:
+  before_script:
+    - cd packages/cli
+    - npm ci
+  cache:
+    key:
+      files:
+        - packages/cli/package-lock.json
+    paths:
+      - packages/cli/node_modules/
+
+# Reusable per-job rules. A job with `rules` drops GitLab's implicit
+# `only: [branches, tags]`, so this is what lets jobs run in MR pipelines
+# (not just branch/tag). Referenced via `!reference` below.
+.default_rules:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+
+# ── test + code-quality (mirrors the test-runner + code-quality agents) ──
+# Linux is the guaranteed gate.
+test:linux:
+  extends: .node
+  stage: test
+  rules: !reference [.default_rules, rules]
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm run format:check
+    - npm test
+    - npm run test:integration
+    - npm run coverage
+
+# Cross-platform parity (Windows + macOS, doc 03). GitLab SaaS macOS/Windows
+# runners (or self-hosted equivalents) must be enabled for these, so they are
+# gated behind ENABLE_CROSS_OS to keep the default pipeline green on
+# Linux-only runners. Set ENABLE_CROSS_OS=true in the project's CI/CD
+# variables once those runners are available.
+test:windows:
+  extends: .node
+  stage: test
+  image: '' # Windows SaaS runners are VMs, not Docker images
+  tags: [saas-windows-medium-amd64]
+  rules:
+    - if: '$ENABLE_CROSS_OS == "true"'
+
+test:macos:
+  extends: .node
+  stage: test
+  image: macos-14-xcode-15 # GitLab SaaS macOS VM image
+  tags: [saas-macos-medium-m1]
+  rules:
+    - if: '$ENABLE_CROSS_OS == "true"'
+
+# ── security-scan agent's tools, run authoritatively (Linux) ──
+audit:
+  extends: .node
+  stage: security
+  rules: !reference [.default_rules, rules]
+  script:
+    - npm audit --audit-level=high
+
+semgrep:
+  stage: security
+  image: semgrep/semgrep:latest
+  rules: !reference [.default_rules, rules]
+  script:
+    - semgrep scan --config auto --error packages/cli/src
+
+gitleaks:
+  stage: security
+  image:
+    name: zricethezav/gitleaks:latest
+    entrypoint: ['']
+  rules: !reference [.default_rules, rules]
+  script:
+    - gitleaks detect --source . --no-banner --redact

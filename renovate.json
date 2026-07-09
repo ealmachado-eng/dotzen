@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinDigests", ":semanticCommitsDisabled"],
+  "schedule": ["before 9am on monday"],
+  "prConcurrentLimit": 10,
+  "packageRules": [
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies"],
+      "groupName": "cli production dependencies",
+      "commitMessagePrefix": "deps:"
+    },
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "groupName": "cli dev dependencies",
+      "commitMessagePrefix": "deps:"
+    },
+    {
+      "matchManagers": ["gitlabci"],
+      "groupName": "ci images",
+      "commitMessagePrefix": "ci:"
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"]
+  }
+}

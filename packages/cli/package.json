@@ -1,0 +1,74 @@
+{
+  "name": "@dotzen/dotzen",
+  "version": "0.0.1",
+  "description": "Prose as Code — governance for AI-generated Terraform (AWS, Azure, GCP).",
+  "license": "MIT",
+  "keywords": [
+    "terraform",
+    "hcl",
+    "governance",
+    "policy-as-code",
+    "iac",
+    "security",
+    "cis",
+    "compliance",
+    "aws",
+    "azure",
+    "gcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/governance-tools/dotzen.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://gitlab.com/governance-tools/dotzen#readme",
+  "bugs": {
+    "url": "https://gitlab.com/governance-tools/dotzen/-/issues"
+  },
+  "bin": {
+    "dotzen": "./bin/dotzen.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src",
+    "test:integration": "vitest run tests",
+    "coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@cdktf/hcl2json": "^0.21.0",
+    "jiti": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.17.0",
+    "eslint-plugin-security": "^3.0.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
+    "vitest": "^4.1.10"
+  }
+}

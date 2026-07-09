@@ -1,0 +1,21 @@
+# Dependencies & build output — always regenerate on each machine
+# (node_modules is platform-specific; never copy it across machines).
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# dotzen's CI approval signal (written only when running in CI).
+dotzen.env
+
+# Logs & OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+*.swp
+
+# Keep package-lock.json committed (needed for reproducible `npm ci`).

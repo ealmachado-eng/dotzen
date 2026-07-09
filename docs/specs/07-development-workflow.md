@@ -1,0 +1,196 @@
+# 07 — Development Workflow (TDD + quality/security gate)
+
+Status: **Decided.** This document defines *how dotzen itself is built*:
+test-driven development as the mandated authoring loop, and a standing
+quality/security gate that runs on every change — locally via Claude
+subagents for fast feedback, and in GitLab CI as the
+non-bypassable gate. It complements `06-engine-architecture.md` (what to
+build) with *how to build it safely*.
+
+## Test-Driven Development is mandatory
+
+dotzen is developed **test-first**, red → green → refactor, without
+exception:
+
+1. **Red** — write a failing test that expresses the next small
+   behavior. It must fail for the right reason (assertion, not a missing
+   import).
+2. **Green** — write the minimum production code to make it pass.
+3. **Refactor** — improve the code with the test green; re-run to confirm.
+
+No production code is written before a failing test exists for it. "A
+feature" is small: each pipeline stage, each condition evaluator, each
+`Result` combinator, each `DotzenError` variant's handling gets its test
+first.
+
+### Why TDD fits this codebase specifically
+
+The architecture in `06-engine-architecture.md` was chosen partly because
+it is trivially testable, and TDD is how that payoff is realized:
+
+- Every pipeline stage is a total function `(input) => Result<Output, DotzenError>`
+  — pure, so a unit test is input → assert on the returned `Result`, no
+  mocking.
+- `evaluate` is total and consumes the **normalized model**, so it is
+  tested against hand-built `NormalizedResource[]` with no `.tf` parsing
+  involved.
+- The `hcl/` adapter is the one place that touches the real parser, so
+  its tests are where `.tf` fixtures live.
+
+### Test layers
+
+- **Unit** (Vitest) — `result/`, `spec/` (`RuleBuilder.validate`
+  accumulation), `engine/` condition evaluators, `hcl/normalize`,
+  `version/` enforcement, `report/` rendering (including exhaustive
+  `DotzenError` rendering).
+- **Integration** (Vitest, end-to-end) — build the CLI and run `check`
+  against fixture terraform, asserting on violations, exit code
+  (`0`/`1`/`2` per `06-engine-architecture.md`), and `--format json`
+  output shape.
+- **Fixtures** — every rule condition ships a `.tf` snippet that should
+  violate it and one that should pass, as literal files (not generated)
+  so they double as documentation of exactly what the condition matches.
+  This is the existing rule in the engine-dev skill, now the backbone of
+  the integration layer.
+
+### Coverage
+
+Coverage is gated, weighted toward the correctness-critical core
+(`vocabulary/`, `spec/`, `hcl/`, `engine/`, `version/`). Pure formatting
+in `report/` may sit lower. Coverage is a floor to catch untested paths,
+never the goal — a green coverage number with weak assertions still
+fails review.
+
+## The quality/security gate
+
+Every change runs the same suite of checks. There are two enforcement
+surfaces and they run the **same** tools so local and CI never disagree:
+
+1. **Dev-time, via Claude subagents** — fast feedback inside the agentic
+   loop (see "Subagent orchestration").
+2. **CI, via GitLab CI** — the authoritative, non-bypassable gate on
+   every push/MR (see "CI gate").
+
+### The check categories and tools
+
+All of the following are **dev/CI tooling only** — none ships in the
+published npm package, so a native-binary dev tool does **not** violate
+the "stay pure-JS" *distribution* boundary in
+`00-architecture-decision-record.md`.
+
+| Category | Tool(s) | Gate |
+|---|---|---|
+| Unit + integration tests | **Vitest** | any failure blocks |
+| Coverage | **Vitest** (v8) | below threshold blocks |
+| Types | **`tsc --noEmit`** (strict) | any error blocks |
+| Lint | **ESLint** (typescript-eslint + eslint-plugin-security) | any error blocks |
+| Format | **Prettier** (`--check`) | drift blocks |
+| SAST | **Semgrep** (`--config auto`) | high/error blocks |
+| Secrets | **gitleaks** | any finding blocks |
+| Dependency / supply chain | **npm audit** (`--audit-level=high`) + **Renovate** | high/critical blocks |
+
+`tsc --noEmit` also serves as the spec type-check the loader cannot do —
+see `06-engine-architecture.md` §"Spec loading."
+
+### Subagent orchestration
+
+The checks are grouped into three dedicated subagents (defined in
+`.claude/agents/`), invoked **in parallel** after a change and before the
+work is considered done:
+
+- **`test-runner`** — Vitest unit + integration + coverage.
+- **`code-quality`** — `tsc --noEmit`, ESLint, Prettier.
+- **`security-scan`** — Semgrep, gitleaks, npm audit + osv-scanner.
+
+Rules for the orchestrating (main) agent:
+
+- Launch the three in **one message** so they run concurrently.
+- A subagent that could **not run** a check reports it as a failure/
+  incomplete — never a silent pass. Treat "not run" as "not green."
+- Do not mark a feature complete until all three return PASS (or a
+  deviation is explicitly justified to the user).
+- The subagents are **read-only reporters** — they surface findings; the
+  main agent applies fixes, then re-runs the affected subagent.
+
+The existing `/code-review` and `/security-review` skills are
+complementary manual passes for higher-judgment review; they do not
+replace this automated gate.
+
+### Definition of Done
+
+A change is done only when **all** hold:
+
+1. Written test-first; red → green → refactor completed.
+2. `test-runner`, `code-quality`, and `security-scan` all PASS locally.
+3. The GitLab CI gate is green on the branch.
+4. Any new rule condition or resource type ships its violating + passing
+   fixtures (see Test layers).
+
+## CI gate (GitLab CI)
+
+The non-bypassable gate mirrors the subagents exactly. Linux is the
+guaranteed gate; **Windows + macOS parity jobs** (`03-distribution-and-cli.md`
+§"Cross-platform implementation notes") are gated behind an
+`ENABLE_CROSS_OS` variable because GitLab's cross-OS story differs from
+GitHub's — Windows/macOS need GitLab SaaS or self-hosted runners for those
+OSes, unlike GitHub's always-available runner matrix. The live pipeline is
+`.gitlab-ci.yml`:
+
+```yaml
+# .gitlab-ci.yml (abridged — see the file for the full version)
+stages: [test, security]
+default:
+  image: node:20-bookworm
+variables:
+  GIT_DEPTH: '0' # full history for gitleaks
+
+.node:
+  before_script: [cd packages/cli, npm ci]
+
+test:linux:
+  extends: .node
+  stage: test
+  script:
+    - npm run typecheck
+    - npm run lint
+    - npm run format:check
+    - npm test
+    - npm run test:integration
+    - npm run coverage
+
+# test:windows / test:macos — same script, tagged for SaaS runners,
+# gated behind `rules: - if: '$ENABLE_CROSS_OS == "true"'`.
+
+audit:    { extends: .node, stage: security, script: [npm audit --audit-level=high] }
+semgrep:  { stage: security, image: semgrep/semgrep:latest, script: [semgrep scan --config auto --error packages/cli/src] }
+gitleaks: { stage: security, image: { name: zricethezav/gitleaks:latest, entrypoint: [''] }, script: [gitleaks detect --source . --no-banner --redact] }
+```
+
+Node is pre-installed in the `node:20` image; no engine dependency is
+native, so `npm ci` is the only setup step. **Images should be
+digest-pinned** — a governance tool should not float its own CI on mutable
+tags, mirroring the `dotzen.json` no-`@latest` principle. `renovate.json`
+is configured (`:pinDigests`, npm + `gitlabci` managers, grouped, weekly)
+to pin and bump both the CI image digests and the CLI dependencies — the
+GitLab equivalent of the old SHA-pinned Actions + Dependabot setup.
+
+> **GitLab-native alternative (not used).** The `Security/SAST.gitlab-ci.yml`
+> and `Security/Secret-Detection.gitlab-ci.yml` templates wrap semgrep +
+> gitleaks — the *same* tools this pipeline runs directly. We invoke the
+> raw tools so local subagents and CI stay byte-for-byte identical (the
+> core gate principle), but the templates are a valid swap if GitLab's
+> Security Dashboard integration becomes worth it.
+>
+> **osv-scanner is intentionally not wired into CI.** Its differentiated
+> value is polyglot repos; dotzen is npm-only, so it would duplicate
+> `npm audit` (overlapping advisory data) plus Renovate's vulnerability
+> alerts. Re-add it if/when the repo becomes polyglot.
+
+## Optional: harness-enforced triggering
+
+The subagent gate above is a documented **convention** the agent
+follows; the durable enforcement is CI. If harness-guaranteed local
+triggering is later wanted (run the gate automatically on every change
+rather than by convention), it can be wired as a Claude Code hook — but
+that is a settings/hooks change, not part of this design, and CI remains
+the real gate regardless.
