@@ -53,11 +53,10 @@ variables:
     - if: $CI_COMMIT_TAG
 
 # ── test + code-quality (mirrors the test-runner + code-quality agents) ──
-# Linux is the guaranteed gate.
-test:linux:
+# Shared test script; each concrete OS job extends this template.
+.test:
   extends: .node
   stage: test
-  rules: !reference [.default_rules, rules]
   script:
     - npm run typecheck
     - npm run lint
@@ -66,23 +65,26 @@ test:linux:
     - npm run test:integration
     - npm run coverage
 
-# Cross-platform parity (Windows + macOS, doc 03). GitLab SaaS macOS/Windows
-# runners (or self-hosted equivalents) must be enabled for these, so they are
-# gated behind ENABLE_CROSS_OS to keep the default pipeline green on
-# Linux-only runners. Set ENABLE_CROSS_OS=true in the project's CI/CD
-# variables once those runners are available.
+# Linux is the guaranteed gate.
+test:linux:
+  extends: .test
+  rules: !reference [.default_rules, rules]
+
+# Cross-platform parity (Windows + macOS, doc 03). These need GitLab SaaS or
+# self-hosted Windows/macOS runners, so they are gated behind ENABLE_CROSS_OS
+# to keep the default pipeline green on Linux-only runners. Set
+# ENABLE_CROSS_OS=true in the project's CI/CD variables once those runners
+# exist — and adjust `image`/executor to match them (VM-based Windows/macOS
+# runners ignore Docker images).
 test:windows:
-  extends: .node
-  stage: test
-  image: '' # Windows SaaS runners are VMs, not Docker images
+  extends: .test
   tags: [saas-windows-medium-amd64]
   rules:
     - if: '$ENABLE_CROSS_OS == "true"'
 
 test:macos:
-  extends: .node
-  stage: test
-  image: macos-14-xcode-15 # GitLab SaaS macOS VM image
+  extends: .test
+  image: macos-14-xcode-15
   tags: [saas-macos-medium-m1]
   rules:
     - if: '$ENABLE_CROSS_OS == "true"'
