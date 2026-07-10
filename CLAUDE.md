@@ -362,7 +362,10 @@ For **tags** it follows `var`/`local` refs to a map and reads the keys of a
 `merge(<literal>, var.tags)` as a *partial* set — keys present are provable,
 so `mustHaveTags` passes when all required keys are in the literal portion
 and honestly degrades to could-not-evaluate otherwise (never a false
-violation, since a `var` arg may add more).
+violation, since a `var` arg may add more). It also **follows local
+`module {}` calls** (doc 08): each call's inputs are threaded into the
+module's `var.*`, so a module's caller-supplied cidrs/tags become concrete
+verdicts, reported as `env/prd › modules/rds/main.tf`.
 Not built yet (see `docs/ROADMAP.md`):
 `jsonencode(...)`-wrapped JSON (IAM policies + ECS `container_definitions`
 only parse *literal* JSON today; `jsonencode`/`var` → could-not-evaluate),
@@ -371,8 +374,10 @@ wildcards (full `Action: "*"` **and** `NotAction`-on-`Allow` are flagged;
 `Resource: "*"` alone and `s3:*`-style service wildcards are deliberately
 not — to avoid false positives), ECS plaintext env secrets, more
 resource/attribute vocabulary, resource-level `count`/`for_each`,
-function-wrapped collections (`toset(...)`)/`each.*`, `.tfvars`, and
-module-input resolution. The `docs/specs` and `.claude` content remains the
+function-wrapped collections (`toset(...)`)/`each.*`, `.tfvars`, and — for
+module-following (doc 08) — remote (registry/git) sources, nested modules,
+and module `count`/`for_each` (local single-level following IS built). The
+`docs/specs` and `.claude` content remains the
 authoritative design; treat anything beyond the v0 slice as not yet
 written unless you find it.
 

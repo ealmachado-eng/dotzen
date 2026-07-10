@@ -25,11 +25,13 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   `merge(<literal>, var.tags)` — the ubiquitous module tag pattern. Reads
   the literal keys as a *partial* set (pass when required ⊆ literal;
   could-not-evaluate otherwise; never a false violation).
-- **[High] Module-following** — the big one. Env repos are `module {}` calls
-  (no direct resources → `0 checks`); module repos have resources but their
-  values are caller `var`s (cidrs, etc. → could-not-evaluate). Resolving a
-  local `module.source`'s inputs into the module's `var.*` is what makes
-  dotzen useful on real module-based orgs. Meaty; needs design.
+- ✅ **DONE (v0.1.0, Tranche 1) — Module-following** (doc 08). Local
+  `module {}` calls are followed: each call's inputs thread into the
+  module's `var.*`, so caller-supplied cidrs/tags become concrete verdicts,
+  traced as `env/prd › modules/rds/main.tf`. Also fixed: `cidr_blocks =
+  var.list` (whole-list ref) now resolves (and honestly degrades instead of
+  a silent pass). **Remaining tranches:** remote (registry/git) sources,
+  nested modules, module `count`/`for_each`, per-instantiation trace labels.
 - **[Med] Open tag taxonomy** — the `Tag` enum is closed
   (team/cost_center/environment/data_classification), but real orgs use
   their own keys (apm_id, cmdb_app_id, …). `mustHaveTags` needs a way to
