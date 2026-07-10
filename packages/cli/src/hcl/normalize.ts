@@ -379,8 +379,49 @@ function egressFor(
 // `=` (not `==`/`>=`/etc.) is HCL's attribute-assignment operator, so this
 // reliably picks up flat map keys inside a `merge(...)` argument.
 const OBJECT_KEY = /([A-Za-z_][A-Za-z0-9_-]*)\s*=(?!=)/g
-// `var.x` / `local.y` reference tokens mentioned in an expression.
-const REF_TOKEN = /\b(var|local)\.([A-Za-z0-9_-]+)/g
+// A whole argument that is exactly one `var.x` / `local.y` ref (optionally
+// `${…}`-wrapped). Only such TOP-LEVEL merge args contribute tag keys — refs
+// inside an object literal's *values* (e.g. `Ou = var.ou`) must not count.
+const ARG_REF = /^\$?\{?\s*(var|local)\.([A-Za-z0-9_-]+)\s*\}?$/
+
+/** The substring inside the outermost `merge( … )`, or null if unbalanced. */
+function mergeInner(value: string): string | null {
+  const m = /^merge\s*\(/.exec(value)
+  if (!m) return null
+  let depth = 0
+  const start = m[0].length
+  for (let i = start; i < value.length; i++) {
+    const c = value[i]
+    if (c === '(') depth++
+    else if (c === ')') {
+      if (depth === 0) return value.slice(start, i)
+      depth--
+    }
+  }
+  return null
+}
+
+/** Split an argument list on top-level commas, respecting (), {}, [], quotes. */
+function splitTopLevelArgs(inner: string): string[] {
+  const args: string[] = []
+  let depth = 0
+  let start = 0
+  let quote: string | null = null
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i]
+    if (quote) {
+      if (c === quote && inner[i - 1] !== '\\') quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '(' || c === '{' || c === '[') depth++
+    else if (c === ')' || c === '}' || c === ']') depth--
+    else if (c === ',' && depth === 0) {
+      args.push(inner.slice(start, i))
+      start = i + 1
+    }
+  }
+  args.push(inner.slice(start))
+  return args.map((a) => a.trim()).filter((a) => a.length > 0)
+}
 
 /**
  * Keys known to be present on a tags value, and whether that set is
@@ -406,21 +447,45 @@ function tagKeys(
     return scope.has(key) ? tagKeys(scope.get(key), scope, depth - 1) : null
   }
 
-  if (/\bmerge\s*\(/.test(value)) {
-    // merge() only ever ADDS keys, so presence is monotonic. Collect the
-    // inline literal keys plus keys from any resolvable ref args; mark the
-    // set incomplete (a var/unresolved arg may contribute more).
-    const keys = new Set<string>(
-      value.match(OBJECT_KEY)?.map((m) => m.replace(/\s*=$/, '')) ?? [],
-    )
-    for (const [, kind, name] of value.matchAll(REF_TOKEN)) {
-      const scopeKey = `${kind}.${name}`
-      if (depth > 0 && scope.has(scopeKey)) {
-        const sub = tagKeys(scope.get(scopeKey), scope, depth - 1)
-        if (sub) for (const k of sub.keys) keys.add(k)
+  // Only treat `merge(...)` as the TOP-LEVEL call (strip a `${…}` wrapper
+  // first). merge nested inside another function is opaque → could-not-eval.
+  const stripped = value.replace(/^\$\{/, '').replace(/\}$/, '').trim()
+  if (/^merge\s*\(/.test(stripped)) {
+    const inner = mergeInner(stripped)
+    if (inner === null) return null
+    // merge() only ADDS keys, so the result is COMPLETE iff every top-level
+    // argument is fully knowable: an object literal, or a ref that resolves
+    // to a complete map. An unresolvable ref or an opaque expression (e.g. a
+    // function call) means more keys could appear → PARTIAL, so a missing
+    // required tag degrades to could-not-evaluate rather than a false claim.
+    const keys = new Set<string>()
+    let complete = true
+    for (const arg of splitTopLevelArgs(inner)) {
+      const refMatch = ARG_REF.exec(arg)
+      if (arg.startsWith('{')) {
+        // Object literal: keys are the `ident =` pairs (tag maps are flat);
+        // the values — which may themselves mention refs — are irrelevant.
+        for (const m of arg.match(OBJECT_KEY) ?? [])
+          keys.add(m.replace(/\s*=$/, ''))
+      } else if (refMatch) {
+        const scopeKey = `${refMatch[1]}.${refMatch[2]}`
+        const sub =
+          depth > 0 && scope.has(scopeKey)
+            ? tagKeys(scope.get(scopeKey), scope, depth - 1)
+            : null
+        if (sub === null) {
+          complete = false // unresolvable ref — could add unknown keys
+        } else {
+          // Proven-present keys count even from a partial sub (merge only
+          // adds); a partial sub still means the whole set is incomplete.
+          for (const k of sub.keys) keys.add(k)
+          if (!sub.complete) complete = false
+        }
+      } else {
+        complete = false // opaque arg (function call, etc.) may add keys
       }
     }
-    return { keys: [...keys], complete: false }
+    return { keys: [...keys], complete }
   }
 
   return null // some other unresolvable expression
