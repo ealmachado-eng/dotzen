@@ -88,4 +88,40 @@ describe('check (end-to-end)', () => {
       expect(r.value.violations.every((v) => v.file.includes('›'))).toBe(true)
     }
   })
+
+  it('env-layer: threads caller inputs, scopes prod rules by folder, and proves a missing tag (v0.1.2)', async () => {
+    // env/dev has one compliant module call; env/prd has a compliant and a
+    // non-compliant one. Module-following threads each caller's inputs in, so
+    // cidrs/retention/deletion-protection become concrete. Crucially, the bad
+    // call passes a CONCRETE tags = { apm_id } into merge(var.tags, {...}) —
+    // the missing cmdb_app_id/Application must be a real VIOLATION, not a
+    // could-not-evaluate (the full merge() tag-resolution fix).
+    const r = await check(fixture('env-layer'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(4)
+      expect(r.value.passed).toBe(9)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+
+      // Every violation comes from the bad prod instantiation, traced through
+      // the caller to the module file.
+      expect(
+        r.value.violations.every(
+          (v) => /env[/\\]prd/.test(v.file) && /modules[/\\]rds/.test(v.file),
+        ),
+      ).toBe(true)
+
+      // The missing-tag verdict is a definite violation (the v0.1.2 fix).
+      const tagHit = r.value.violations.find((v) =>
+        /apm_id, cmdb_app_id, Application/.test(v.message),
+      )
+      expect(tagHit?.resource).toBe('aws_db_instance.this')
+
+      // Prod-only rules fired (deletion_protection + 30-day retention); none
+      // of the four violations sits in env/dev.
+      expect(r.value.violations.some((v) => /env[/\\]dev/.test(v.file))).toBe(
+        false,
+      )
+    }
+  })
 })
