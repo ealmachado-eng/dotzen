@@ -24,6 +24,7 @@ workflow:
 stages:
   - test
   - security
+  - release
 
 default:
   image: node:20-bookworm
@@ -134,3 +135,20 @@ gitleaks:
   rules: !reference [.default_rules, rules]
   script:
     - gitleaks detect --source . --no-banner --redact
+
+# ── release: publish to npm on a vX.Y.Z tag ──
+# Runs only after the test + security stages pass on the tag pipeline.
+# NPM_TOKEN is a masked + protected CI/CD variable (npm automation token).
+# The tag must match package.json / dotzen.json's version.
+publish:
+  stage: release
+  extends: .node
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+  script:
+    - npm run build
+    - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+    - npm publish
+  # `--provenance` is intentionally omitted for now: it needs OIDC/id_tokens
+  # wired into this job. Add it once that's set up (a governance tool wants
+  # provenance eventually), but plain publish works today.

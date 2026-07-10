@@ -1,4 +1,5 @@
 import * as fs from 'fs'
+import * as path from 'path'
 import { createJiti } from 'jiti'
 import { Result, ok, err, combineWithAllErrors } from '../result/result'
 import { DotzenError } from '../result/errors'
@@ -16,7 +17,16 @@ export async function importSpecModule(
     return err({ kind: 'ConfigNotFound', path: specPath })
 
   try {
-    const jiti = createJiti(__filename)
+    // A scaffolded spec imports `@dotzen/dotzen`, but under `npx` the engine
+    // runs from the npx cache while the user's project has no local install —
+    // so that bare specifier won't resolve from the spec's location. Alias it
+    // to THIS running engine's own barrel (dist/index.js at runtime, or
+    // src/index.ts under the test transpiler — extension-less so jiti picks
+    // the right one). This is what makes the zero-install `npx` flow work.
+    const enginePath = path.join(__dirname, '..', 'index')
+    const jiti = createJiti(__filename, {
+      alias: { '@dotzen/dotzen': enginePath },
+    })
     const mod = (await jiti.import(specPath)) as { spec?: unknown }
     const spec = mod.spec
     if (!Array.isArray(spec))
