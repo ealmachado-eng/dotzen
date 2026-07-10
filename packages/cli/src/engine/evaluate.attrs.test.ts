@@ -92,3 +92,48 @@ describe('evaluate (denyWhenTrue)', () => {
     expect(r.violations).toHaveLength(0)
   })
 })
+
+// aws_rds_cluster_instance is a plain vocabulary member — the engine
+// dispatches by resource-type string, so mustBeFalse works with no engine
+// change. This proves Aurora instances' hardcoded publicly_accessible=false
+// verifies (module-library governance).
+describe('evaluate (RdsClusterInstance publicly_accessible)', () => {
+  const clusterInstanceNotPublic: Rule = {
+    id: 'aurora-not-public',
+    target: { kind: 'resource', types: [AwsResource.RdsClusterInstance] },
+    conditions: [
+      { kind: 'mustBeFalse', attrs: [AwsAttribute.PubliclyAccessible] },
+    ],
+    effect: Effect.Block,
+    message: 'Aurora cluster instances must not be publicly accessible',
+  }
+
+  const clusterInstance = (
+    attributes: Record<string, NormalizedValue>,
+  ): NormalizedResource => ({
+    type: AwsResource.RdsClusterInstance,
+    name: 'provisioned',
+    file: 'main.tf',
+    line: 1,
+    ingress: [],
+    tags: { kind: 'resolved', keys: [] },
+    attributes,
+  })
+
+  it('passes when publicly_accessible is hardcoded false', () => {
+    const r = evaluate(
+      [clusterInstanceNotPublic],
+      [clusterInstance({ publicly_accessible: boolLit(false) })],
+    )
+    expect(r.violations).toHaveLength(0)
+    expect(r.passed).toBe(1)
+  })
+
+  it('flags when publicly_accessible is true', () => {
+    const r = evaluate(
+      [clusterInstanceNotPublic],
+      [clusterInstance({ publicly_accessible: boolLit(true) })],
+    )
+    expect(r.violations).toHaveLength(1)
+  })
+})
