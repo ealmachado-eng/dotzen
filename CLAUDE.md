@@ -296,7 +296,8 @@ a nested block must be declared, e.g. EKS `encryption_config`) and its
 inverse `denyBlockPresence` (a nested block must NOT be declared, e.g. a GCP
 instance `network_interface.access_config` = a public IP — detected via
 recorded block paths, so even an *empty* block is caught) — across an
-AWS vocabulary spanning security groups, RDS (instances + clusters),
+AWS vocabulary spanning security groups, RDS (instances + clusters +
+cluster instances),
 Redshift, ElastiCache, S3 (+ACL, +public-access-block, +bucket-policy,
 +SSE/versioning), EBS, EFS, KMS, EC2, DynamoDB, ECR, IAM policies, ECS
 (services + task definitions), EKS, load balancers (+ listeners), Secrets

@@ -32,6 +32,15 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   var.list` (whole-list ref) now resolves (and honestly degrades instead of
   a silent pass). **Remaining tranches:** remote (registry/git) sources,
   nested modules, module `count`/`for_each`, per-instantiation trace labels.
+- **[Med] Cross-resource association through `local` indirection** — the
+  `mustHaveAssociated` index links a child to its parent by matching a direct
+  ref (`bucket = aws_s3_bucket.x.id`), but real modules often route through a
+  local (`bucket = local.bucket_name`, where `local.bucket_name =
+  aws_s3_bucket.main.id`). Today the index captures `local.bucket_name` and
+  fails to link → a false violation on well-built modules, so those checks
+  must be omitted. Fix: resolve the association ref through `local`/`var`
+  before indexing (reuse the existing scope resolver). Surfaced dogfooding a
+  real s3 module whose SSE/versioning resources use the `local` indirection.
 - **[Med] Open tag taxonomy** — the `Tag` enum is closed
   (team/cost_center/environment/data_classification), but real orgs use
   their own keys (apm_id, cmdb_app_id, …). `mustHaveTags` needs a way to

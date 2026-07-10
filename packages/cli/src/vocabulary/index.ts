@@ -37,6 +37,7 @@ export enum AwsResource {
   EcsTaskDefinition = 'aws_ecs_task_definition',
   SecretsmanagerSecretVersion = 'aws_secretsmanager_secret_version',
   RdsCluster = 'aws_rds_cluster',
+  RdsClusterInstance = 'aws_rds_cluster_instance',
   RedshiftCluster = 'aws_redshift_cluster',
   ElasticacheReplicationGroup = 'aws_elasticache_replication_group',
   S3BucketServerSideEncryptionConfiguration = 'aws_s3_bucket_server_side_encryption_configuration',

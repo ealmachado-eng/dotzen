@@ -1,0 +1,13 @@
+# Normalize all text files to LF in the repo and on checkout. dotzen is a
+# cross-platform project (CI runs on Linux; contributors on Windows/macOS),
+# and the Prettier gate expects LF — this keeps line endings stable
+# regardless of a checkout's core.autocrlf setting.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wasm binary
