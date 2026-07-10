@@ -1,0 +1,4 @@
+{
+  "spec": ".zen/spec.ts",
+  "terraform": [{ "path": "./env/prd", "environment": "production" }]
+}

@@ -19,6 +19,8 @@ export interface Hcl2JsonRoot {
   resource?: Record<string, Record<string, unknown[]>>
   variable?: Record<string, unknown[]>
   locals?: unknown[]
+  /** `module "x" { source = …, <inputs> }` → `{ x: [{ source, … }] }`. */
+  module?: Record<string, unknown[]>
 }
 
 /** Resolved `var.*` / `local.*` values, keyed by reference, raw form. */
@@ -90,11 +92,26 @@ export function buildScope(roots: Hcl2JsonRoot[]): Scope {
 
 function mapIngressObj(o: unknown, scope: Scope): IngressRule {
   const oo = asObject(o)
-  const cidrs = Array.isArray(oo.cidr_blocks) ? oo.cidr_blocks : []
+  const raw = oo.cidr_blocks
+  let cidrBlocks: NormalizedValue[]
+  if (Array.isArray(raw)) {
+    cidrBlocks = raw.map((c) => resolveValue(c, scope))
+  } else if (typeof raw === 'string') {
+    // A whole-list reference, e.g. `cidr_blocks = var.allowed_cidrs`
+    // (common in modules). Follow it to a concrete list; if it can't be
+    // resolved, keep it as one unresolved element so the check honestly
+    // degrades to "could not evaluate" instead of silently passing.
+    const resolved = resolveRaw(raw, scope)
+    cidrBlocks = Array.isArray(resolved)
+      ? resolved.map((c) => resolveValue(c, scope))
+      : [{ kind: 'unresolved', expr: raw }]
+  } else {
+    cidrBlocks = []
+  }
   return {
     fromPort: resolveValue(oo.from_port, scope),
     toPort: resolveValue(oo.to_port, scope),
-    cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+    cidrBlocks,
   }
 }
 
@@ -109,7 +126,7 @@ function inlineBlocks(
 }
 
 /** Follow a sole var/local reference to its raw resolved value (or undefined). */
-function resolveRaw(
+export function resolveRaw(
   raw: unknown,
   scope: Scope,
   depth = 8,

@@ -66,4 +66,26 @@ describe('check (end-to-end)', () => {
       expect(r.value.couldNotEvaluate).toHaveLength(0)
     }
   })
+
+  it('follows local modules and threads caller inputs into var.* (doc 08)', async () => {
+    // env/prd has ONLY module calls (no direct resources). Following the
+    // local source + threading each call's inputs makes the module's
+    // resources concrete: the "bad" instantiation violates (Postgres open
+    // to 0.0.0.0/0, tags missing cmdb_app_id); the "good" one passes.
+    const r = await check(fixture('module-following'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // 2 resources × 2 instantiations = 4 checks; bad instance → 2 violations.
+      expect(r.value.violations).toHaveLength(2)
+      expect(r.value.passed).toBe(2)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      const kinds = r.value.violations.map((v) => v.resource).sort()
+      expect(kinds).toEqual(['aws_db_instance.this', 'aws_security_group.this'])
+      // Findings are traced back through the caller to the module file.
+      expect(
+        r.value.violations.every((v) => /modules[/\\]rds/.test(v.file)),
+      ).toBe(true)
+      expect(r.value.violations.every((v) => v.file.includes('›'))).toBe(true)
+    }
+  })
 })
