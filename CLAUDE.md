@@ -359,12 +359,17 @@ definite verdicts and degrades honestly to "could not evaluate" on values
 it cannot resolve — including expanding `dynamic` blocks whose `for_each`
 resolves to a concrete collection, and flattening nested blocks to dotted
 keys at **arbitrary depth** (e.g. GCP `settings.ip_configuration.ssl_mode`).
-For **tags** it follows `var`/`local` refs to a map and reads the keys of a
-`merge(<literal>, var.tags)` as a *partial* set — keys present are provable,
-so `mustHaveTags` passes when all required keys are in the literal portion
-and honestly degrades to could-not-evaluate otherwise (never a false
-violation, since a `var` arg may add more). It also **follows local
-`module {}` calls** (doc 08): each call's inputs are threaded into the
+For **tags** it parses `merge(...)`'s top-level arguments (following
+`var`/`local` refs to a map): the result is a *complete* set only when
+**every** argument is knowable (an object literal or a ref resolving to a
+concrete map), so `mustHaveTags` gives a definite verdict — including a real
+*violation* for a genuinely-missing required tag once module-following has
+threaded a caller's concrete `var.tags` map in. If any argument is an
+unresolvable ref or an opaque expression (a function call), the set degrades
+to *partial* → could-not-evaluate (never a false violation, since that arg
+may add more). Refs inside object *values* (e.g. `Ou = var.ou`) are
+correctly ignored — only the map args contribute keys. It also **follows
+local `module {}` calls** (doc 08): each call's inputs are threaded into the
 module's `var.*`, so a module's caller-supplied cidrs/tags become concrete
 verdicts, reported as `env/prd › modules/rds/main.tf`.
 Not built yet (see `docs/ROADMAP.md`):

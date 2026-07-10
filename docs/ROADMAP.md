@@ -25,6 +25,12 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   `merge(<literal>, var.tags)` — the ubiquitous module tag pattern. Reads
   the literal keys as a *partial* set (pass when required ⊆ literal;
   could-not-evaluate otherwise; never a false violation).
+- ✅ **DONE (v0.1.2)** Full `merge()` tag resolution — parses `merge()`'s
+  top-level args, so a caller-threaded **concrete** `var.tags` map makes the
+  set *complete* and a genuinely-missing required tag becomes a real
+  **violation** (not could-not-evaluate). Refs inside object *values* are no
+  longer mistaken for map args; opaque/unresolvable args still degrade
+  honestly. Surfaced by an env-layer simulation of the real module pattern.
 - ✅ **DONE (v0.1.0, Tranche 1) — Module-following** (doc 08). Local
   `module {}` calls are followed: each call's inputs thread into the
   module's `var.*`, so caller-supplied cidrs/tags become concrete verdicts,

@@ -83,3 +83,81 @@ describe('normalize — tags reference + merge resolution', () => {
     expect(r.tags).toEqual({ kind: 'unresolved' })
   })
 })
+
+// When module-following threads a caller's concrete tag map into var.tags,
+// merge(<literal>, var.tags) becomes fully knowable — so a genuinely missing
+// required tag must be a provable RESOLVED set, not a partial one.
+describe('normalize — merge() with a concrete threaded var.tags', () => {
+  it('resolves merge(<literal>, var.tags) as COMPLETE when var.tags is a concrete map', () => {
+    const parsed = {
+      resource: {
+        aws_db_instance: {
+          x: [
+            {
+              tags: '${merge({ Ou = "cloud", Environment = "prod" }, var.tags)}',
+            },
+          ],
+        },
+      },
+    }
+    const scope = buildScope([parsed as never])
+    scope.set('var.tags', { apm_id: 'APM1', Application: 'pay' })
+    const r = normalize(parsed as never, 'main.tf', '', scope)[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved')
+      expect(r.tags.keys.sort()).toEqual(
+        ['Application', 'Environment', 'Ou', 'apm_id'].sort(),
+      )
+  })
+
+  it('ignores refs inside object VALUES when judging completeness (the real module pattern)', () => {
+    const parsed = {
+      locals: [
+        {
+          common:
+            '${merge(var.tags, { Ou = var.ou, Environment = var.environment })}',
+        },
+      ],
+      resource: {
+        aws_db_instance: { x: [{ tags: '${local.common}' }] },
+      },
+    }
+    const scope = buildScope([parsed as never])
+    scope.set('var.tags', { apm_id: 'APM1' })
+    scope.set('var.ou', 'cloud')
+    scope.set('var.environment', 'production')
+    const r = normalize(parsed as never, 'main.tf', '', scope)[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved')
+      expect(r.tags.keys.sort()).toEqual(['Environment', 'Ou', 'apm_id'].sort())
+  })
+
+  it('stays PARTIAL when a merge arg is an unresolvable var ref', () => {
+    const parsed = {
+      resource: {
+        aws_db_instance: {
+          x: [{ tags: '${merge({ Ou = "cloud" }, var.tags)}' }],
+        },
+      },
+    }
+    // var.tags NOT set in scope → cannot prove completeness.
+    const scope = buildScope([parsed as never])
+    const r = normalize(parsed as never, 'main.tf', '', scope)[0]!
+    expect(r.tags.kind).toBe('partial')
+    if (r.tags.kind === 'partial') expect(r.tags.keys).toEqual(['Ou'])
+  })
+
+  it('stays PARTIAL when a merge arg is an opaque function call', () => {
+    const parsed = {
+      resource: {
+        aws_db_instance: {
+          x: [{ tags: '${merge({ Ou = "cloud" }, lookup(var.m, "k", {}))}' }],
+        },
+      },
+    }
+    const scope = buildScope([parsed as never])
+    scope.set('var.tags', { apm_id: 'APM1' })
+    const r = normalize(parsed as never, 'main.tf', '', scope)[0]!
+    expect(r.tags.kind).toBe('partial')
+  })
+})
