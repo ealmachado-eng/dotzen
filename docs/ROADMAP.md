@@ -15,6 +15,32 @@ green.
 
 ---
 
+## Post-publish dogfooding findings (real module repos)
+
+Running v0.0.x on real AWS module repos surfaced these, in priority order:
+
+- ✅ **DONE (v0.0.2)** `npx`-scaffolded specs couldn't resolve the
+  `@dotzen/dotzen` import — engine now aliases it to itself (spec loader).
+- ✅ **DONE (v0.0.3)** Tag resolution through `var`/`local` refs and
+  `merge(<literal>, var.tags)` — the ubiquitous module tag pattern. Reads
+  the literal keys as a *partial* set (pass when required ⊆ literal;
+  could-not-evaluate otherwise; never a false violation).
+- **[High] Module-following** — the big one. Env repos are `module {}` calls
+  (no direct resources → `0 checks`); module repos have resources but their
+  values are caller `var`s (cidrs, etc. → could-not-evaluate). Resolving a
+  local `module.source`'s inputs into the module's `var.*` is what makes
+  dotzen useful on real module-based orgs. Meaty; needs design.
+- **[Med] Open tag taxonomy** — the `Tag` enum is closed
+  (team/cost_center/environment/data_classification), but real orgs use
+  their own keys (apm_id, cmdb_app_id, …). `mustHaveTags` needs a way to
+  express org-specific tag keys (relax to strings for tag KEYS, or an
+  extensible/`Tag.custom(...)` escape hatch) — tag keys are inherently
+  org-defined, unlike cloud-fixed resource types/ports.
+- **[Med] `jsonencode(...)` policy parsing** — still the top IAM
+  could-not-evaluate; most real IAM uses `jsonencode`, not literal JSON.
+
+---
+
 ## Cross-cutting capabilities (build these — they unlock multiple checks)
 
 - ✅ **C1 — `denyValue(attr, values)`** (value-in-set) — DONE. (Kept

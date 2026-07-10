@@ -145,7 +145,7 @@ variables:
   GIT_DEPTH: '0' # full history for gitleaks
 
 .node:
-  before_script: [cd packages/cli, npm ci]
+  before_script: [cd packages/cli, npm install --no-audit --no-fund]
 
 test:linux:
   extends: .node
@@ -166,9 +166,15 @@ semgrep:  { stage: security, image: semgrep/semgrep:latest, script: [semgrep sca
 gitleaks: { stage: security, image: { name: zricethezav/gitleaks:latest, entrypoint: [''] }, script: [gitleaks detect --source . --no-banner --redact] }
 ```
 
-Node is pre-installed in the `node:20` image; no engine dependency is
-native, so `npm ci` is the only setup step. **Images should be
-digest-pinned** — a governance tool should not float its own CI on mutable
+Node is pre-installed in the `node:20` image, so dependency install is the
+only setup step. **We use `npm install`, not `npm ci`** — the test toolchain
+(vitest → vite → rolldown) ships platform-specific optional native bindings
+whose transitive `@emnapi` versions resolve differently on the Linux runner
+than in a lockfile generated on another OS, which makes `npm ci` reject an
+otherwise-valid lock. `npm install` honors the committed lockfile (still the
+source of truth, still committed) but tolerates that per-platform optional
+resolution; the prod deps (`@cdktf/hcl2json`, `jiti`) are unaffected either
+way. **Images should be digest-pinned** — a governance tool should not float its own CI on mutable
 tags, mirroring the `dotzen.json` no-`@latest` principle. `renovate.json`
 is configured (`:pinDigests`, npm + `gitlabci` managers, grouped, weekly)
 to pin and bump both the CI image digests and the CLI dependencies — the

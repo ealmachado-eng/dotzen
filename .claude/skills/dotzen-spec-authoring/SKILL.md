@@ -28,6 +28,33 @@ definition** rather than falling back to a string literal, even for a
 one-off rule. This is not over-engineering — it is the entire point of
 the type-safety model.
 
+### The one narrow exception: org-specific tag KEYS
+
+Tag taxonomies are org-defined, so the built-in `Tag` enum can't cover
+every org (yours may use `apm_id`, `cmdb_app_id`, `Application`, …). For
+that, `mustHaveTags` accepts your own values — but **still through an
+`enum`, never bare strings**. Define your taxonomy once, at the top of
+`spec.ts`, and reference it typed:
+
+```ts
+enum OrgTag {
+  ApmId       = 'apm_id',
+  CmdbAppId   = 'cmdb_app_id',
+  Application = 'Application', // tag keys are case-sensitive
+}
+
+rule()
+  .resource(AwsResource.S3Bucket)
+  .mustHaveTags(OrgTag.ApmId, OrgTag.CmdbAppId, Tag.Environment) // mix is fine
+  .message('Resources must carry apm_id, cmdb_app_id, environment')
+```
+
+This keeps typo-safety (a misspelled `OrgTag` member is a compile error)
+and keeps the taxonomy in the reviewed spec. This exception applies to tag
+**keys only** — resource types, ports, effects, ACLs, and attributes stay
+strictly enum-locked (those vocabularies are fixed by the cloud, not the
+org).
+
 ## Before writing a new rule, check these three things
 
 1. **Does an enum value already exist for what you need** (resource

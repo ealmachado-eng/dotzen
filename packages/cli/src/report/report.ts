@@ -88,9 +88,19 @@ export function renderTerminal(
 
   lines.push('')
   if (report.violations.length === 0) {
-    lines.push(
-      `${paint('✓ passed', ANSI.green)} (${report.passed} checks, ${paint(`${cne} could not be evaluated`, ANSI.magenta)})`,
-    )
+    if (cne === 0) {
+      // Reserve the unqualified green check for a truly complete pass.
+      lines.push(`${paint('✓ passed', ANSI.green)} (${report.passed} checks)`)
+    } else {
+      // No violations, but some checks couldn't be evaluated — those are
+      // gaps to review, not successes, so don't show a clean green ✓.
+      lines.push(
+        `${paint('⚠ no violations', ANSI.magenta)}, but ${paint(
+          `${cne} could not be evaluated`,
+          ANSI.magenta,
+        )} — review the section above (${report.passed} passed)`,
+      )
+    }
   } else {
     const count = `${report.violations.length} violation(s)`
     const vmark = hasBlocking(report)

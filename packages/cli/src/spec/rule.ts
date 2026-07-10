@@ -29,7 +29,7 @@ export type Condition =
       readonly ports: Port[]
       readonly from: Cidr[]
     }
-  | { readonly kind: 'mustHaveTags'; readonly tags: Tag[] }
+  | { readonly kind: 'mustHaveTags'; readonly tags: string[] }
   | { readonly kind: 'mustBeTrue'; readonly attrs: AnyAttribute[] }
   | { readonly kind: 'mustBeFalse'; readonly attrs: AnyAttribute[] }
   // AwsAttribute must be present (any value — literal or reference); absent is
@@ -153,7 +153,19 @@ export class RuleBuilder {
     return this
   }
 
-  mustHaveTags(...tags: Tag[]): this {
+  /**
+   * Required tag KEYS. Accepts the built-in `Tag` enum AND org-specific
+   * keys — because tag taxonomies are org-defined, unlike cloud-fixed
+   * resource types/ports. Always back org keys with your OWN `enum` (never
+   * bare strings) so typos stay compile errors:
+   *
+   *   enum OrgTag { ApmId = 'apm_id', CmdbAppId = 'cmdb_app_id' }
+   *   rule().resource(...).mustHaveTags(OrgTag.ApmId, Tag.Environment)
+   *
+   * The `string & {}` keeps `Tag` autocomplete while allowing your enum's
+   * (string-valued) members through.
+   */
+  mustHaveTags(...tags: (Tag | (string & {}))[]): this {
     this._conditions.push({ kind: 'mustHaveTags', tags })
     return this
   }

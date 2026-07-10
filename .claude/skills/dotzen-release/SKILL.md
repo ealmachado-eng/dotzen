@@ -63,7 +63,7 @@ publish:
     - if: '$CI_COMMIT_TAG =~ /^v/' # only on vX.Y.Z tags
   before_script:
     - cd packages/cli
-    - npm ci
+    - npm install --no-audit --no-fund # not `npm ci` — see the CI gate note
   script:
     - npm run build
     - echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc

@@ -22,7 +22,12 @@ export interface IngressRule {
  * which must degrade to "could not evaluate" rather than a false verdict.
  */
 export type TagsInfo =
+  // Every key is known (a literal map, or a reference resolved to one).
   | { readonly kind: 'resolved'; readonly keys: string[] }
+  // These keys are known-present, but the set may be incomplete — e.g.
+  // `merge(<literal>, var.tags)`, where var.tags could add more. Presence is
+  // provable; absence is not, so a missing required tag => could-not-evaluate.
+  | { readonly kind: 'partial'; readonly keys: string[] }
   | { readonly kind: 'unresolved' }
 
 /** One IAM policy statement (from a parsed literal-JSON policy document). */

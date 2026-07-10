@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { rule } from './rule'
-import { AwsResource, Port, Cidr } from '../vocabulary'
+import { AwsResource, Port, Cidr, Tag } from '../vocabulary'
+
+// A consumer's own tag taxonomy — the recommended way to express
+// org-specific tag keys (typo-safe, no bare strings).
+enum OrgTag {
+  ApmId = 'apm_id',
+  CmdbAppId = 'cmdb_app_id',
+}
 
 describe('RuleBuilder additional surface', () => {
   it('resource(...) accepts multiple types', () => {
@@ -40,6 +47,18 @@ describe('RuleBuilder additional surface', () => {
     if (c?.kind === 'denyIngress') {
       expect(c.from).toEqual([Cidr.Internet, Cidr.InternetV6])
     }
+  })
+
+  it('mustHaveTags accepts a self-built org enum mixed with built-in Tag', () => {
+    const r = rule()
+      .resource(AwsResource.S3Bucket)
+      .mustHaveTags(OrgTag.ApmId, OrgTag.CmdbAppId, Tag.Environment)
+      .message('org tags')
+      .validate(0)
+    const c = r.ok ? r.value.conditions[0] : undefined
+    expect(c?.kind).toBe('mustHaveTags')
+    if (c?.kind === 'mustHaveTags')
+      expect(c.tags).toEqual(['apm_id', 'cmdb_app_id', 'environment'])
   })
 
   it('carries an optional rationale through validation', () => {
