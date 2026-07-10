@@ -54,4 +54,25 @@ describe('evaluate (mustHaveTags)', () => {
     expect(report.couldNotEvaluate).toHaveLength(1)
     expect(report.couldNotEvaluate[0]?.reason).toMatch(/tags/i)
   })
+
+  it('passes when required tags are within a PARTIAL set', () => {
+    const report = evaluate(
+      [requireTags],
+      [res({ kind: 'partial', keys: ['team', 'cost_center', 'environment'] })],
+    )
+    expect(report.violations).toHaveLength(0)
+    expect(report.passed).toBe(1)
+  })
+
+  it('could-not-evaluate (not violation) when a required tag is outside a PARTIAL set', () => {
+    // team present, but cost_center/environment could still come from a
+    // merged var.tags — so we must NOT claim a violation.
+    const report = evaluate(
+      [requireTags],
+      [res({ kind: 'partial', keys: ['team'] })],
+    )
+    expect(report.violations).toHaveLength(0)
+    expect(report.couldNotEvaluate).toHaveLength(1)
+    expect(report.couldNotEvaluate[0]?.reason).toMatch(/cost_center/)
+  })
 })

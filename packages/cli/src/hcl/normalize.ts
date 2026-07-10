@@ -358,18 +358,71 @@ function egressFor(
   ]
 }
 
+// Object-literal keys (`ident = …`) in an HCL expression string. A single
+// `=` (not `==`/`>=`/etc.) is HCL's attribute-assignment operator, so this
+// reliably picks up flat map keys inside a `merge(...)` argument.
+const OBJECT_KEY = /([A-Za-z_][A-Za-z0-9_-]*)\s*=(?!=)/g
+// `var.x` / `local.y` reference tokens mentioned in an expression.
+const REF_TOKEN = /\b(var|local)\.([A-Za-z0-9_-]+)/g
+
 /**
- * Tags: a literal map gives us the present keys; a `${...}` expression
- * (var/merge/local) is unresolved; an absent block is resolved-but-empty
- * (the literal AI-generated case — no tags written means none present).
+ * Keys known to be present on a tags value, and whether that set is
+ * COMPLETE. Follows sole `var`/`local` references to their value, and
+ * unions the literal keys (and resolvable refs) inside a `merge(...)`.
+ * Returns `null` when nothing can be determined (an unresolvable reference
+ * or an opaque expression) — which becomes "could not evaluate".
  */
-function tagsOf(block: Record<string, unknown> | undefined): TagsInfo {
-  const t = block?.tags
-  if (t === undefined) return { kind: 'resolved', keys: [] }
-  if (typeof t === 'string' && isInterpolated(t)) return { kind: 'unresolved' }
-  if (t && typeof t === 'object' && !Array.isArray(t))
-    return { kind: 'resolved', keys: Object.keys(t) }
-  return { kind: 'unresolved' }
+function tagKeys(
+  value: unknown,
+  scope: Scope,
+  depth = 8,
+): { keys: string[]; complete: boolean } | null {
+  if (value === undefined) return { keys: [], complete: true }
+  if (value && typeof value === 'object' && !Array.isArray(value))
+    return { keys: Object.keys(value), complete: true }
+  if (typeof value !== 'string') return null
+
+  const ref = SOLE_REF.exec(value) // exactly one ${var.x} / ${local.y}
+  if (ref) {
+    if (depth <= 0) return null
+    const key = `${ref[1]}.${ref[2]}`
+    return scope.has(key) ? tagKeys(scope.get(key), scope, depth - 1) : null
+  }
+
+  if (/\bmerge\s*\(/.test(value)) {
+    // merge() only ever ADDS keys, so presence is monotonic. Collect the
+    // inline literal keys plus keys from any resolvable ref args; mark the
+    // set incomplete (a var/unresolved arg may contribute more).
+    const keys = new Set<string>(
+      value.match(OBJECT_KEY)?.map((m) => m.replace(/\s*=$/, '')) ?? [],
+    )
+    for (const [, kind, name] of value.matchAll(REF_TOKEN)) {
+      const scopeKey = `${kind}.${name}`
+      if (depth > 0 && scope.has(scopeKey)) {
+        const sub = tagKeys(scope.get(scopeKey), scope, depth - 1)
+        if (sub) for (const k of sub.keys) keys.add(k)
+      }
+    }
+    return { keys: [...keys], complete: false }
+  }
+
+  return null // some other unresolvable expression
+}
+
+/**
+ * Tags: a literal map (or a `var`/`local` reference resolved to one) gives
+ * a complete key set; `merge(<literal>, var.tags)` gives a PARTIAL set
+ * (known-present keys, may be more); anything else is unresolved.
+ */
+function tagsOf(
+  block: Record<string, unknown> | undefined,
+  scope: Scope,
+): TagsInfo {
+  const r = tagKeys(block?.tags, scope)
+  if (r === null) return { kind: 'unresolved' }
+  return r.complete
+    ? { kind: 'resolved', keys: r.keys }
+    : { kind: 'partial', keys: r.keys }
 }
 
 /** Resolved value of the `environment` tag (for rule scoping), if present. */
@@ -546,7 +599,7 @@ export function normalize(
         line: findLine(rawText, type, name),
         ingress: ingressFor(type, block, scope),
         egress: egressFor(block, scope),
-        tags: tagsOf(block),
+        tags: tagsOf(block, scope),
         attributes: extracted.attributes,
         lists: extracted.lists,
         blocks: extracted.blocks,

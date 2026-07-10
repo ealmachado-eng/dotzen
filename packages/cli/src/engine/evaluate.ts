@@ -225,9 +225,16 @@ function evalMustHaveTags(
     }
   const present = new Set(r.tags.keys)
   const missing = c.tags.filter((t) => !present.has(t))
-  if (missing.length > 0)
-    return { kind: 'violation', detail: `missing tags: ${missing.join(', ')}` }
-  return { kind: 'pass' }
+  if (missing.length === 0) return { kind: 'pass' }
+  // A `partial` set (e.g. merge(<literal>, var.tags)) proves presence but not
+  // absence — a var arg may supply the missing key, so don't claim a
+  // violation; degrade honestly instead.
+  if (r.tags.kind === 'partial')
+    return {
+      kind: 'cannotEvaluate',
+      reason: `tag(s) not in the resolvable portion (a var/merge arg may add them): ${missing.join(', ')}`,
+    }
+  return { kind: 'violation', detail: `missing tags: ${missing.join(', ')}` }
 }
 
 const isLiteralTrue = (v: NormalizedValue | undefined): boolean =>

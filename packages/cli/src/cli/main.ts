@@ -71,6 +71,12 @@ function runInit(dir: string, terraform?: string): number {
   for (const s of res.skipped)
     process.stdout.write(`  skipped  ${s} (already exists)\n`)
 
+  process.stdout.write(
+    '\nFor editor autocomplete + type-checking of .zen/spec.ts, install the\n' +
+      'types locally:  npm i -D @dotzen/dotzen   (and add node_modules/ to\n' +
+      '.gitignore). Running `check` via npx needs no local install.\n',
+  )
+
   if (res.detected) {
     const roots = Array.isArray(res.terraform) ? res.terraform : [res.terraform]
     const fmt = (r: (typeof roots)[number]) =>

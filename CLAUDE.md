@@ -358,6 +358,11 @@ definite verdicts and degrades honestly to "could not evaluate" on values
 it cannot resolve — including expanding `dynamic` blocks whose `for_each`
 resolves to a concrete collection, and flattening nested blocks to dotted
 keys at **arbitrary depth** (e.g. GCP `settings.ip_configuration.ssl_mode`).
+For **tags** it follows `var`/`local` refs to a map and reads the keys of a
+`merge(<literal>, var.tags)` as a *partial* set — keys present are provable,
+so `mustHaveTags` passes when all required keys are in the literal portion
+and honestly degrades to could-not-evaluate otherwise (never a false
+violation, since a `var` arg may add more).
 Not built yet (see `docs/ROADMAP.md`):
 `jsonencode(...)`-wrapped JSON (IAM policies + ECS `container_definitions`
 only parse *literal* JSON today; `jsonencode`/`var` → could-not-evaluate),
