@@ -11,7 +11,8 @@ resource "aws_ecs_task_definition" "app" {
 DEFS
 }
 
-# jsonencode(...) is not statically readable -> "could not evaluate".
+# jsonencode(...) with a literal HCL array is now parsed (v0.1.3) ->
+# the privileged container is flagged.
 resource "aws_ecs_task_definition" "encoded" {
   family = "encoded"
   container_definitions = jsonencode([

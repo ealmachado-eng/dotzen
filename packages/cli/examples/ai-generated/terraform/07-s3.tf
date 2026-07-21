@@ -54,6 +54,7 @@ resource "aws_s3_bucket_versioning" "private_data" {
 
 # A bucket policy granting Action "*" — over-permissive, flagged by
 # denyIamWildcard (the same parser used for IAM policies).
+# Also has no SSL Deny → flagged by requireSslOnlyPolicy.
 resource "aws_s3_bucket_policy" "public_assets" {
   bucket = aws_s3_bucket.public_assets.id
 
@@ -65,4 +66,27 @@ resource "aws_s3_bucket_policy" "public_assets" {
   ]
 }
 POLICY
+}
+
+# private_data has an SSL-only bucket policy (Deny non-SSL transport)
+# → passes requireSslOnlyPolicy. CIS AWS: bucket policies should reject HTTP.
+resource "aws_s3_bucket_policy" "private_data" {
+  bucket = aws_s3_bucket.private_data.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = ["arn:aws:s3:::my-private-data", "arn:aws:s3:::my-private-data/*"]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      }
+    ]
+  })
 }

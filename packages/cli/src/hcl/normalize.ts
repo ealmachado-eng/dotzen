@@ -8,10 +8,13 @@ import {
   NormalizedResource,
   IngressRule,
   NormalizedValue,
+  ResolvedRef,
   TagsInfo,
   PolicyInfo,
   ListInfo,
   ContainerInfo,
+  ContainerDef,
+  EnvVar,
 } from './model'
 
 /** hcl2json emits `{ resource: { type: { name: [block, ...] } } }`. */
@@ -37,9 +40,30 @@ const isInterpolated = (s: string): boolean => s.includes('${')
 const asObject = (o: unknown): Record<string, unknown> =>
   o && typeof o === 'object' ? (o as Record<string, unknown>) : {}
 
+/**
+ * A resource reference at the bottom of a var/local chain, e.g.
+ * `${aws_s3_bucket.main.id}` → { type: 'aws_s3_bucket', name: 'main' }.
+ * Captured at normalize time so the engine's association index can link
+ * a child to its parent through `local`/`var` indirection without
+ * needing scope access at evaluate time. Returns undefined for non-ref
+ * expressions (literals, compound interpolations, function calls).
+ */
+const RESOURCE_REF_AT_BOTTOM = /\$\{\s*([a-z][a-z0-9_]*)\.([A-Za-z0-9_-]+)/
+const refAtBottom = (raw: unknown): ResolvedRef | undefined => {
+  if (typeof raw !== 'string') return undefined
+  const m = RESOURCE_REF_AT_BOTTOM.exec(raw)
+  if (!m || m[1] === undefined || m[2] === undefined) return undefined
+  const prefix = m[1]
+  // `var.`/`local.`/`data.` would indicate the chain didn't actually
+  // bottom out at a resource ref — leave those for further resolution.
+  if (prefix === 'var' || prefix === 'local' || prefix === 'data')
+    return undefined
+  return { type: prefix, name: m[2] }
+}
+
 function toValue(raw: unknown): NormalizedValue {
   if (typeof raw === 'string' && isInterpolated(raw))
-    return { kind: 'unresolved', expr: raw }
+    return { kind: 'unresolved', expr: raw, resolvedRef: refAtBottom(raw) }
   if (
     typeof raw === 'string' ||
     typeof raw === 'number' ||
@@ -584,22 +608,291 @@ const toStrList = (v: unknown): string[] => {
 }
 
 /**
+ * Sentinel for an unresolvable HCL value (a `var.x`/`local.y`/`data.x`
+ * reference, a function call, or any expression the literal parser cannot
+ * structurally evaluate). Propagates up through `parseHclValue` so the
+ * caller degrades the whole policy/containers to `kind: 'unresolved'`.
+ */
+const UNRESOLVED: unique symbol = Symbol('unresolved')
+
+/**
+ * Split an HCL object/array body on top-level commas AND newlines. HCL
+ * object literals use either (or both) as entry separators, so a pure
+ * comma splitter (like `splitTopLevelArgs`) would miss newline-separated
+ * entries — e.g. the multi-line `jsonencode({\n  Version = ...\n  Statement
+ * = ...\n})` shape that hcl2json emits. Tracks `()`/`{}`/`[]` nesting and
+ * quotes so commas/newlines inside nested structures or strings do not split.
+ */
+function splitTopLevelEntries(inner: string): string[] {
+  const entries: string[] = []
+  let depth = 0
+  let start = 0
+  let quote: string | null = null
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i]
+    if (quote) {
+      if (c === quote && inner[i - 1] !== '\\') quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '(' || c === '{' || c === '[') depth++
+    else if (c === ')' || c === '}' || c === ']') depth--
+    else if (depth === 0 && (c === ',' || c === '\n')) {
+      const entry = inner.slice(start, i).trim()
+      if (entry.length > 0) entries.push(entry)
+      start = i + 1
+    }
+  }
+  const last = inner.slice(start).trim()
+  if (last.length > 0) entries.push(last)
+  return entries
+}
+
+/**
+ * Split a `key = value` entry on the first top-level `=` (not `==`). The key
+ * may be a bare identifier or a quoted string (unquoted on return). Returns
+ * null if no top-level `=` is found (malformed entry).
+ */
+function splitKeyVal(entry: string): { key: string; val: string } | null {
+  let depth = 0
+  let quote: string | null = null
+  for (let i = 0; i < entry.length; i++) {
+    const c = entry[i]
+    if (quote) {
+      if (c === quote && entry[i - 1] !== '\\') quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '(' || c === '{' || c === '[') depth++
+    else if (c === ')' || c === '}' || c === ']') depth--
+    else if (c === '=' && depth === 0 && entry[i + 1] !== '=') {
+      const keyRaw = entry.slice(0, i).trim()
+      const val = entry.slice(i + 1).trim()
+      const kq = /^["'](.*)["']$/.exec(keyRaw)
+      return { key: kq ? (kq[1] ?? keyRaw) : keyRaw, val }
+    }
+  }
+  return null
+}
+
+/**
+ * Find the matching closing bracket for an opening `{`/`[`/`(` at position
+ * `open`, tracking nesting and quotes. Returns the index of the matching
+ * close, or -1 if unbalanced.
+ */
+function matchBracket(s: string, open: number): number {
+  const openCh = s[open]
+  const closeCh = openCh === '{' ? '}' : openCh === '[' ? ']' : ')'
+  let depth = 0
+  let quote: string | null = null
+  for (let i = open; i < s.length; i++) {
+    const c = s[i]
+    if (quote) {
+      if (c === quote && s[i - 1] !== '\\') quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === openCh) depth++
+    else if (c === closeCh) {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/**
+ * Parse a quoted HCL string literal (double or single quotes). Handles `\"`
+ * / `\\` escapes. If the string contains a `${...}` interpolation:
+ *  - non-lenient (default): returns UNRESOLVED (the value is not statically
+ *    knowable — used by `policyOf` where exact values matter, e.g. `Action: "*"`).
+ *  - lenient: keeps the `${...}` in the output string (used by `containersOf`
+ *    where we need to distinguish literal vs reference env var values without
+ *    degrading the whole container_definitions to could-not-evaluate).
+ */
+function parseHclString(
+  s: string,
+  lenient = false,
+): string | typeof UNRESOLVED {
+  const quote = s[0]
+  if (quote !== '"' && quote !== "'") return UNRESOLVED
+  let out = ''
+  for (let i = 1; i < s.length; i++) {
+    const c = s[i]
+    if (c === '\\' && i + 1 < s.length) {
+      const next = s[i + 1]
+      if (next === '"' || next === '\\' || next === "'") {
+        out += next
+        i++
+        continue
+      }
+      out += c
+      continue
+    }
+    if (c === quote) return out
+    if (c === '$' && s[i + 1] === '{') {
+      if (!lenient) return UNRESOLVED
+      // In lenient mode, keep ${...} in the string so the caller can
+      // detect it via isInterpolated() and treat it as a reference.
+    }
+    out += c
+  }
+  return UNRESOLVED // unterminated
+}
+
+/**
+ * Recursively parse an HCL literal expression (the inner argument of
+ * `jsonencode(...)`) into a JS value. Handles:
+ *  - quoted strings (with escapes; interpolated strings → UNRESOLVED in
+ *    non-lenient mode, kept as-is in lenient mode)
+ *  - object literals `{ k = v, ... }` (comma or newline separated)
+ *  - array literals `[ ... ]` (comma or newline separated)
+ *  - booleans (`true`/`false`), `null`, numbers
+ *  - bare identifiers / function calls / refs → UNRESOLVED
+ * Returns UNRESOLVED if any value (at any depth) is not statically knowable,
+ * so the caller degrades the whole policy/containers to could-not-evaluate
+ * rather than guessing. In lenient mode, interpolated strings are kept
+ * (not UNRESOLVED) so `containersOf` can extract env vars from mixed
+ * literal/reference configs without degrading the whole thing.
+ */
+function parseHclValue(
+  inner: string,
+  lenient = false,
+): unknown | typeof UNRESOLVED {
+  const s = inner.trim()
+  if (s.length === 0) return UNRESOLVED
+
+  // Quoted string
+  if (s[0] === '"' || s[0] === "'") {
+    const v = parseHclString(s, lenient)
+    return v === UNRESOLVED ? UNRESOLVED : v
+  }
+
+  // Object literal
+  if (s[0] === '{') {
+    const close = matchBracket(s, 0)
+    if (close === -1) return UNRESOLVED
+    const body = s.slice(1, close)
+    const obj: Record<string, unknown> = {}
+    for (const entry of splitTopLevelEntries(body)) {
+      const kv = splitKeyVal(entry)
+      if (!kv) return UNRESOLVED
+      const v = parseHclValue(kv.val, lenient)
+      if (v === UNRESOLVED) return UNRESOLVED
+      obj[kv.key] = v
+    }
+    return obj
+  }
+
+  // Array literal
+  if (s[0] === '[') {
+    const close = matchBracket(s, 0)
+    if (close === -1) return UNRESOLVED
+    const body = s.slice(1, close)
+    const arr: unknown[] = []
+    for (const el of splitTopLevelEntries(body)) {
+      const v = parseHclValue(el, lenient)
+      if (v === UNRESOLVED) return UNRESOLVED
+      arr.push(v)
+    }
+    return arr
+  }
+
+  // Booleans / null
+  if (s === 'true') return true
+  if (s === 'false') return false
+  if (s === 'null') return null
+
+  // Number
+  if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s)
+
+  // Anything else (var.x, local.y, data.x, function calls, bare identifiers,
+  // compound expressions) is not statically knowable.
+  return UNRESOLVED
+}
+
+/**
+ * Extract the inner HCL expression from a `${jsonencode(<expr>)}` string.
+ * Returns null if the string is not a jsonencode call (e.g. a bare `${var.x}`
+ * or `${merge(...)}`). Handles multi-line input (hcl2json preserves newlines
+ * inside the `${...}` wrapper) by matching balanced `()` after stripping the
+ * outer `${...}` wrapper.
+ */
+function jsonencodeInner(raw: string): string | null {
+  // Strip the ${...} wrapper if present (hcl2json wraps function calls).
+  const stripped = raw.replace(/^\$\{/, '').replace(/\}$/, '')
+  const m = /^jsonencode\s*\(/.exec(stripped)
+  if (!m) return null
+  let depth = 0
+  const start = m[0].length
+  for (let i = start; i < stripped.length; i++) {
+    const c = stripped[i]
+    if (c === '(') depth++
+    else if (c === ')') {
+      if (depth === 0) return stripped.slice(start, i).trim()
+      depth--
+    }
+  }
+  return null
+}
+
+/**
+ * Extract the `Principal` field from a parsed statement — all string values
+ * flattened into a list (a bare `"*"` → `["*"]`; `{ "AWS": "*" }` → `["*"]`;
+ * `{ "AWS": ["arn:...", "*"] }` → `["arn:...", "*"]`). Empty `[]` when absent.
+ */
+function principalOf(so: Record<string, unknown>): string[] {
+  const p = so.Principal
+  if (typeof p === 'string') return [p]
+  if (p && typeof p === 'object' && !Array.isArray(p)) {
+    const out: string[] = []
+    for (const v of Object.values(p as Record<string, unknown>))
+      out.push(...toStrList(v))
+    return out
+  }
+  return []
+}
+
+/** Extract a `Condition` block from a parsed statement object. */
+function conditionsOf(
+  so: Record<string, unknown>,
+): Record<string, Record<string, string[]>> {
+  const cond = so.Condition
+  if (!cond || typeof cond !== 'object' || Array.isArray(cond)) return {}
+  const out: Record<string, Record<string, string[]>> = {}
+  for (const [op, val] of Object.entries(cond as Record<string, unknown>)) {
+    if (!val || typeof val !== 'object' || Array.isArray(val)) continue
+    const opMap: Record<string, string[]> = {}
+    for (const [k, v] of Object.entries(val as Record<string, unknown>))
+      opMap[k] = toStrList(v)
+    out[op] = opMap
+  }
+  return out
+}
+
+/**
  * Parse an IAM `policy` argument. A literal JSON document (heredoc/inline
- * string) is parsed into statements; a `jsonencode(...)` expression, a
- * variable, or malformed JSON is `unresolved` (=> "could not evaluate").
+ * string) OR a `jsonencode(<HCL literal>)` expression is parsed into
+ * statements; a `jsonencode(var.x)` / `local.x` / bare variable, or malformed
+ * input, is `unresolved` (=> "could not evaluate").
  */
 function policyOf(
   block: Record<string, unknown> | undefined,
 ): PolicyInfo | undefined {
   const raw = block?.policy
   if (typeof raw !== 'string') return undefined // no inline JSON policy
-  if (isInterpolated(raw)) return { kind: 'unresolved' } // jsonencode/var/...
+
   let doc: unknown
-  try {
-    doc = JSON.parse(raw)
-  } catch {
-    return { kind: 'unresolved' }
+  if (isInterpolated(raw)) {
+    // Try jsonencode(<HCL literal>); fall back to unresolved for var/local/other.
+    const inner = jsonencodeInner(raw)
+    if (inner === null) return { kind: 'unresolved' }
+    const parsed = parseHclValue(inner)
+    if (parsed === UNRESOLVED) return { kind: 'unresolved' }
+    doc = parsed
+  } else {
+    // Literal JSON (heredoc / inline string).
+    try {
+      doc = JSON.parse(raw)
+    } catch {
+      return { kind: 'unresolved' }
+    }
   }
+
   const stmtRaw = asObject(doc).Statement
   const list = Array.isArray(stmtRaw) ? stmtRaw : stmtRaw ? [stmtRaw] : []
   const statements = list.map((s) => {
@@ -609,30 +902,71 @@ function policyOf(
       actions: toStrList(so.Action),
       resources: toStrList(so.Resource),
       notActions: toStrList(so.NotAction),
+      principals: principalOf(so),
+      conditions: conditionsOf(so),
     }
   })
   return { kind: 'parsed', statements }
 }
 
-/** Parse ECS `container_definitions` (a literal-JSON array of containers). */
+/**
+ * Parse ECS `container_definitions`. A literal-JSON array OR a
+ * `jsonencode(<HCL array literal>)` expression is parsed into containers;
+ * a `jsonencode(var.x)` / bare variable, or malformed input, is `unresolved`.
+ *
+ * Uses **lenient** parsing for `jsonencode(...)`: interpolated strings
+ * (`${var.x}`) are kept as-is rather than degrading the whole document to
+ * `unresolved`. This lets `denyPlaintextEnvSecrets` detect hardcoded secrets
+ * in mixed configs (some env vars literal, some referenced). The
+ * `privileged` field tracks whether it was interpolated (`privilegedUnresolved`)
+ * so `denyPrivilegedContainers` can still degrade to could-not-evaluate.
+ */
 function containersOf(
   block: Record<string, unknown> | undefined,
 ): ContainerInfo | undefined {
   const raw = block?.container_definitions
   if (typeof raw !== 'string') return undefined
-  if (isInterpolated(raw)) return { kind: 'unresolved' } // jsonencode/var
+
   let doc: unknown
+  // Try literal JSON first (handles heredocs with ${...} inside string values,
+  // which are valid JSON). Fall back to jsonencode with lenient parsing.
   try {
     doc = JSON.parse(raw)
   } catch {
-    return { kind: 'unresolved' }
+    if (isInterpolated(raw)) {
+      const inner = jsonencodeInner(raw)
+      if (inner === null) return { kind: 'unresolved' }
+      const parsed = parseHclValue(inner, true) // lenient — keep ${...}
+      if (parsed === UNRESOLVED) return { kind: 'unresolved' }
+      doc = parsed
+    } else {
+      return { kind: 'unresolved' }
+    }
   }
+
   const arr = Array.isArray(doc) ? doc : []
-  const containers = arr.map((c) => {
+  const containers = arr.map((c): ContainerDef => {
     const co = asObject(c)
+    const priv = co.privileged
+    // `privileged` should be boolean true/false. If it's a string (interpolated
+    // in lenient mode), mark privilegedUnresolved so denyPrivilegedContainers
+    // degrades to could-not-evaluate rather than treating it as false.
+    const privUnresolved = typeof priv === 'string' && isInterpolated(priv)
+    // Extract environment variables, marking each as literal or reference.
+    const envRaw = co.environment
+    const environment: EnvVar[] = Array.isArray(envRaw)
+      ? envRaw.map((e) => {
+          const eo = asObject(e)
+          const name = typeof eo.name === 'string' ? eo.name : ''
+          const value = typeof eo.value === 'string' ? eo.value : ''
+          return { name, value, isLiteral: !isInterpolated(value) }
+        })
+      : []
     return {
       name: typeof co.name === 'string' ? co.name : '',
-      privileged: co.privileged === true,
+      privileged: priv === true,
+      privilegedUnresolved: privUnresolved,
+      environment,
     }
   })
   return { kind: 'parsed', containers }

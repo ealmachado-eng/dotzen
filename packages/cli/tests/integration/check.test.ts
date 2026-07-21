@@ -124,4 +124,102 @@ describe('check (end-to-end)', () => {
       )
     }
   })
+
+  it('mustHaveAssociated links a child through local indirection (no false violation)', async () => {
+    // The SSE-config resource references its bucket through a local chain
+    // (`bucket = local.bucket_id` where `local.bucket_id = aws_s3_bucket.main.id`),
+    // the ubiquitous real-module pattern. Before the fix, the association
+    // index captured `local.bucket_id` and failed to link → a false violation
+    // on a well-built module. Now the bucket passes; a bucket with no SSE
+    // config at all still violates.
+    const r = await check(fixture('assoc-local-indirection'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // `main` passes (linked through local); `lonely` violates (no SSE config).
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_s3_bucket.lonely')
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      expect(r.value.passed).toBe(1)
+    }
+  })
+
+  it('parses jsonencode(...) IAM policies and ECS container_definitions (v0.1.3)', async () => {
+    // Before v0.1.3, jsonencode(...) degraded IAM policies and ECS
+    // container_definitions to "could not evaluate" — the top remaining
+    // could-not-evaluate on the roadmap, since most real Terraform uses
+    // jsonencode, not literal JSON. Now the HCL object/array literal inside
+    // jsonencode(...) is parsed: the wildcard policy and privileged container
+    // are flagged as violations; the compliant resources pass.
+    const r = await check(fixture('iam-jsonencode'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // encoded_admin (Action "*" + Resource "*") + encoded (privileged) = 2.
+      expect(r.value.violations).toHaveLength(2)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      const resources = r.value.violations.map((v) => v.resource).sort()
+      expect(resources).toEqual([
+        'aws_ecs_task_definition.encoded',
+        'aws_iam_policy.encoded_admin',
+      ])
+      // scoped IAM policy + safe ECS task = 2 passes.
+      expect(r.value.passed).toBe(2)
+    }
+  })
+
+  it('requireSslOnlyPolicy + denyPublicPrincipal on S3 bucket policies (v0.1.3)', async () => {
+    // The Condition-block parsing (from the jsonencode work) is now used by
+    // `requireSslOnlyPolicy`. A bucket policy with a Deny + Condition Bool
+    // aws:SecureTransport=false passes; one with only an Allow (no SSL Deny)
+    // violates. `denyPublicPrincipal` flags Allow statements with Principal
+    // "*" (public access). The ssl_enforced policy passes both (Deny with
+    // SecureTransport, Principal "*" is in a Deny not an Allow); the no_ssl
+    // policy violates both (Allow with Principal "*", no SSL Deny).
+    const r = await check(fixture('s3-ssl'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // no_ssl violates both rules (2 violations on the same resource).
+      expect(r.value.violations).toHaveLength(2)
+      expect(
+        r.value.violations.every(
+          (v) => v.resource === 'aws_s3_bucket_policy.no_ssl',
+        ),
+      ).toBe(true)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      // ssl_enforced passes both rules.
+      expect(r.value.passed).toBe(2)
+    }
+  })
+
+  it('AWS Config recorder settings (CIS §3.1/3.2)', async () => {
+    // The good recorder has all_supported + include_global_resource_types = true
+    // → passes both rules. The bad recorder has both = false → 2 violations.
+    const r = await check(fixture('aws-config'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      expect(
+        r.value.violations.every(
+          (v) => v.resource === 'aws_config_configuration_recorder.bad',
+        ),
+      ).toBe(true)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      expect(r.value.passed).toBe(2)
+    }
+  })
+
+  it('ECS plaintext env secrets (v0.1.3)', async () => {
+    // The lenient jsonencode parser extracts environment variables even when
+    // some values are references. A plaintext DB_PASSWORD = "hunter2" is
+    // flagged; a referenced DB_PASSWORD = "${var.db_password}" passes.
+    const r = await check(fixture('ecs-env-secrets'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe(
+        'aws_ecs_task_definition.bad',
+      )
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      expect(r.value.passed).toBe(1)
+    }
+  })
 })

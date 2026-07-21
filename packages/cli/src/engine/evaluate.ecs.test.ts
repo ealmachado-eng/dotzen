@@ -23,14 +23,20 @@ const rule: Rule = {
   message: 'no privileged containers',
 }
 
+const ct = (
+  name: string,
+  privileged: boolean,
+): { name: string; privileged: boolean; environment: never[] } => ({
+  name,
+  privileged,
+  environment: [],
+})
+
 describe('evaluate (denyPrivilegedContainers)', () => {
   it('flags a privileged container', () => {
     const r = taskDef({
       kind: 'parsed',
-      containers: [
-        { name: 'app', privileged: false },
-        { name: 'sidecar', privileged: true },
-      ],
+      containers: [ct('app', false), ct('sidecar', true)],
     })
     expect(evaluate([rule], [r]).violations).toHaveLength(1)
   })
@@ -38,7 +44,7 @@ describe('evaluate (denyPrivilegedContainers)', () => {
   it('passes when no container is privileged', () => {
     const r = taskDef({
       kind: 'parsed',
-      containers: [{ name: 'app', privileged: false }],
+      containers: [ct('app', false)],
     })
     expect(evaluate([rule], [r]).violations).toHaveLength(0)
   })

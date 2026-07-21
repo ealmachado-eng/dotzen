@@ -54,6 +54,16 @@ export type Condition =
       readonly max: number
     }
   | { readonly kind: 'denyIamWildcard' }
+  // Flag an Allow statement with `Principal: "*"` (public access — everyone
+  // can access the resource). CIS AWS: S3 bucket policies should not grant
+  // public access.
+  | { readonly kind: 'denyPublicPrincipal' }
+  // Require the resource's `policy` to deny non-SSL transport — a `Deny`
+  // statement with `Condition: { Bool: { "aws:SecureTransport": "false" } }`
+  // (CIS AWS — S3 bucket policies should reject HTTP). Zero-arg; targets any
+  // resource with a parsed `policy` attribute (S3 bucket policies, IAM
+  // policies, KMS key policies, …).
+  | { readonly kind: 'requireSslOnlyPolicy' }
   | {
       readonly kind: 'listContains'
       readonly attr: AnyAttribute
@@ -78,6 +88,10 @@ export type Condition =
     }
   | { readonly kind: 'denyPlaintextListener' }
   | { readonly kind: 'denyPrivilegedContainers' }
+  // Flag ECS containers with plaintext secrets in `environment` variables —
+  // an env var whose name matches a secret-like pattern (PASSWORD, SECRET,
+  // KEY, TOKEN, CREDENTIAL) and whose value is a literal (not a reference).
+  | { readonly kind: 'denyPlaintextEnvSecrets' }
   | { readonly kind: 'denyLiteral'; readonly attrs: AnyAttribute[] }
   // Cross-resource: this resource must be referenced by a separate resource
   // of `childType` through its `via` attribute (e.g. an S3 bucket must have a
@@ -220,6 +234,28 @@ export class RuleBuilder {
     return this
   }
 
+  /**
+   * Flag an Allow statement with `Principal: "*"` (public access). CIS AWS:
+   * S3 bucket policies (and IAM policies) should not grant access to everyone.
+   * Passes when no policy is present; a Deny with `Principal: "*"` is fine
+   * (restrictive, not public access).
+   */
+  denyPublicPrincipal(): this {
+    this._conditions.push({ kind: 'denyPublicPrincipal' })
+    return this
+  }
+
+  /**
+   * Require the resource's `policy` to deny non-SSL transport — a `Deny`
+   * statement with `Condition: { Bool: { "aws:SecureTransport": "false" } }`.
+   * CIS AWS: S3 bucket policies should reject HTTP. Passes when no policy is
+   * present (combine with `mustHaveAssociated` to require a policy exists).
+   */
+  requireSslOnlyPolicy(): this {
+    this._conditions.push({ kind: 'requireSslOnlyPolicy' })
+    return this
+  }
+
   /** Flag a list attribute that CONTAINS any of `values` (e.g. a public CIDR). */
   listContains(attr: AnyAttribute, ...values: string[]): this {
     this._conditions.push({ kind: 'listContains', attr, values })
@@ -254,6 +290,18 @@ export class RuleBuilder {
   /** Flag an ECS task definition with any privileged container. */
   denyPrivilegedContainers(): this {
     this._conditions.push({ kind: 'denyPrivilegedContainers' })
+    return this
+  }
+
+  /**
+   * Flag ECS containers with plaintext secrets in `environment` variables —
+   * an env var whose name matches a secret-like pattern (PASSWORD, SECRET,
+   * KEY, TOKEN, CREDENTIAL) AND whose value is a literal string (not a
+   * `${var.x}` reference). CIS AWS: use Secrets Manager / SSM Parameter Store,
+   * not hardcoded environment values.
+   */
+  denyPlaintextEnvSecrets(): this {
+    this._conditions.push({ kind: 'denyPlaintextEnvSecrets' })
     return this
   }
 

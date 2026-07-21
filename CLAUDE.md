@@ -273,17 +273,17 @@ S3 ACLs, inline or the modern `aws_s3_bucket_acl` resource), `mustEqual`
 nested-block attribute flattening to dotted keys), `mustBeAtLeast` /
 `mustBeAtMost` (numeric thresholds, e.g. RDS `backup_retention_period` >= 7,
 IAM password length >= 14, IAM `max_password_age` <= 90), and `denyIamWildcard` (flags over-permissive `Allow`
-statements in literal-JSON IAM *and* S3 bucket policies — `Action: "*"`,
+statements in literal-JSON *and* `jsonencode(...)` IAM / S3 bucket policies — `Action: "*"`,
 sharpened to "full administrative access" with `Resource: "*"`, and the
-`NotAction` over-broad-grant anti-pattern; `jsonencode(...)`/variable
-policies degrade to "could not evaluate"), `listContains` / `listMustInclude` (list
+`NotAction` over-broad-grant anti-pattern; `jsonencode(var.x)`/variable
+policies degrade to "could not evaluate"; `Condition` blocks are parsed too), `denyPublicPrincipal` (flags `Principal: "*"` in an Allow statement — public access; CIS AWS; a Deny with `Principal: "*"` is fine), `requireSslOnlyPolicy` (requires a `Deny` with `Condition Bool aws:SecureTransport=false` in the resource's policy — CIS AWS S3 SSL-only; passes when no policy exists), `listContains` / `listMustInclude` (list
 attributes — EKS `public_access_cidrs` = `0.0.0.0/0`, control-plane
 logging), `denyValue` (value-in-set — weak ALB `ssl_policy`) and its
 allowlist mirror `mustBeOneOf` (value must be in a set — e.g. Cloud SQL
 `ssl_mode`; absent counts as a violation),
 `denyPlaintextListener` (HTTP/TCP listeners that don't redirect to HTTPS),
 `denyPrivilegedContainers` (privileged ECS containers, by parsing
-literal-JSON `container_definitions`), `denyLiteral` (a hardcoded
+literal-JSON *or* `jsonencode(...)` `container_definitions`), `denyPlaintextEnvSecrets` (flags ECS environment variables with secret-like names — PASSWORD, SECRET, KEY, TOKEN, CREDENTIAL — whose value is a plaintext literal, not a reference; uses the lenient jsonencode parser so mixed literal/reference envs are partially evaluated), `denyLiteral` (a hardcoded
 literal where a reference belongs — Secrets Manager `secret_string`, DB
 `password`, cluster `master_password`, ElastiCache `auth_token`; a
 `var`/`data` reference passes, a literal is the violation), and the two
@@ -291,7 +291,10 @@ literal where a reference belongs — Secrets Manager `secret_string`, DB
 resource must *reference* this one, e.g. an S3 bucket must have a matching
 `aws_s3_bucket_server_side_encryption_configuration` / versioning resource,
 a Secrets Manager secret a matching rotation resource; association is by
-resource reference, indexed once per run), `mustHaveBlock` (same-resource:
+resource reference, indexed once per run — a `var`/`local` chain that
+bottoms out at a resource ref is followed via an explicit `resolvedRef`
+on the normalized value, and an *unresolvable* chain degrades to
+could-not-evaluate rather than a false violation), `mustHaveBlock` (same-resource:
 a nested block must be declared, e.g. EKS `encryption_config`) and its
 inverse `denyBlockPresence` (a nested block must NOT be declared, e.g. a GCP
 instance `network_interface.access_config` = a public IP — detected via
@@ -302,7 +305,8 @@ Redshift, ElastiCache, S3 (+ACL, +public-access-block, +bucket-policy,
 +SSE/versioning), EBS, EFS, KMS, EC2, DynamoDB, ECR, IAM policies, ECS
 (services + task definitions), EKS, load balancers (+ listeners), Secrets
 Manager, VPC (flow logs + subnet public-IP/IPv6 exposure), CloudTrail
-(multi-region / log-file validation / KMS), the IAM account password
+(multi-region / log-file validation / KMS), AWS Config (recording-group
+all-supported + global-resource-types), the IAM account password
 policy (CIS AWS §1.8–1.9), and API Gateway (method `authorization` != NONE,
 stage access-logging + X-Ray). **The engine is provider-neutral** and now spans
 three clouds. **Azure (azurerm)** CIS slice — NSG SSH/RDP ingress (inline
@@ -373,8 +377,6 @@ local `module {}` calls** (doc 08): each call's inputs are threaded into the
 module's `var.*`, so a module's caller-supplied cidrs/tags become concrete
 verdicts, reported as `env/prd › modules/rds/main.tf`.
 Not built yet (see `docs/ROADMAP.md`):
-`jsonencode(...)`-wrapped JSON (IAM policies + ECS `container_definitions`
-only parse *literal* JSON today; `jsonencode`/`var` → could-not-evaluate),
 `data.aws_iam_policy_document`, `Resource`-only / service-scoped IAM
 wildcards (full `Action: "*"` **and** `NotAction`-on-`Allow` are flagged;
 `Resource: "*"` alone and `s3:*`-style service wildcards are deliberately

@@ -45,8 +45,8 @@ resource "aws_iam_policy" "not_action" {
 POLICY
 }
 
-# jsonencode(...) is not statically readable -> "could not evaluate"
-# (honest: dotzen won't guess). Same wildcard, but reported differently.
+# jsonencode(...) with a literal HCL object is now parsed (v0.1.3) ->
+# same wildcard, same violation as the heredoc above.
 resource "aws_iam_policy" "encoded_admin" {
   name = "app-admin-2"
   policy = jsonencode({

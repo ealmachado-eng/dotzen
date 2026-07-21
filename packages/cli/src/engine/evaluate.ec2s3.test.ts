@@ -74,7 +74,14 @@ describe('evaluate — S3 bucket policy wildcard (reuses IAM parser)', () => {
     const r = policy({
       kind: 'parsed',
       statements: [
-        { effect: 'Allow', actions: ['*'], resources: ['*'], notActions: [] },
+        {
+          effect: 'Allow',
+          actions: ['*'],
+          resources: ['*'],
+          notActions: [],
+          principals: [],
+          conditions: {},
+        },
       ],
     })
     expect(evaluate([rule], [r]).violations).toHaveLength(1)

@@ -50,6 +50,8 @@ type MustEqual = Extract<Condition, { kind: 'mustEqual' }>
 type MustBeAtLeast = Extract<Condition, { kind: 'mustBeAtLeast' }>
 type MustBeAtMost = Extract<Condition, { kind: 'mustBeAtMost' }>
 type DenyIamWildcard = Extract<Condition, { kind: 'denyIamWildcard' }>
+type DenyPublicPrincipal = Extract<Condition, { kind: 'denyPublicPrincipal' }>
+type RequireSslOnlyPolicy = Extract<Condition, { kind: 'requireSslOnlyPolicy' }>
 type ListContains = Extract<Condition, { kind: 'listContains' }>
 type ListMustInclude = Extract<Condition, { kind: 'listMustInclude' }>
 type DenyValue = Extract<Condition, { kind: 'denyValue' }>
@@ -62,6 +64,10 @@ type DenyPrivilegedContainers = Extract<
   Condition,
   { kind: 'denyPrivilegedContainers' }
 >
+type DenyPlaintextEnvSecrets = Extract<
+  Condition,
+  { kind: 'denyPlaintextEnvSecrets' }
+>
 type DenyLiteral = Extract<Condition, { kind: 'denyLiteral' }>
 type MustHaveAssociated = Extract<Condition, { kind: 'mustHaveAssociated' }>
 type MustHaveBlock = Extract<Condition, { kind: 'mustHaveBlock' }>
@@ -71,10 +77,21 @@ const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 /**
  * A resource reference embedded in an unresolved expression, e.g.
  * `${aws_s3_bucket.data.id}` -> captures type `aws_s3_bucket`, name `data`.
- * `var.`/`local.`/`data.` prefixes match too but never collide with a real
- * resource address, so they are harmless in the index.
+ * Used only as a fallback when `resolvedRef` is not set — normalize
+ * surfaces `resolvedRef` for both direct refs and `var`/`local` chains
+ * that bottom out at a resource ref, so the engine usually does not
+ * need to inspect the expr string itself.
  */
 const RESOURCE_REF = /\$\{\s*([a-z][a-z0-9_]*)\.([A-Za-z0-9_-]+)/
+
+/**
+ * A sole `var.x` / `local.y` reference that the chain did NOT resolve to
+ * a resource ref — i.e. the var has no default and no module-caller input.
+ * Used to detect "this `via` attribute points at *some* parent, but we
+ * cannot know which one" so `mustHaveAssociated` can degrade to
+ * could-not-evaluate instead of false-violating.
+ */
+const UNRESOLVED_REF = /^\$\{(var|local)\.([A-Za-z0-9_-]+)\}$/
 
 /**
  * Cross-resource association index: parent address -> set of
@@ -83,24 +100,61 @@ const RESOURCE_REF = /\$\{\s*([a-z][a-z0-9_]*)\.([A-Za-z0-9_-]+)/
  */
 type Associations = Map<string, Set<string>>
 
+/**
+ * Child resource + via-attribute pairs whose `via` attribute is an
+ * UNRESOLVABLE var/local chain — the child points at *some* parent, but
+ * the chain never bottoms out at a concrete resource ref (e.g.
+ * `bucket = var.bucket_id` with no default and no module input). Keyed
+ * `childType|viaAttr` -> count. Used by `mustHaveAssociated` to emit
+ * could-not-evaluate (rather than a false violation) for the parent.
+ */
+type UnresolvableCandidates = Map<string, number>
+
 interface EvalContext {
   readonly associations: Associations
+  readonly unresolvableCandidates: UnresolvableCandidates
 }
 
-function buildAssociations(resources: NormalizedResource[]): Associations {
+function buildAssociations(resources: NormalizedResource[]): EvalContext {
   const idx: Associations = new Map()
+  const unresolved: UnresolvableCandidates = new Map()
   for (const res of resources) {
     for (const [attr, v] of Object.entries(res.attributes)) {
       if (v.kind !== 'unresolved') continue
+      const key = `${res.type}|${attr}`
+
+      // Prefer the structured `resolvedRef` (covers both direct refs and
+      // var/local chains that bottom out at a resource ref). Fall back to
+      // inspecting the expr for any other unresolved shape.
+      if (v.resolvedRef) {
+        const parentAddr = `${v.resolvedRef.type}.${v.resolvedRef.name}`
+        const set = idx.get(parentAddr) ?? new Set<string>()
+        set.add(key)
+        idx.set(parentAddr, set)
+        continue
+      }
+
+      // A sole `${var.x}` / `${local.y}` whose chain did NOT resolve to a
+      // resource ref — record it as an unresolvable candidate so the parent
+      // can degrade to could-not-evaluate rather than false-violating.
+      if (UNRESOLVED_REF.test(v.expr)) {
+        unresolved.set(key, (unresolved.get(key) ?? 0) + 1)
+        continue
+      }
+
+      // Any other unresolved expression — try the fallback regex for a
+      // direct (non-var/local) resource ref. Compound interpolations and
+      // function calls fall through (no match) and are simply ignored,
+      // matching prior behavior.
       const m = RESOURCE_REF.exec(v.expr)
       if (!m) continue
       const parentAddr = `${m[1]}.${m[2]}`
       const set = idx.get(parentAddr) ?? new Set<string>()
-      set.add(`${res.type}|${attr}`)
+      set.add(key)
       idx.set(parentAddr, set)
     }
   }
-  return idx
+  return { associations: idx, unresolvableCandidates: unresolved }
 }
 
 const assertNever = (x: never): never => {
@@ -400,10 +454,12 @@ function evalMustBeAtMost(
 /**
  * Flag over-permissive IAM `Allow` statements:
  *  - `Action: "*"` (full privileges) — sharpened to "full administrative
- *    access" when paired with `Resource: "*"`;
+ *    access" when paired with `Resource: "*";
  *  - `NotAction` (allow everything EXCEPT a list) — an over-broad grant AWS
  *    warns against, and a real least-privilege anti-pattern.
- * A `jsonencode(...)`/variable policy is `unresolved` => could-not-evaluate.
+ * A literal-JSON or `jsonencode(<HCL literal>)` policy is parsed; a
+ * `jsonencode(var.x)`/`local.x`/bare-variable policy is `unresolved` =>
+ * could-not-evaluate.
  */
 function evalDenyIamWildcard(
   _c: DenyIamWildcard,
@@ -414,7 +470,8 @@ function evalDenyIamWildcard(
   if (p.kind === 'unresolved')
     return {
       kind: 'cannotEvaluate',
-      reason: 'IAM policy is not a literal JSON document (jsonencode/var)',
+      reason:
+        'IAM policy is not statically resolvable (jsonencode(var/local) or non-literal expression)',
     }
   for (const s of p.statements) {
     if (s.effect.toLowerCase() !== 'allow') continue
@@ -434,10 +491,77 @@ function evalDenyIamWildcard(
   return { kind: 'pass' }
 }
 
+/**
+ * Flag an `Allow` statement with `Principal: "*"` (public access — everyone
+ * can access the resource). CIS AWS: S3 bucket policies should not grant
+ * public access. A `Deny` with `Principal: "*"` is fine (restrictive). A
+ * `jsonencode(var.x)`/unresolved policy degrades to could-not-evaluate.
+ */
+function evalDenyPublicPrincipal(
+  _c: DenyPublicPrincipal,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const p = r.policy
+  if (!p) return { kind: 'pass' }
+  if (p.kind === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'policy is not statically resolvable (jsonencode(var/local) or non-literal expression)',
+    }
+  for (const s of p.statements) {
+    if (s.effect.toLowerCase() !== 'allow') continue
+    if (s.principals.includes('*'))
+      return {
+        kind: 'violation',
+        detail: 'Allow statement grants access to Principal "*" (public)',
+      }
+  }
+  return { kind: 'pass' }
+}
+
+/**
+ * Require the resource's `policy` to deny non-SSL transport — a `Deny`
+ * statement with `Condition: { Bool: { "aws:SecureTransport": "false" } }`
+ * (CIS AWS — S3 bucket policies should reject HTTP). Passes when no policy
+ * is present (combine with `mustHaveAssociated` to require a policy exists).
+ * A `jsonencode(var.x)`/unresolved policy degrades to could-not-evaluate.
+ * The `"false"` value is compared case-insensitively; only the `Bool`
+ * operator is matched (not `BoolIfExists` — a weaker condition that does
+ * not satisfy the CIS control).
+ */
+function evalRequireSslOnlyPolicy(
+  _c: RequireSslOnlyPolicy,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const p = r.policy
+  if (!p) return { kind: 'pass' } // no policy — not this rule's concern
+  if (p.kind === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'policy is not statically resolvable (jsonencode(var/local) or non-literal expression)',
+    }
+  for (const s of p.statements) {
+    if (s.effect.toLowerCase() !== 'deny') continue
+    const bool = s.conditions.Bool
+    if (!bool) continue
+    const transport = bool['aws:SecureTransport']
+    if (transport && transport.some((v) => v.toLowerCase() === 'false'))
+      return { kind: 'pass' }
+  }
+  return {
+    kind: 'violation',
+    detail:
+      'policy does not deny non-SSL transport (no Deny with Condition Bool aws:SecureTransport=false)',
+  }
+}
+
 const literalItems = (items: NormalizedValue[]): unknown[] =>
   items
     .filter((i) => i.kind === 'literal')
     .map((i) => (i as { value: unknown }).value)
+
 const hasUnresolvedItem = (items: NormalizedValue[]): boolean =>
   items.some((i) => i.kind === 'unresolved')
 
@@ -576,9 +700,12 @@ function evalDenyPlaintextListener(
 }
 
 /**
- * Flag an ECS task definition with a privileged container. Parses the
- * literal-JSON `container_definitions`; a `jsonencode(...)`/variable value
- * degrades to could-not-evaluate.
+ * Flag an ECS task definition with a privileged container. Parses a
+ * literal-JSON `container_definitions` array or a `jsonencode(<HCL array
+ * literal>)` expression; a `jsonencode(var.x)`/bare-variable value degrades
+ * to could-not-evaluate. If `privileged` is an interpolated value (lenient
+ * parsing kept it as a string), degrades to could-not-evaluate for that
+ * container rather than treating it as false (a silent pass would be wrong).
  */
 function evalDenyPrivilegedContainers(
   _c: DenyPrivilegedContainers,
@@ -590,11 +717,55 @@ function evalDenyPrivilegedContainers(
     return {
       kind: 'cannotEvaluate',
       reason:
-        'container_definitions is not a literal JSON array (jsonencode/var)',
+        'container_definitions is not statically resolvable (jsonencode(var/local) or non-literal expression)',
     }
+  // Flag definite violations first (privileged = true), then degrade to
+  // could-not-evaluate if any container's privileged was an interpolated ref.
   const priv = c.containers.find((x) => x.privileged)
   if (priv)
     return { kind: 'violation', detail: `privileged container "${priv.name}"` }
+  const unresolved = c.containers.find((x) => x.privilegedUnresolved)
+  if (unresolved)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `container "${unresolved.name}" has an unresolved privileged reference`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Flag ECS containers with plaintext secrets in `environment` variables —
+ * an env var whose NAME matches a secret-like pattern (PASSWORD, SECRET,
+ * KEY, TOKEN, CREDENTIAL) AND whose VALUE is a literal string (not a
+ * `${var.x}` reference). References are the correct pattern (Secrets Manager
+ * / SSM Parameter Store); hardcoded literals are the violation. CIS AWS:
+ * secrets should not be in plaintext environment variables.
+ */
+const SECRET_NAME_PATTERN =
+  /(password|passwd|secret|api[_-]?key|access[_-]?key|secret[_-]?key|private[_-]?key|token|credential)/i
+
+function evalDenyPlaintextEnvSecrets(
+  _c: DenyPlaintextEnvSecrets,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const c = r.containers
+  if (!c) return { kind: 'pass' }
+  if (c.kind === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'container_definitions is not statically resolvable (jsonencode(var/local) or non-literal expression)',
+    }
+  for (const container of c.containers) {
+    for (const env of container.environment) {
+      if (env.isLiteral && SECRET_NAME_PATTERN.test(env.name)) {
+        return {
+          kind: 'violation',
+          detail: `plaintext secret in environment variable "${env.name}" of container "${container.name}" — use a reference (Secrets Manager / SSM Parameter Store)`,
+        }
+      }
+    }
+  }
   return { kind: 'pass' }
 }
 
@@ -621,7 +792,13 @@ function evalDenyLiteral(
  * Cross-resource: pass iff some resource of `childType` references this one
  * through its `via` attribute. Association is by resource reference
  * (`bucket = aws_s3_bucket.x.id`), the idiomatic Terraform wiring; a child
- * that points at its parent by a literal name would not be linked.
+ * that points at its parent by a literal name would not be linked. A
+ * `var`/`local` chain that bottoms out at a resource ref is followed
+ * (normalize surfaces it as `resolvedRef`); a chain that cannot be
+ * resolved (a var with no default and no module-caller input) degrades to
+ * could-not-evaluate rather than a false violation — real modules route
+ * refs through locals, so this is the difference between a usable rule
+ * and one that must be omitted.
  */
 function evalMustHaveAssociated(
   c: MustHaveAssociated,
@@ -630,6 +807,12 @@ function evalMustHaveAssociated(
 ): ConditionOutcome {
   const key = `${c.childType}|${c.via}`
   if (ctx.associations.get(address(r))?.has(key)) return { kind: 'pass' }
+  if (ctx.unresolvableCandidates.get(key)) {
+    return {
+      kind: 'cannotEvaluate',
+      reason: `association via ${c.via} is an unresolvable var/local reference — cannot determine the parent`,
+    }
+  }
   return {
     kind: 'violation',
     detail: `no associated ${c.childType} (referencing this via ${c.via})`,
@@ -701,6 +884,10 @@ function evalCondition(
       return evalMustBeAtMost(c, r)
     case 'denyIamWildcard':
       return evalDenyIamWildcard(c, r)
+    case 'denyPublicPrincipal':
+      return evalDenyPublicPrincipal(c, r)
+    case 'requireSslOnlyPolicy':
+      return evalRequireSslOnlyPolicy(c, r)
     case 'listContains':
       return evalListContains(c, r)
     case 'listMustInclude':
@@ -713,6 +900,8 @@ function evalCondition(
       return evalDenyPlaintextListener(c, r)
     case 'denyPrivilegedContainers':
       return evalDenyPrivilegedContainers(c, r)
+    case 'denyPlaintextEnvSecrets':
+      return evalDenyPlaintextEnvSecrets(c, r)
     case 'denyLiteral':
       return evalDenyLiteral(c, r)
     case 'mustHaveAssociated':
@@ -737,7 +926,7 @@ export function evaluate(
   const violations: Violation[] = []
   const couldNotEvaluate: Unevaluable[] = []
   let passed = 0
-  const ctx: EvalContext = { associations: buildAssociations(resources) }
+  const ctx: EvalContext = buildAssociations(resources)
 
   for (const rule of rules) {
     for (const resource of resources) {

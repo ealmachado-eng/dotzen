@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { rule } from './rule'
 import { AwsResource, AwsAttribute, HttpTokens } from '../vocabulary'
 
-describe('RuleBuilder — mustEqual / mustBeAtLeast', () => {
+describe('RuleBuilder — mustEqual / mustBeAtLeast / mustBeAtMost', () => {
   it('mustEqual produces a mustEqual condition', () => {
     const r = rule()
       .resource(AwsResource.Instance)
@@ -26,6 +26,19 @@ describe('RuleBuilder — mustEqual / mustBeAtLeast', () => {
       kind: 'mustBeAtLeast',
       attr: 'backup_retention_period',
       min: 7,
+    })
+  })
+
+  it('mustBeAtMost produces a mustBeAtMost condition', () => {
+    const r = rule()
+      .resource(AwsResource.IamAccountPasswordPolicy)
+      .mustBeAtMost(AwsAttribute.MaxPasswordAge, 90)
+      .message('password expiry')
+      .validate(0)
+    expect(r.ok && r.value.conditions[0]).toEqual({
+      kind: 'mustBeAtMost',
+      attr: 'max_password_age',
+      max: 90,
     })
   })
 })

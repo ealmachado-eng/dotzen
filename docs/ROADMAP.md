@@ -38,23 +38,42 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   var.list` (whole-list ref) now resolves (and honestly degrades instead of
   a silent pass). **Remaining tranches:** remote (registry/git) sources,
   nested modules, module `count`/`for_each`, per-instantiation trace labels.
-- **[Med] Cross-resource association through `local` indirection** — the
-  `mustHaveAssociated` index links a child to its parent by matching a direct
-  ref (`bucket = aws_s3_bucket.x.id`), but real modules often route through a
-  local (`bucket = local.bucket_name`, where `local.bucket_name =
-  aws_s3_bucket.main.id`). Today the index captures `local.bucket_name` and
-  fails to link → a false violation on well-built modules, so those checks
-  must be omitted. Fix: resolve the association ref through `local`/`var`
-  before indexing (reuse the existing scope resolver). Surfaced dogfooding a
-  real s3 module whose SSE/versioning resources use the `local` indirection.
-- **[Med] Open tag taxonomy** — the `Tag` enum is closed
-  (team/cost_center/environment/data_classification), but real orgs use
-  their own keys (apm_id, cmdb_app_id, …). `mustHaveTags` needs a way to
-  express org-specific tag keys (relax to strings for tag KEYS, or an
-  extensible/`Tag.custom(...)` escape hatch) — tag keys are inherently
-  org-defined, unlike cloud-fixed resource types/ports.
-- **[Med] `jsonencode(...)` policy parsing** — still the top IAM
-  could-not-evaluate; most real IAM uses `jsonencode`, not literal JSON.
+- ✅ **DONE (v0.1.3)** `mustHaveAssociated` through `local`/`var` indirection.
+  Real modules route the parent ref through a local
+  (`bucket = local.bucket_id`, where `local.bucket_id = aws_s3_bucket.main.id`).
+  `resolveValue` already follows the chain — the bottom expr IS the resource
+  ref — so the resolvable case already linked correctly. The actual gap was
+  the **unresolvable** chain (`bucket = var.bucket_id` with no default and no
+  module-caller input): the index keyed on `var.bucket_id` and never matched,
+  producing a false violation on well-built modules. Fix: normalize now
+  surfaces an explicit `resolvedRef` on the `unresolved` NormalizedValue
+  (structured data, so the engine does not inspect var/local prefix
+  conventions), and `buildAssociations` records unresolvable sole
+  `${var.x}`/`${local.y}` exprs in a second index so
+  `evalMustHaveAssociated` degrades to **couldNotEvaluate** instead of a
+  false violation — the formal "omitted" outcome, matching `evalMustHaveTags`
+  / `evalMustEqual`. Direct refs and resolvable chains still link via the
+  same `resolvedRef` signal. The "companion resource that points at its
+  parent by a literal name" gap remains (rare, documented).
+- ✅ **DONE** Open tag taxonomy — `mustHaveTags` accepts `(Tag | (string &
+  {}))[]`, so org-specific tag keys work via a consumer's own enum (e.g.
+  `enum OrgTag { ApmId = 'apm_id', CmdbAppId = 'cmdb_app_id' }`), keeping
+  typo-safety without forcing a closed taxonomy. The `env-layer` integration
+  fixture exercises a custom `OrgTag` enum with a missing-tag violation.
+- ✅ **DONE (v0.1.3)** `jsonencode(...)` policy parsing — the top remaining IAM
+  could-not-evaluate. Most real Terraform uses `jsonencode`, not literal JSON,
+  for IAM policies and ECS `container_definitions`. The parser now extracts
+  the HCL object/array literal inside `jsonencode(...)`: a recursive-descent
+  parser (`parseHclValue`) handles nested objects, arrays, quoted strings
+  (with escapes), booleans, numbers, and `null`; any interpolated value
+  (`${var.x}` inside a string) or non-literal inner (`jsonencode(var.policy)`)
+  degrades to `unresolved` → could-not-evaluate (consistent with the
+  literal-JSON path). `Condition` blocks are now parsed too (keyed by
+  operator then key, with string-list values), unblocking the [Low] S3
+  SSL-only `aws:SecureTransport` check as a future condition. ECS
+  `container_definitions = jsonencode([...])` is also parsed. Reuses
+  `kind: 'parsed'` — zero engine changes except updated couldNotEvaluate
+  reason strings.
 
 ---
 
@@ -131,18 +150,27 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   `enable_log_file_validation` (`mustBeTrue`) and KMS encryption
   (`kms_key_id` present, via the new `mustBeSet`). CIS §3.1/3.2/3.7.
 - ✅ **DONE** `aws_iam_account_password_policy` → length >= 14 +
-  reuse-prevention >= 24 (`mustBeAtLeast`), full complexity (`mustBeTrue`).
-  CIS §1.8/1.9. (`max_password_age <= 90` deferred — wants a `mustBeAtMost`.)
+  reuse-prevention >= 24 (`mustBeAtLeast`), full complexity (`mustBeTrue`),
+  and `max_password_age <= 90` (`mustBeAtMost`).
+  CIS §1.8/1.9/1.11.
 - ✅ **DONE** IAM over-permission depth: `denyIamWildcard` now also flags
   `NotAction` on `Allow` (over-broad grant) and sharpens the message for
   `Action:"*"` + `Resource:"*"`. Flagging `Resource:"*"` *alone* was
   deliberately NOT added — it is legitimate in most Allow statements, so it
   would be false-positive-prone.
-- **[Med]** AWS Config recorder / IAM Access Analyzer enabled — presence
-  checks (`mustHaveAssociated`-style or `mustBeSet`).
-- **[Low][needs Condition parsing]** S3 SSL-only bucket policy
-  (`aws:SecureTransport`) — the policy parser reads effect/action/resource
-  but not `Condition`. Defer.
+- ✅ **DONE (v0.1.3)** AWS Config recorder settings — `aws_config_configuration_recorder`
+  with `mustBeTrue` on `recording_group.all_supported` (CIS §3.1) and
+  `recording_group.include_global_resource_types` (CIS §3.2). Reuses existing
+  conditions with new vocabulary; no engine changes. IAM Access Analyzer
+  vocabulary (`aws_accessanalyzer_analyzer`) added but the useful check is
+  "does an analyzer exist?" — a project-level presence check the engine
+  doesn't yet support (future `requireResource` condition).
+- ✅ **DONE (v0.1.3)** S3 SSL-only bucket policy (`aws:SecureTransport`) —
+  the new `requireSslOnlyPolicy` condition inspects the now-parsed
+  `Condition` blocks for a `Deny` with `Bool["aws:SecureTransport"]`
+  including `"false"` (case-insensitive). Passes when no policy exists
+  (combine with `mustHaveAssociated` to require a policy); unresolved
+  policies degrade to could-not-evaluate. CIS AWS.
 
 ### VPC / networking
 - ✅ **DONE** `aws_vpc` → flow logging enabled (a separate `aws_flow_log`
@@ -280,11 +308,13 @@ is the natural next move** — both are Terraform/HCL, so the whole pipeline
 (hcl2json → normalize → conditions → report) carries over and expansion is
 almost pure vocabulary + rules.
 
-Still open (secondary): AWS Config / Access Analyzer presence; ECS plaintext
-env secrets; S3 bucket-policy public **Principal** `"*"`; S3 SSL-only policy
-(needs `Condition` parsing); `mustBeAtMost`; `jsonencode(...)` object parsing
-(IAM + ECS); `mustBeOneOf` allowlist variant of `denyValue`; ACM / Route 53
-(deprioritized). Note on C6: association is by *resource reference*
-(`bucket = aws_s3_bucket.x.id`), the idiomatic wiring — a companion
-resource that points at its parent by a literal name is not linked (rare;
-documented in the evaluator).
+Still open (secondary): IAM Access Analyzer presence (needs a project-level
+`requireResource` condition);
+`data.aws_iam_policy_document`;
+ACM / Route 53 (deprioritized). Note on C6: association is by *resource reference*
+(`bucket = aws_s3_bucket.x.id`), the idiomatic wiring — and a `var`/`local`
+chain that bottoms out at a resource ref is followed (via `resolvedRef`).
+A companion resource that points at its parent by a literal name is not
+linked (rare; documented in the evaluator). An *unresolvable* chain
+(`var.x` with no default and no module input) degrades to
+could-not-evaluate rather than a false violation.

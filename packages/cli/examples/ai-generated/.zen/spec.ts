@@ -158,6 +158,27 @@ export const spec = [
     .message('Policies must not grant full Action "*" privileges')
     .rationale('Least privilege; CIS AWS Foundations, IAM'),
 
+  // S3 bucket policies must not grant public access (Principal "*" in Allow).
+  rule()
+    .resource(
+      AwsResource.IamPolicy,
+      AwsResource.IamRolePolicy,
+      AwsResource.S3BucketPolicy,
+    )
+    .denyPublicPrincipal()
+    .message('Policies must not grant public access (Principal "*")')
+    .rationale('CIS AWS — no public Principal in Allow statements'),
+
+  // S3 bucket policies must deny non-SSL transport (CIS AWS — reject HTTP).
+  // Uses the Condition-block parsing from the jsonencode work.
+  rule()
+    .resource(AwsResource.S3BucketPolicy)
+    .requireSslOnlyPolicy()
+    .message('S3 bucket policies must deny non-SSL transport')
+    .rationale(
+      'CIS AWS — bucket policies should reject HTTP (aws:SecureTransport=false)',
+    ),
+
   // ── ECS / EKS / ALB service posture ──────────────────────────────────
   rule()
     .resource(AwsResource.EcsService)
@@ -225,6 +246,14 @@ export const spec = [
     .resource(AwsResource.EcsTaskDefinition)
     .denyPrivilegedContainers()
     .message('ECS task definitions must not run privileged containers'),
+
+  rule()
+    .resource(AwsResource.EcsTaskDefinition)
+    .denyPlaintextEnvSecrets()
+    .message('ECS environment variables must not contain plaintext secrets')
+    .rationale(
+      'Use Secrets Manager / SSM Parameter Store references, not hardcoded values',
+    ),
 
   // ── Hardcoded secrets (literal-vs-reference) ─────────────────────────
   rule()
@@ -311,6 +340,19 @@ export const spec = [
     .mustBeSet(AwsAttribute.KmsKeyId)
     .message('CloudTrail logs must be encrypted with a KMS key')
     .rationale('CIS AWS §3.7 — SSE-KMS on the trail'),
+
+  // ── AWS Config (CIS AWS §3.1-3.2) ────────────────────────────────────
+  rule()
+    .resource(AwsResource.ConfigConfigurationRecorder)
+    .mustBeTrue(AwsAttribute.RecordingGroupAllSupported)
+    .message('AWS Config must record all supported resource types')
+    .rationale('CIS AWS §3.1 — Config should cover all resource types'),
+
+  rule()
+    .resource(AwsResource.ConfigConfigurationRecorder)
+    .mustBeTrue(AwsAttribute.RecordingGroupIncludeGlobalResourceTypes)
+    .message('AWS Config must include global resource types (IAM)')
+    .rationale('CIS AWS §3.2 — Config should record global resources'),
 
   // ── IAM account password policy (CIS AWS §1.8–1.9) ───────────────────
   rule()

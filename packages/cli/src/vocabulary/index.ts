@@ -52,6 +52,12 @@ export enum AwsResource {
   ApiGatewayMethod = 'aws_api_gateway_method',
   ApiGatewayStage = 'aws_api_gateway_stage',
   Apigatewayv2Stage = 'aws_apigatewayv2_stage',
+  // AWS Config (CIS §3.1-3.6) — recorder settings.
+  ConfigConfigurationRecorder = 'aws_config_configuration_recorder',
+  // IAM Access Analyzer (CIS §4.15) — vocabulary entry; the useful check
+  // is "does an analyzer exist?" (a project-level presence check the engine
+  // doesn't yet support). Added so the resource is at least recognized.
+  AccessAnalyzer = 'aws_accessanalyzer_analyzer',
 }
 
 // Nested block names/paths, for `mustHaveBlock` / `denyBlockPresence`.
@@ -187,6 +193,10 @@ export enum AwsAttribute {
   // API Gateway
   Authorization = 'authorization',
   XrayTracingEnabled = 'xray_tracing_enabled',
+  // AWS Config (CIS §3.1-3.2) — recording group settings (flattened from
+  // the `recording_group {}` nested block).
+  RecordingGroupAllSupported = 'recording_group.all_supported',
+  RecordingGroupIncludeGlobalResourceTypes = 'recording_group.include_global_resource_types',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

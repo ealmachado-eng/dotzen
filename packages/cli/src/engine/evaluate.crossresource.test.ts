@@ -4,7 +4,13 @@ import { Rule } from '../spec/rule'
 import { NormalizedResource, NormalizedValue } from '../hcl/model'
 import { AwsResource, AwsAttribute, Effect, Block } from '../vocabulary'
 
-const ref = (expr: string): NormalizedValue => ({ kind: 'unresolved', expr })
+const ref = (
+  expr: string,
+  resolvedRef?: { type: string; name: string },
+): NormalizedValue =>
+  resolvedRef
+    ? { kind: 'unresolved', expr, resolvedRef }
+    : { kind: 'unresolved', expr }
 
 const base = (
   type: AwsResource,
@@ -60,6 +66,64 @@ describe('evaluate — mustHaveAssociated (cross-resource presence)', () => {
       { bucket: ref('${aws_s3_bucket.somewhere_else.id}') },
     )
     expect(evaluate([rule], [bucket, sse]).violations).toHaveLength(1)
+  })
+
+  it('links a SSE-config that references the bucket through a local chain (resolvedRef)', () => {
+    // Real modules route the parent ref through a local, e.g.
+    //   local.bucket_id = aws_s3_bucket.main.id
+    //   bucket          = local.bucket_id
+    // normalize surfaces resolvedRef so the engine can link them.
+    const bucket = base(AwsResource.S3Bucket, 'main')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'main',
+      {
+        bucket: ref('${local.bucket_id}', {
+          type: 'aws_s3_bucket',
+          name: 'main',
+        }),
+      },
+    )
+    const report = evaluate([rule], [bucket, sse])
+    expect(report.violations).toHaveLength(0)
+    expect(report.passed).toBe(1)
+    expect(report.couldNotEvaluate).toHaveLength(0)
+  })
+
+  it('does not link a SSE-config whose resolvedRef points at a different bucket', () => {
+    // A resolvedRef that names a different bucket is a DEFINITIVE
+    // not-this-bucket: the local chain is resolved, so we know the child
+    // points elsewhere. This is a violation for `bucket`, not a
+    // could-not-evaluate.
+    const bucket = base(AwsResource.S3Bucket, 'main')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'other',
+      {
+        bucket: ref('${local.bucket_id}', {
+          type: 'aws_s3_bucket',
+          name: 'other_bucket',
+        }),
+      },
+    )
+    expect(evaluate([rule], [bucket, sse]).violations).toHaveLength(1)
+  })
+
+  it('emits couldNotEvaluate when the via-attr is an unresolvable var/local chain', () => {
+    // `bucket = var.bucket_id` with no default and no module input — we
+    // cannot know which bucket (if any) this points at, so the parent's
+    // mustHaveAssociated degrades to could-not-evaluate instead of a
+    // false violation.
+    const bucket = base(AwsResource.S3Bucket, 'main')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'main',
+      { bucket: ref('${var.bucket_id}') }, // no resolvedRef
+    )
+    const report = evaluate([rule], [bucket, sse])
+    expect(report.violations).toHaveLength(0)
+    expect(report.couldNotEvaluate).toHaveLength(1)
+    expect(report.couldNotEvaluate[0]?.resource).toBe('aws_s3_bucket.main')
   })
 })
 

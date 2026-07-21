@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { evaluate } from './evaluate'
 import { rule, Rule } from '../spec/rule'
 import { NormalizedResource, PolicyInfo } from '../hcl/model'
+import { normalize } from '../hcl/normalize'
 import { AwsResource } from '../vocabulary'
 
 const policyRule = (
@@ -37,6 +38,8 @@ const parsed = (
     actions: s.actions ?? [],
     resources: s.resources ?? [],
     notActions: s.notActions ?? [],
+    principals: [],
+    conditions: {},
   })),
 })
 
@@ -94,5 +97,43 @@ describe('evaluate (denyIamWildcard)', () => {
 
   it('passes a resource with no policy document', () => {
     expect(evaluate([policyRule], [res(undefined)]).violations).toHaveLength(0)
+  })
+})
+
+describe('evaluate (denyIamWildcard) — jsonencode end-to-end', () => {
+  it('flags a wildcard in a jsonencode(...) policy (was could-not-evaluate before v0.1.3)', () => {
+    // The exact hcl2json output shape for
+    //   policy = jsonencode({ Statement = [{ Effect = "Allow", Action = "*", Resource = "*" }] })
+    // Normalize extracts the wildcard statement; the engine flags it.
+    const parsed = {
+      resource: {
+        aws_iam_policy: {
+          admin: [
+            {
+              policy:
+                '${jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Action = "*", Resource = "*" }] })}',
+            },
+          ],
+        },
+      },
+    }
+    const resources = normalize(parsed, 'main.tf', '', undefined as never)
+    const report = evaluate([policyRule], resources)
+    expect(report.violations).toHaveLength(1)
+    expect(report.couldNotEvaluate).toHaveLength(0)
+  })
+
+  it('could-not-evaluate for jsonencode(var.policy) end-to-end', () => {
+    const parsed = {
+      resource: {
+        aws_iam_policy: {
+          x: [{ policy: '${jsonencode(var.policy)}' }],
+        },
+      },
+    }
+    const resources = normalize(parsed, 'main.tf', '', undefined as never)
+    const report = evaluate([policyRule], resources)
+    expect(report.violations).toHaveLength(0)
+    expect(report.couldNotEvaluate).toHaveLength(1)
   })
 })
