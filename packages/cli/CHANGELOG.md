@@ -6,6 +6,172 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.0.0
+
+The first stable release. The engine is feature-complete for static Terraform
+governance across AWS, Azure, and GCP, with 489 unit + 34 integration tests.
+The JSON output schema is frozen (`schemaVersion: 1`); inline ignore
+directives suppress known-acceptable findings; curated CIS preset packs drop
+into any spec; and CI integration templates ship for GitHub Actions + GitLab CI.
+
+### Added — new rule conditions (20+)
+
+**Resource-surface conditions:**
+
+- `denyProvisioner(...names)` — flags `provisioner "local-exec"` /
+  `"remote-exec"` / `"file"` (arbitrary command execution on apply/destroy).
+  `Provisioner` enum added (`LocalExec`, `RemoteExec`, `File`).
+- `denyIgnoreChanges(...attrs)` — flags `lifecycle { ignore_changes = [...] }`
+  hiding drift on security-critical attributes. `LifecycleAttribute` enum
+  added (`PreventDestroy`, `CreateBeforeDestroy`, `IgnoreChanges`).
+- `denyPlaintextConnectionSecret()` — flags a `connection {}` block with a
+  plaintext secret (`private_key` / `password` / `token`). Reuses the
+  engine's secret-name pattern.
+- `providerAlias(X)` scoping — a rule can target resources pinned to a
+  provider alias (`provider = aws.dr` → `.providerAlias('dr')`). Extracted
+  on the resource AND threaded through module `providers = { aws = aws.dr }`
+  maps (#13, closes #9 across module boundaries).
+
+**Output-surface conditions:**
+
+- `denyInsensitiveSecretOutput(...secretAttrs)` — flags an `output` whose
+  `value` references a secret-bearing attribute (e.g.
+  `aws_db_instance.master_password`) without `sensitive = true`. Supports
+  multi-segment data-source attrs (`data.aws_ssm_parameter.value`).
+
+**Binding-surface conditions (variables + locals):**
+
+- `denyInsensitiveVariable()` — flags a secret-looking `variable` (name
+  matches PASSWORD/SECRET/KEY/TOKEN/CREDENTIAL) without `sensitive = true`.
+- `denyPlaintextLocalSecret()` — flags a `locals` entry with a secret-shaped
+  name and a plaintext literal value.
+
+**Settings-surface conditions (terraform block):**
+
+- `requireExactTerraformVersion()` — `required_version` must be an exact pin
+  (`= X.Y.Z`), not floating.
+- `denyFloatingProviderVersion(...names)` — each named provider's
+  `required_providers` version constraint must be pinned (`=` or `~>`).
+- `requireEncryptedBackend()` — the state backend must be declared and
+  encrypted (`encrypt = true`).
+- `denyLocalBackend()` — forbids `backend "local"` (or absent = local
+  default).
+
+**Module-call-surface conditions:**
+
+- `denyFloatingModuleVersion()` — a registry module's `version` must be
+  pinned (`=` or `~>`); local modules (`./`/`../`) are never flagged.
+
+### Added — parser & normalization
+
+- **Provider `default_tags` / `default_labels` inheritance.** A provider's
+  `default_tags { tags = { … } }` (AWS/Azure) or `default_labels { labels }`
+  (GCP) merges into every resource's tag set. Threaded through
+  `followModules` so child modules inherit the root's defaults (Terraform
+  provider inheritance). Fixes a false-violation on tagless resources whose
+  tags come from the provider.
+- **Resource `count = 0` / `for_each`-empty skip.** A resource with
+  `count = 0` or a `for_each` resolving to an empty collection is skipped
+  silently (no false violation on a disabled resource). Unresolvable
+  `count`/`for_each` followed once (honest).
+- **Resource `for_each` per-element expansion.** A resource with a resolvable
+  `for_each` is expanded into one `NormalizedResource` per element, with
+  `each.key`/`each.value` threaded into a per-instance scope. Violations
+  show `type.name[key]` to distinguish instances. Association logic uses
+  the base address (honest — can't statically name an instance).
+- **`dynamic` blocks beyond ingress/egress.** A `dynamic "settings" { … }`
+  on an App Service / GCP resource is expanded into `settings.*` attributes
+  (for any block name except ingress/egress/tags, which have dedicated
+  extractors). `mustHaveBlock`/`denyBlockPresence` see the block.
+- **Data sources as governed resources.** `data "aws_ami" "x" {}` is
+  normalized as a `NormalizedResource` with type `data.aws_ami`. The full
+  condition set applies (e.g. `listMustInclude` on `owners`). `DataResource`
+  - `DataAttribute` enums added. A `data` block is a READ query — governance
+    is over the query (filters/args), not the fetched object.
+- **Conservative ternary evaluation.** `resolveValue` now evaluates the safe
+  form `${<ref> (==|!=) <scalar> ? <scalar> : <scalar>}` — a strict-equality
+  ternary whose ref resolves to a literal and whose branches are both scalar
+  literals. Anything compound stays unresolved (could-not-evaluate, never a
+  guess). Unblocks definite verdicts on `var.env == "prod" ? true : false`.
+- **Meta-arg filtering.** `count`/`for_each`/`depends_on`/`provider` are
+  excluded from attribute harvesting (no longer leak as pseudo-attributes).
+  `lifecycle` is kept (a nested block → `lifecycle.*` attributes for rules).
+
+### Added — product surface (1.0 blockers)
+
+- **Inline ignore directives (`# dotzen:ignore`).** A `# dotzen:ignore` or
+  `// dotzen:ignore` (optionally `: <reason>`) comment suppresses ALL findings
+  on the block it precedes (or trails on the same line). Matched by
+  `(physicalFile, blockLine)`. Threaded through module files (an ignore in
+  a module file suppresses findings from every instantiation).
+- **Frozen JSON output schema.** `renderJson` emits `schemaVersion: 1` at the
+  top. The top-level fields (`schemaVersion`, `violations`, `passed`,
+  `couldNotEvaluate`, `requiresApproval`) and per-entry fields are pinned by a
+  schema-stability test. Additive fields are OK; a removal/rename is a bump.
+- **Performance verified.** A synthetic benchmark (100 root files, 1000
+  direct resources + 100 module calls = 1202 resources) completes in ~195ms.
+  No parse cache needed.
+
+### Added — curated CIS preset packs
+
+Three `Rule[]` exports covering CIS Foundations starters for each cloud:
+
+- `cisAws` (23 rules) — network exposure, encryption at rest (RDS/EBS/EC2/
+  Redshift/ElastiCache), KMS rotation, S3 public access, IAM least privilege,
+  CloudTrail audit logging, RDS backup retention + not-public, ECR scan,
+  tags, secrets hygiene, provisioners.
+- `cisAzure` (17 rules) — storage TLS/public-access/network-default-deny,
+  SQL TLS/SSL, Key Vault purge protection, AKS private cluster + local
+  accounts, App Service HTTPS, ACR admin, RBAC Owner/Contributor, secrets
+  hygiene, provisioners.
+- `cisGcp` (21 rules) — storage public-access-prevention/UBLA/versioning,
+  Cloud SQL SSL/IPv4/root-password, GKE private nodes + legacy ABAC, KMS
+  rotation, compute secure boot + IP forwarding, IAM allUsers/primitive
+  roles, Cloud Run Functions ingress + service account, firewall SSH, secrets
+  hygiene, provisioners.
+
+Each rule has `.message()` + `.rationale()` citing the CIS control. Usage:
+
+```ts
+import { cisAws } from '@dotzen/dotzen'
+export const spec = [...cisAws /* your custom rules */]
+```
+
+All three presets are proven end-to-end against real Terraform fixtures
+(violations flagged, compliant resources pass).
+
+### Added — CI integration templates
+
+- **GitHub Actions** — `.github/workflows/dotzen.yml` template: checkout +
+  setup-node + `npx @dotzen/dotzen@1 check` + approval-signal export.
+- **GitLab CI** — a `dotzen:check` job with `artifacts:reports:dotenv` +
+  an optional manual-approval gate on `DOTZEN_REQUIRES_APPROVAL`.
+- `dotzen init` prints a pointer to both templates.
+
+### Added — vocabulary
+
+- `Provisioner { LocalExec, RemoteExec, File }`
+- `LifecycleAttribute { PreventDestroy, CreateBeforeDestroy, IgnoreChanges }`
+- `DataResource { AwsAmi }`, `DataAttribute { AmiOwners }`
+- `AwsAttribute.AtRestEncryptionEnabled`, `TransitEncryptionEnabled`
+
+### Migration notes
+
+This release is **backward-compatible** — no existing `.zen/spec.ts` needs
+changes. All new conditions are additive (the `evaluate` signature gains
+optional params that default to empty). The new parser features (provider
+default_tags, resource count=0/for_each, dynamic blocks, ternary eval) may
+cause **previously-could-not-evaluate findings to become definite verdicts**
+(intended — they were false negatives before). Review newly-surfaced
+violations.
+
+To adopt the new surface:
+
+- Upgrade `version` in `dotzen.json` to `"1.0.0"`.
+- Optionally import a CIS preset (`import { cisAws } from '@dotzen/dotzen'`).
+- Optionally add `# dotzen:ignore: <reason>` to suppress known-acceptable findings.
+- Pin CI to `npx @dotzen/dotzen@1 check`.
+
 ## 0.3.0
 
 ### Added — module-following: nested modules, `for_each`, trace labels, `count`, and DoD surfacing (doc 08)

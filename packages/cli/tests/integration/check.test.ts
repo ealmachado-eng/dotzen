@@ -316,4 +316,319 @@ describe('check (end-to-end)', () => {
       )
     }
   })
+
+  it('skips a resource with count = 0 (no false violation on a disabled resource)', async () => {
+    // The "disabled" SG has count = 0 and an open-SSH ingress that WOULD
+    // violate — but it must be skipped (no instances). The "active" SG has
+    // the same ingress and must be flagged. So: exactly one violation on
+    // aws_security_group.active, and the disabled one never appears.
+    const r = await check(fixture('count-zero'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_security_group.active')
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      expect(
+        r.value.violations.every((v) => !/\.disabled$/.test(v.resource)),
+      ).toBe(true)
+    }
+  })
+
+  it('honors provider default_tags: tagless resources pass mustHaveTags (direct + nested module)', async () => {
+    // The root provider's default_tags supply apm_id + cmdb_app_id, so two
+    // tagless DB instances (one direct, one in a followed module with no
+    // provider block of its own — inheriting the root defaults) must PASS
+    // the mustHaveTags rule. Before the fix, a tagless resource resolved to
+    // an empty tag set and this fired two false violations. The control SG
+    // with SSH open must still be flagged (the fix is not blanket suppression).
+    const r = await check(fixture('provider-default-tags'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // Only the control SG violates (SSH open). Neither DB instance does.
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe(
+        'aws_security_group.violator',
+      )
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      // Both DB instances passed the mustHaveTags rule (direct + inherited).
+      expect(r.value.passed).toBeGreaterThanOrEqual(2)
+      expect(
+        r.value.violations.every((v) => !/aws_db_instance/.test(v.resource)),
+      ).toBe(true)
+    }
+  })
+
+  it('flags a resource declaring a forbidden provisioner (local-exec/remote-exec)', async () => {
+    // The "with_provisioner" instance runs an arbitrary local-exec command
+    // (a supply-chain / exfil surface) — denyProvisioner must flag it. The
+    // "clean" instance uses user_data and must pass.
+    const r = await check(fixture('provisioners'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe(
+        'aws_instance.with_provisioner',
+      )
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      expect(r.value.passed).toBe(1) // the clean instance
+    }
+  })
+
+  it('flags an insensitive output referencing a secret attribute', async () => {
+    // output "db_password" exposes aws_db_instance.master_password without
+    // sensitive = true → leak. The safe twin (sensitive = true) and a non-
+    // secret endpoint output must pass.
+    const r = await check(fixture('insensitive-outputs'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('output.db_password')
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      // Two outputs pass (the sensitive twin + the non-secret endpoint).
+      expect(r.value.passed).toBe(2)
+    }
+  })
+
+  it('governs data sources: AMI data source must pin owners incl. "self"', async () => {
+    // The "wildcard" AMI (no owners) and "third_party" (owners omit self) are
+    // supply-chain risks → flagged. The "pinned" one (self + amazon) passes.
+    const r = await check(fixture('ami-owners'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      expect(
+        r.value.violations.every((v) => /^data\.aws_ami\./.test(v.resource)),
+      ).toBe(true)
+      const names = r.value.violations.map((v) => v.resource).sort()
+      expect(names).toEqual([
+        'data.aws_ami.third_party',
+        'data.aws_ami.wildcard',
+      ])
+      expect(r.value.passed).toBe(1) // the pinned source
+    }
+  })
+
+  it('scopes a rule by provider alias (.providerAlias)', async () => {
+    // The dr-scoped encryption rule fires on the dr unencrypted instance only.
+    // The dr-encrypted instance passes; the default-provider unencrypted
+    // instance is skipped by the alias-scoped rule.
+    const r = await check(fixture('provider-alias'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe(
+        'aws_instance.dr_unencrypted',
+      )
+      expect(r.value.passed).toBe(1) // the dr-encrypted instance
+      // The default-provider instance never appears (skipped, not violated).
+      expect(
+        r.value.violations.every(
+          (v) => v.resource !== 'aws_instance.default_unencrypted',
+        ),
+      ).toBe(true)
+    }
+  })
+
+  it('flags insensitive secret-looking variables and hardcoded local secrets', async () => {
+    // #10: db_password (no sensitive) flagged; api_key (sensitive) +
+    // instance_count (non-secret) pass. #12: admin_password (plaintext local)
+    // flagged; auth_token (reference) + common_tags (non-secret) pass.
+    const r = await check(fixture('sensitive-bindings'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      const resources = r.value.violations.map((v) => v.resource).sort()
+      expect(resources).toEqual([
+        'local.admin_password',
+        'variable.db_password',
+      ])
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      // 4 bindings pass (api_key, instance_count, auth_token, common_tags).
+      expect(r.value.passed).toBe(4)
+    }
+  })
+
+  it('flags a resource that hides drift via lifecycle.ignore_changes (#14)', async () => {
+    const r = await check(fixture('ignore-changes'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_s3_bucket.drifting')
+      expect(r.value.passed).toBe(1) // the clean bucket
+    }
+  })
+
+  it('flags floating terraform required_version + provider version constraints (#11)', async () => {
+    // required_version="1.7.5" (bare = floating) → violation. aws is exact-
+    // pinned (pass for that provider), google is `>=` (floating) → violation.
+    const r = await check(fixture('version-pinning'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      expect(r.value.violations.every((v) => v.resource === 'terraform')).toBe(
+        true,
+      )
+      const msgs = r.value.violations.map((v) => v.message).sort()
+      expect(msgs).toEqual([
+        'providers must be version-pinned (= or ~>)',
+        'terraform required_version must be an exact pin (= X.Y.Z)',
+      ])
+    }
+  })
+
+  it("a module providers map remaps a child's default provider alias (#13)", async () => {
+    // The child instance has NO explicit `provider` arg, but the module call
+    // passes `providers = { aws = aws.dr }` → the child inherits alias "dr".
+    // The dr-scoped encryption rule fires on its unencrypted root volume.
+    const r = await check(fixture('module-providers-map'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_instance.child')
+      // Traced through the module call.
+      expect(r.value.violations[0]?.file).toMatch(/modules[/\\]mod/)
+    }
+  })
+
+  it('flags a local/unencrypted state backend (#17)', async () => {
+    // An explicit `backend "local"` fires both requireEncryptedBackend (no
+    // encrypt) and denyLocalBackend (local is forbidden).
+    const r = await check(fixture('backend'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      expect(r.value.violations.every((v) => v.resource === 'terraform')).toBe(
+        true,
+      )
+      const msgs = r.value.violations.map((v) => v.message).sort()
+      expect(msgs).toEqual([
+        'local state is forbidden — use a remote backend',
+        'state backend must be declared and encrypted',
+      ])
+    }
+  })
+
+  it('flags a connection block that hardcodes a secret (#18)', async () => {
+    // The "bad" instance has a plaintext private_key + password in its
+    // connection block; the "good" one references var.ssh_key.
+    const r = await check(fixture('connection-secrets'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_instance.bad')
+    }
+  })
+
+  it('flags floating/absent registry module versions (#19)', async () => {
+    // vpc (~> 5.0) + local_db (./, no version) pass. eks (bare 5.0) + acm
+    // (no version) are flagged.
+    const r = await check(fixture('module-version-pinning'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(2)
+      const labels = r.value.violations.map((v) => v.resource).sort()
+      expect(labels).toEqual(['module.acm', 'module.eks'])
+    }
+  })
+
+  it('suppresses findings on blocks with a dotzen:ignore directive (#20)', async () => {
+    // "flagged" (no ignore) → violation. "ignored" (preceding-line ignore with
+    // a reason) + "trailing" (same-line trailing ignore) → suppressed.
+    const r = await check(fixture('ignore-directive'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.violations[0]?.resource).toBe('aws_security_group.flagged')
+      expect(
+        r.value.violations.every(
+          (v) =>
+            v.resource !== 'aws_security_group.ignored' &&
+            v.resource !== 'aws_security_group.trailing',
+        ),
+      ).toBe(true)
+    }
+  })
+
+  it('CIS AWS preset fires on real violations and passes compliant resources (#24 e2e)', async () => {
+    // A SMOKE test: run the real cisAws preset against a fixture with known
+    // violations + known compliant resources. Proves the preset produces
+    // correct verdicts end-to-end (not just that its rules validate).
+    const r = await check(fixture('cis-aws-smoke'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // Known violations: bad_ssh (SSH open), bad_rds (unencrypted + public +
+      // low retention, possibly more from the preset's rules), bad_vol
+      // (unencrypted EBS), bad_bucket (public ACL), bad_key (no rotation),
+      // bad_policy (Action:*). The compliant resources must NOT appear.
+      const flagged = new Set(r.value.violations.map((v) => v.resource))
+      // The violating resources must be flagged.
+      expect(flagged.has('aws_security_group.bad_ssh')).toBe(true)
+      expect(flagged.has('aws_db_instance.bad_rds')).toBe(true)
+      expect(flagged.has('aws_ebs_volume.bad_vol')).toBe(true)
+      expect(flagged.has('aws_s3_bucket.bad_bucket')).toBe(true)
+      expect(flagged.has('aws_kms_key.bad_key')).toBe(true)
+      expect(flagged.has('aws_iam_policy.bad_policy')).toBe(true)
+      // Binding-surface rules: insensitive variable + plaintext local secret.
+      expect(flagged.has('variable.api_key')).toBe(true)
+      expect(flagged.has('local.auth_token')).toBe(true)
+      // The compliant resources must NOT be flagged.
+      expect(flagged.has('aws_security_group.good_ssh')).toBe(false)
+      expect(flagged.has('aws_db_instance.good_rds')).toBe(false)
+      expect(flagged.has('variable.safe_secret')).toBe(false)
+      expect(flagged.has('local.instance_count')).toBe(false)
+    }
+  })
+
+  it('CIS Azure preset fires on real violations and passes compliant resources (#24 e2e)', async () => {
+    const r = await check(fixture('cis-azure-smoke'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const flagged = new Set(r.value.violations.map((v) => v.resource))
+      // The violating resources must be flagged.
+      expect(flagged.has('azurerm_storage_account.bad_storage')).toBe(true)
+      expect(flagged.has('azurerm_mssql_server.bad_sql')).toBe(true)
+      expect(flagged.has('azurerm_postgresql_server.bad_pg')).toBe(true)
+      expect(flagged.has('azurerm_key_vault.bad_kv')).toBe(true)
+      expect(flagged.has('azurerm_kubernetes_cluster.bad_aks')).toBe(true)
+      expect(flagged.has('azurerm_linux_web_app.bad_web')).toBe(true)
+      expect(flagged.has('azurerm_container_registry.bad_acr')).toBe(true)
+      // RBAC + binding-surface rules.
+      expect(flagged.has('azurerm_role_assignment.bad_owner')).toBe(true)
+      expect(flagged.has('variable.sql_password')).toBe(true)
+      expect(flagged.has('local.admin_token')).toBe(true)
+      // The compliant resources must NOT be flagged.
+      expect(flagged.has('azurerm_storage_account.good_storage')).toBe(false)
+      expect(flagged.has('azurerm_mssql_server.good_sql')).toBe(false)
+      expect(flagged.has('azurerm_key_vault.good_kv')).toBe(false)
+      expect(flagged.has('azurerm_role_assignment.good_reader')).toBe(false)
+      expect(flagged.has('variable.safe_secret')).toBe(false)
+    }
+  })
+
+  it('CIS GCP preset fires on real violations and passes compliant resources (#24 e2e)', async () => {
+    const r = await check(fixture('cis-gcp-smoke'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const flagged = new Set(r.value.violations.map((v) => v.resource))
+      // The violating resources must be flagged.
+      expect(flagged.has('google_storage_bucket.bad_bucket')).toBe(true)
+      expect(flagged.has('google_sql_database_instance.bad_sql')).toBe(true)
+      expect(flagged.has('google_container_cluster.bad_gke')).toBe(true)
+      expect(flagged.has('google_kms_crypto_key.bad_key')).toBe(true)
+      expect(flagged.has('google_compute_instance.bad_vm')).toBe(true)
+      expect(flagged.has('google_storage_bucket_iam_member.bad_iam')).toBe(true)
+      expect(flagged.has('google_cloudfunctions2_function.bad_fn')).toBe(true)
+      // Firewall + binding-surface rules.
+      expect(flagged.has('google_compute_firewall.bad_fw')).toBe(true)
+      expect(flagged.has('variable.db_password')).toBe(true)
+      expect(flagged.has('local.api_token')).toBe(true)
+      // The compliant resources must NOT be flagged.
+      expect(flagged.has('google_storage_bucket.good_bucket')).toBe(false)
+      expect(flagged.has('google_sql_database_instance.good_sql')).toBe(false)
+      expect(flagged.has('google_container_cluster.good_gke')).toBe(false)
+      expect(flagged.has('google_kms_crypto_key.good_key')).toBe(false)
+      expect(flagged.has('google_compute_firewall.good_fw')).toBe(false)
+      expect(flagged.has('variable.safe_secret')).toBe(false)
+    }
+  })
 })

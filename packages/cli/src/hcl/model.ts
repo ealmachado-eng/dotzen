@@ -133,6 +133,25 @@ export interface NormalizedResource {
   readonly name: string
   readonly file: string
   readonly line: number
+  /**
+   * The provider alias the resource is pinned to (`provider = aws.dr` → "dr"),
+   * or undefined for the default provider. A rule can scope by alias with
+   * `.providerAlias(X)` (e.g. govern only resources in the dr account/region).
+   * The alias is the discriminator — dotzen does not map alias→region (the
+   * alias itself is the org's handle for "which account/region provider").
+   */
+  readonly providerAlias?: string
+  /**
+   * The `for_each` element key when this resource is one of several expanded
+   * instances (e.g. `for_each = toset(["dev","prd"])` → two instances with
+   * instanceKey "dev" / "prd"). Absent for a plain single-instance resource
+   * and for an UNRESOLVABLE for_each (followed once, no key). Used only for
+   * DISPLAY (the violation `resource` field shows `type.name[key]`); the
+   * association index and `address()` use the BASE `type.name` so a child
+   * referencing `aws_s3_bucket.x.id` matches regardless of which instance
+   * (the static tool cannot disambiguate instances — that is honest).
+   */
+  readonly instanceKey?: string
   readonly ingress: IngressRule[]
   /** Egress rules (security groups). Optional — absent means none. */
   readonly egress?: IngressRule[]
@@ -153,6 +172,116 @@ export interface NormalizedResource {
   /** Parsed serverless env-var map (Lambda/Azure Functions/Cloud Run Functions),
    *  for `denyPlaintextEnvSecrets`. */
   readonly envVars?: EnvVarsInfo
+  /**
+   * Provisioner types declared on the resource (the `"x"` in
+   * `provisioner "x" {}`), e.g. `['local-exec', 'remote-exec']`. Empty/absent
+   * when the resource declares no provisioners. Used by `denyProvisioner` to
+   * flag arbitrary-command execution (a supply-chain / exfiltration surface).
+   */
+  readonly provisioners?: string[]
+}
+
+/**
+ * A normalized Terraform `output` block. Outputs are a separate surface from
+ * resources — a `denyInsensitiveSecretOutput` rule governs them (an output
+ * referencing a secret-bearing attribute without `sensitive = true` leaks it
+ * in state / CI logs). `sensitive` is a literal `true`/`false` (or absent →
+ * false), or `'unresolved'` when the flag is a var/local the tool can't
+ * statically resolve (degrades to could-not-evaluate, not a guess).
+ */
+export interface NormalizedOutput {
+  readonly name: string
+  readonly file: string
+  readonly line: number
+  /** The output's `value` expression (a literal or an unresolved ref). */
+  readonly value: NormalizedValue
+  /** `sensitive = true|false` (false when absent), or 'unresolved' for a var. */
+  readonly sensitive: boolean | 'unresolved'
+}
+
+/**
+ * A normalized named-value binding: either a `variable` block (has a
+ * `sensitive` flag) or a `locals` entry. A separate surface from resources
+ * (like outputs) — `denyInsensitiveVariable` governs variables whose name
+ * looks like a secret but lack `sensitive = true`, and
+ * `denyPlaintextLocalSecret` flags a `local` whose secret-shaped name holds a
+ * plaintext literal (not a reference). Both reuse the engine's shared
+ * secret-name detector.
+ */
+export interface NormalizedBinding {
+  readonly kind: 'variable' | 'local'
+  readonly name: string
+  readonly file: string
+  readonly line: number
+  /** variable: `sensitive = true|false` (absent → false), or `'unresolved'`
+   *  when the flag is a var ref. local: always false (no sensitive flag). */
+  readonly sensitive: boolean | 'unresolved'
+  /** true when the value is a plaintext literal (a scalar, not a `${ref}`).
+   *  For `denyPlaintextLocalSecret` — a referenced secret is the safe pattern. */
+  readonly isLiteral: boolean
+}
+
+/**
+ * Normalized `terraform {}` settings block — `required_version` (the TF engine
+ * constraint), `required_providers` (per-provider version constraints), and the
+ * `backend` (state storage). A separate surface from resources;
+ * `requireExactTerraformVersion` and `denyFloatingProviderVersion` govern
+ * version pinning, and `requireEncryptedBackend` / `denyLocalBackend` govern
+ * state storage (an unencrypted / local backend leaks state — catastrophic).
+ */
+export interface NormalizedBackend {
+  /** Backend type (`s3`, `gcs`, `azurerm`, `local`, `remote`, …). */
+  readonly type: string
+  /** `encrypt = true` (S3/GCS) → true; absent → false; a var ref → 'unresolved'.
+   *  undefined when the backend type has no `encrypt` concept (e.g. `local`). */
+  readonly encrypted?: boolean | 'unresolved'
+  /** A dynamodb_table (state locking) declared? Absent → false. */
+  readonly locked: boolean
+}
+
+export interface NormalizedTerraformSettings {
+  readonly requiredVersion?: string
+  readonly requiredProviders: {
+    readonly name: string
+    readonly version: string
+  }[]
+  /** The `backend "<type>" {}` block, or undefined when no backend is declared
+   *  (Terraform then uses the local `terraform.tfstate` default — unencrypted,
+   *  unlocked, not shared → the `denyLocalBackend` / `requireEncryptedBackend`
+   *  rules flag it). */
+  readonly backend?: NormalizedBackend
+  readonly file: string
+  readonly line: number
+}
+
+/**
+ * A normalized `module {}` CALL (not the followed module's resources) — the
+ * call-site metadata: label, source, version constraint, and whether the
+ * source is a registry module (non-local). A separate surface;
+ * `denyFloatingModuleVersion` governs registry modules' version constraints
+ * (a floating/absent `version` lets `terraform init` pull a different module
+ * revision → supply-chain drift). Local modules (`./`/`../`) carry no version
+ * and are never flagged.
+ */
+export interface NormalizedModuleCall {
+  readonly label: string
+  readonly source: string
+  /** `version = "~> 5.0"` constraint, or undefined when not declared. */
+  readonly version?: string
+  /** true when the source is a registry module (not a local `./`/`../` path). */
+  readonly registry: boolean
+  readonly file: string
+  readonly line: number
 }
 
 export const address = (r: NormalizedResource): string => `${r.type}.${r.name}`
+
+/**
+ * Display address — the base `type.name` plus the `for_each` instance key in
+ * brackets when present (`aws_s3_bucket.x[prd]`). Used in violation /
+ * could-not-evaluate output so a user can tell instances apart. Association
+ * logic uses `address()` (base only) since a child ref cannot name a specific
+ * instance statically.
+ */
+export const displayAddress = (r: NormalizedResource): string =>
+  r.instanceKey ? `${address(r)}[${r.instanceKey}]` : address(r)

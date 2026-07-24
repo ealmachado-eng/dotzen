@@ -2,6 +2,7 @@ import {
   AwsResource,
   AzureResource,
   GcpResource,
+  DataResource,
   AnyResource,
 } from '../vocabulary'
 import {
@@ -16,6 +17,10 @@ import {
   ContainerDef,
   EnvVar,
   EnvVarsInfo,
+  NormalizedOutput,
+  NormalizedBinding,
+  NormalizedTerraformSettings,
+  NormalizedBackend,
 } from './model'
 
 /** hcl2json emits `{ resource: { type: { name: [block, ...] } } }`. */
@@ -25,15 +30,48 @@ export interface Hcl2JsonRoot {
   locals?: unknown[]
   /** `module "x" { source = …, <inputs> }` → `{ x: [{ source, … }] }`. */
   module?: Record<string, unknown[]>
+  /** `provider "aws" { default_tags { tags = … } }` → `{ aws: [{ … }] }`. */
+  provider?: Record<string, unknown[]>
+  /** `output "x" { value = …, sensitive = … }` → `{ x: [{ value, sensitive }] }`. */
+  output?: Record<string, unknown[]>
+  /** `data "aws_ami" "x" {}` → `{ aws_ami: { x: [{ … }] } }` (same shape as
+   *  `resource`, under the `data` key). Normalized with type `data.<t>`. */
+  data?: Record<string, Record<string, unknown[]>>
+  /** `terraform { required_version = …; required_providers { … } }` →
+   *  `[{ required_version, required_providers: [{ <name>: { source, version } }] }]`. */
+  terraform?: unknown[]
 }
 
 /** Resolved `var.*` / `local.*` values, keyed by reference, raw form. */
 export type Scope = Map<string, unknown>
 
+/**
+ * Provider-level tag defaults (AWS `default_tags` / GCP `default_labels` /
+ * Azure `default_tags`) that every resource inherits at apply time. dotzen
+ * threads these so a `mustHaveTags` rule does not flag a resource whose
+ * required tag is supplied by the provider rather than the resource block.
+ *  - `tagKeys`: keys guaranteed present on every resource under the provider
+ *    (used by `tagsOf` to upgrade an `unresolved` resource-tag map to
+ *    `partial`, and to add proven-present keys to a `resolved`/`partial` set).
+ *  - `tagValues`: the literal value for each such key (used by
+ *    `environmentOf` so `.environment(X)` scoping works when the
+ *    `environment` tag lives on the provider, not the resource).
+ * Keys whose value is an unresolvable reference are OMITTED (not statically
+ * proven present). Threaded through `followModules` so a child module with no
+ * provider block of its own inherits the root's defaults (matches Terraform
+ * provider inheritance); a child's own provider defaults merge in, with the
+ * child's value winning on key conflicts.
+ */
+export interface ProviderDefaults {
+  readonly tagKeys: string[]
+  readonly tagValues: Record<string, unknown>
+}
+
 const KNOWN_TYPES = new Set<string>([
   ...Object.values(AwsResource),
   ...Object.values(AzureResource),
   ...Object.values(GcpResource),
+  ...Object.values(DataResource),
 ])
 
 const isInterpolated = (s: string): boolean => s.includes('${')
@@ -91,6 +129,90 @@ const soleRefKey = (m: RegExpMatchArray): string =>
  * reference with no known value, or any non-sole-reference expression,
  * stays unresolved — which correctly yields "could not evaluate".
  */
+/**
+ * Parse a scalar HCL literal (quoted string / boolean / number) from a bare
+ * expression string. Returns the JS value, or undefined for anything else
+ * (refs, compound exprs, null, objects, arrays). Used by the conservative
+ * ternary evaluator — only literal operands are ever evaluated (never guessed).
+ */
+function parseHclScalar(s: string): string | number | boolean | undefined {
+  const t = s.trim()
+  if (t === 'true') return true
+  if (t === 'false') return false
+  if (t === 'null') return undefined
+  const q = t[0]
+  if (q === '"' || q === "'") {
+    // Minimal: accept a simple quoted string (no embedded quotes for safety).
+    if (t.length >= 2 && t[t.length - 1] === q) return t.slice(1, -1)
+    return undefined
+  }
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t)
+  return undefined
+}
+
+/** Index of `ch` in `s` at brace/paren/bracket/quote depth 0, or -1. */
+function topLevelIndex(s: string, ch: string): number {
+  let depth = 0
+  let quote: string | null = null
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (quote) {
+      if (c === quote && s[i - 1] !== '\\') quote = null
+    } else if (c === '"' || c === "'") {
+      quote = c
+    } else if (c === '(' || c === '{' || c === '[') {
+      depth++
+    } else if (c === ')' || c === '}' || c === ']') {
+      depth--
+    } else if (c === ch && depth === 0) {
+      return i
+    }
+  }
+  return -1
+}
+
+/**
+ * CONSERVATIVE ternary evaluator (#16). Evaluates ONLY the safe form
+ * `${<var|local>.x (==|!=) <scalar> ? <scalar> : <scalar>}` — a strict-equality
+ * ternary whose ref resolves (via scope) to a literal and whose branches are
+ * both scalar literals. Returns the chosen literal NormalizedValue, or
+ * undefined for ANYTHING else (compound conditions, nested ternaries, non-
+ * scalar branches, unresolvable refs, non-ternary exprs) so the caller falls
+ * through to the honest unresolved path — never a guess, never a false verdict.
+ */
+function tryEvalTernary(
+  raw: string,
+  scope: Scope,
+  depth: number,
+): NormalizedValue | undefined {
+  if (!isInterpolated(raw) || depth <= 0) return undefined
+  let s = raw.trim()
+  if (s.startsWith('${') && s.endsWith('}')) s = s.slice(2, -1).trim()
+  const qIdx = topLevelIndex(s, '?')
+  if (qIdx === -1) return undefined
+  const cond = s.slice(0, qIdx).trim()
+  const rest = s.slice(qIdx + 1)
+  const cIdx = topLevelIndex(rest, ':')
+  if (cIdx === -1) return undefined
+  const trueB = rest.slice(0, cIdx).trim()
+  const falseB = rest.slice(cIdx + 1).trim()
+  // Condition: <ref> (==|!=) <scalar>  (ref-first only — the common form).
+  const cm = /^(var|local)\.([A-Za-z0-9_-]+)\s*(==|!=)\s*(.+)$/.exec(cond)
+  if (!cm) return undefined
+  const refKey = `${cm[1]}.${cm[2]}`
+  const condScalar = parseHclScalar(cm[4]!)
+  if (condScalar === undefined) return undefined
+  const refRaw = resolveRaw(`\${${refKey}}`, scope, depth - 1)
+  if (refRaw === undefined) return undefined
+  const refLit = toValue(refRaw)
+  if (refLit.kind !== 'literal') return undefined
+  const eq = refLit.value === condScalar
+  const chosen = (cm[3] === '==' ? eq : !eq) ? trueB : falseB
+  const chosenScalar = parseHclScalar(chosen)
+  if (chosenScalar === undefined) return undefined
+  return { kind: 'literal', value: chosenScalar }
+}
+
 function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
   if (typeof raw === 'string') {
     const m = SOLE_REF.exec(raw)
@@ -100,6 +222,10 @@ function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
         return resolveValue(scope.get(key), scope, depth - 1)
       return { kind: 'unresolved', expr: raw }
     }
+    // Conservative ternary eval (#16) — only the safe strict-equality form;
+    // anything else returns undefined and falls through to unresolved.
+    const ternary = tryEvalTernary(raw, scope, depth)
+    if (ternary !== undefined) return ternary
   }
   return toValue(raw)
 }
@@ -120,6 +246,83 @@ export function buildScope(roots: Hcl2JsonRoot[]): Scope {
     }
   }
   return scope
+}
+
+/**
+ * The tag/label map a provider block carries, accounting for provider naming:
+ * AWS and Azure nest it under `default_tags { tags = … }`; GCP (google) uses
+ * `default_labels { labels = … }`. hcl2json emits the nested block as an
+ * array of one object. Returns the raw map (object | undefined).
+ */
+function providerTagMap(
+  provName: string,
+  block: Record<string, unknown>,
+): unknown {
+  const nested = provName === 'google' ? 'default_labels' : 'default_tags'
+  const inner = provName === 'google' ? 'labels' : 'tags'
+  const dt = block[nested]
+  // hcl2json wraps a nested block as `[ { … } ]`.
+  const dtObj = Array.isArray(dt) ? asObject(dt[0]) : asObject(dt)
+  return dtObj[inner]
+}
+
+/**
+ * Collect provider default_tags/default_labels across all parsed files in a
+ * directory. Each provider's tag map is resolved through `scope`: a literal
+ * map yields its keys; a sole `var.x`/`local.y` reference is followed to its
+ * literal. Keys whose value is UNRESOLVABLE (no default, a function call, a
+ * compound expression) are OMITTED — they are not statically proven present,
+ * so claiming them could hide a real violation. Multiple provider blocks
+ * contribute additively (presence is union). Returns undefined when no
+ * provider declares any resolvable default tags.
+ */
+export function providerDefaults(
+  roots: Hcl2JsonRoot[],
+  scope: Scope,
+): ProviderDefaults | undefined {
+  const keys = new Set<string>()
+  const values: Record<string, unknown> = {}
+  for (const root of roots) {
+    for (const [provName, blocks] of Object.entries(root.provider ?? {})) {
+      for (const b of Array.isArray(blocks) ? blocks : []) {
+        const map = providerTagMap(provName, asObject(b))
+        const resolved = typeof map === 'string' ? resolveRaw(map, scope) : map
+        if (
+          !resolved ||
+          typeof resolved !== 'object' ||
+          Array.isArray(resolved)
+        )
+          continue
+        for (const [k, v] of Object.entries(
+          resolved as Record<string, unknown>,
+        )) {
+          keys.add(k)
+          values[k] = v
+        }
+      }
+    }
+  }
+  if (keys.size === 0) return undefined
+  return { tagKeys: [...keys], tagValues: values }
+}
+
+/**
+ * Merge an inherited ProviderDefaults chain (from enclosing module calls)
+ * with a child dir's own provider defaults. Keys UNION (both levels guarantee
+ * presence); on a key conflict the CHILD's value wins (a child provider
+ * config overrides the inherited one). Returns the child if no parent, the
+ * parent if no child, or undefined if neither declares defaults.
+ */
+export function mergeProviderDefaults(
+  parent: ProviderDefaults | undefined,
+  child: ProviderDefaults | undefined,
+): ProviderDefaults | undefined {
+  if (!parent) return child
+  if (!child) return parent
+  const keys = new Set([...parent.tagKeys, ...child.tagKeys])
+  const values: Record<string, unknown> = { ...parent.tagValues }
+  for (const k of child.tagKeys) values[k] = child.tagValues[k]
+  return { tagKeys: [...keys], tagValues: values }
 }
 
 function mapIngressObj(o: unknown, scope: Scope): IngressRule {
@@ -174,6 +377,102 @@ export function resolveRaw(
     if (isInterpolated(raw)) return undefined // compound expr / function call
   }
   return raw
+}
+
+/**
+ * Resolve a `count` against scope to decide if a resource/module is disabled.
+ * A literal 0 (or a var/local that resolves to it) → disabled, no instances;
+ * dotzen skips it silently (no skip note — it is correct, not a gap). Any
+ * compound expression (`var.x ? 0 : 1`) does not resolve → false → follow once
+ * honestly. Shared by resource-level (`normalize`) and module-level
+ * (`followModules`) count handling.
+ */
+export const countIsZero = (count: unknown, scope: Scope): boolean => {
+  const resolved = typeof count === 'string' ? resolveRaw(count, scope) : count
+  return resolved === 0
+}
+
+/**
+ * Whether a `for_each` collection resolves to EMPTY → zero instances → skip
+ * silently (same intent-not-gap rationale as `count = 0`). Returns false for:
+ *  - no `for_each` (undefined) — a normal single-instance resource.
+ *  - an UNRESOLVABLE for_each (`toset([...])` / a var with no default / a
+ *    function call) — follow once honestly, matching module-level behavior;
+ *    the engine degrades dependent checks to could-not-evaluate. (Note: a
+ *    literal `toset([])` is a function call dotzen cannot see inside, so it
+ *    is treated as unresolvable and followed once — a known limitation,
+ *    identical to module `for_each` handling.)
+ */
+export function forEachIsEmpty(forEach: unknown, scope: Scope): boolean {
+  if (forEach === undefined) return false
+  // Literal object map → empty when it has no keys.
+  if (forEach && typeof forEach === 'object' && !Array.isArray(forEach))
+    return Object.keys(forEach as Record<string, unknown>).length === 0
+  // Literal array → empty when length 0.
+  if (Array.isArray(forEach)) return forEach.length === 0
+  // Reference: `${var.x}` / `${local.x}` → resolveRaw to a literal collection.
+  if (typeof forEach === 'string') {
+    const resolved = resolveRaw(forEach, scope)
+    if (Array.isArray(resolved)) return resolved.length === 0
+    if (resolved && typeof resolved === 'object')
+      return Object.keys(resolved as Record<string, unknown>).length === 0
+    return false // unresolvable → follow once
+  }
+  return false
+}
+
+/** A single `for_each` element to expand a module/resource block over. */
+export interface ForEachElement {
+  /** Stringified element key — list index, set element, or map key. */
+  readonly key: string
+  /** Raw element value (threaded into the scope as `each.value`). */
+  readonly value: unknown
+}
+
+/**
+ * Resolve a `for_each` to the per-element expansion. Shared by module-level
+ * (`followModules`) and resource-level (`normalize`) for_each handling.
+ * Returns:
+ *  - `null`  → no `for_each`: one iteration, no `each.*` bindings.
+ *  - `[]`    → `for_each = toset([])` / empty literal — no instances (silent).
+ *  - `[{…}]` → one entry per element; `each.value` / `each.key` get threaded.
+ *  - `[{key: '?'}]` (single, key '?') → unresolvable; follow once honestly
+ *    without `each.*` (the engine degrades dependent checks to
+ *    could-not-evaluate). Distinguishable from a real one-element set by the
+ *    synthetic key '?' used only on the unresolvable path.
+ */
+export function expandForEach(
+  forEach: unknown,
+  scope: Scope,
+): ForEachElement[] | null {
+  if (forEach === undefined) return null
+  // Literal object map — hcl2json yields a plain object.
+  if (forEach && typeof forEach === 'object' && !Array.isArray(forEach)) {
+    return Object.entries(forEach as Record<string, unknown>).map(
+      ([key, value]) => ({ key, value }),
+    )
+  }
+  // Literal array / a var-resolved list — treated like `toset(...)`:
+  // each.key = each.value = the element (Terraform's for_each-over-set rule).
+  if (Array.isArray(forEach)) {
+    return forEach.map((value) => ({ key: String(value), value }))
+  }
+  // Reference: `${var.x}` / `${local.x}` → resolveRaw to a literal collection.
+  if (typeof forEach === 'string') {
+    const resolved = resolveRaw(forEach, scope)
+    if (Array.isArray(resolved)) {
+      return resolved.map((value) => ({ key: String(value), value }))
+    }
+    if (resolved && typeof resolved === 'object') {
+      return Object.entries(resolved as Record<string, unknown>).map(
+        ([key, value]) => ({ key, value }),
+      )
+    }
+    // Unresolvable (no default, or a `toset(...)`/function-call compound) →
+    // follow once honestly, no `each.*` bindings.
+    return [{ key: '?', value: undefined }]
+  }
+  return [{ key: '?', value: undefined }]
 }
 
 /** Substitute `<iterator>.value[.field]` references with the element value. */
@@ -535,34 +834,76 @@ const tagField = (type: string): string =>
 /**
  * Tags: a literal map (or a `var`/`local` reference resolved to one) gives
  * a complete key set; `merge(<literal>, var.tags)` gives a PARTIAL set
- * (known-present keys, may be more); anything else is unresolved.
+ * (known-present keys, may be more); anything else is unresolved. Provider
+ * `default_tags`/`default_labels` (`pd`) merge in: their keys are guaranteed
+ * present on the resource, so an otherwise-`unresolved` resource-tag map
+ * upgrades to `partial` (a required tag supplied by the provider now PASSES
+ * instead of degrading to could-not-evaluate), and `resolved`/`partial` sets
+ * gain the provider keys. Resource-level tags win on conflicts (Terraform
+ * semantics) — but since `tagsOf` only tracks KEY PRESENCE, conflict resolution
+ * is irrelevant here; the union of keys is correct.
  */
 function tagsOf(
   type: string,
   block: Record<string, unknown> | undefined,
   scope: Scope,
+  pd?: ProviderDefaults,
 ): TagsInfo {
   const r = tagKeys(block?.[tagField(type)], scope)
-  if (r === null) return { kind: 'unresolved' }
-  return r.complete
-    ? { kind: 'resolved', keys: r.keys }
-    : { kind: 'partial', keys: r.keys }
+  const pdKeys = pd?.tagKeys ?? []
+  if (r === null) {
+    // Resource tags unresolvable — but provider defaults may still supply
+    // the required key(s). Upgrade to `partial` with the proven-present
+    // provider keys (absence is NOT provable → honest degradation preserved).
+    return pdKeys.length > 0
+      ? { kind: 'partial', keys: pdKeys }
+      : { kind: 'unresolved' }
+  }
+  const keys = pdKeys.length > 0 ? [...new Set([...r.keys, ...pdKeys])] : r.keys
+  return r.complete ? { kind: 'resolved', keys } : { kind: 'partial', keys }
 }
 
-/** Resolved value of the `environment` tag (for rule scoping), if present. */
+/**
+ * Resolved value of the `environment` tag (for rule scoping), if present.
+ * Precedence: the resource's own `environment` tag wins; otherwise fall back
+ * to the provider `default_tags`/`default_labels` value for `environment`
+ * (a resource with no tags but a provider-level `environment = "prod"` is
+ * still scoping-correct). `environmentOverride` (a root's declared
+ * environment) is applied by the caller and wins over both.
+ */
 function environmentOf(
   type: string,
   block: Record<string, unknown> | undefined,
   scope: Scope,
+  pd?: ProviderDefaults,
 ): NormalizedValue | undefined {
   const t = block?.[tagField(type)]
-  if (!t || typeof t !== 'object' || Array.isArray(t)) return undefined
-  const env = (t as Record<string, unknown>).environment
-  return env === undefined ? undefined : resolveValue(env, scope)
+  if (t && typeof t === 'object' && !Array.isArray(t)) {
+    const env = (t as Record<string, unknown>).environment
+    if (env !== undefined) return resolveValue(env, scope)
+  }
+  // Fall back to the provider default for `environment`, if any.
+  const pdEnv = pd?.tagValues.environment
+  return pdEnv === undefined ? undefined : resolveValue(pdEnv, scope)
 }
 
 // Blocks handled elsewhere (ingress/egress) or as tags — not attributes.
-const NON_ATTR_BLOCKS = new Set(['ingress', 'egress', 'dynamic', 'tags'])
+// Blocks handled elsewhere (ingress/egress) or as tags — not attributes.
+// NOTE: `dynamic` is NOT here — it is expanded by `expandDynamicInto` inside
+// `collect` (for any named block EXCEPT the ones in this set, which have
+// dedicated extractors: ingress/egress → `dynamicBlocks`/`inlineBlocks`,
+// tags → `tagsOf`). A `dynamic "settings" { for_each = … content { … } }`
+// on an App Service / GCP resource is expanded into `settings.*` attributes
+// so `mustHaveBlock`/`denyBlockPresence` and attribute rules see its content.
+const NON_ATTR_BLOCKS = new Set(['ingress', 'egress', 'tags'])
+
+// Top-level resource meta-arguments (not real attributes): `count`/`for_each`
+// control instantiation, `depends_on` is a graph hint, `provider` picks a
+// provider config. Excluded from attribute harvesting so they don't leak as
+// pseudo-attributes on active resources. `lifecycle` is NOT here — it's a
+// nested block (`lifecycle { prevent_destroy = true }`) and IS harvested as
+// `lifecycle.*` so rules can target it.
+const RESOURCE_META = new Set(['count', 'for_each', 'depends_on', 'provider'])
 
 // hcl2json represents a nested block as an array of one object.
 const isNestedBlock = (v: unknown): v is [Record<string, unknown>] =>
@@ -579,12 +920,72 @@ interface Extracted {
 }
 
 /**
+ * Expand `dynamic "<name>" { for_each = … content { … } }` blocks into
+ * attributes, for any named block EXCEPT ingress/egress/tags (those have
+ * dedicated extractors — `dynamicBlocks` produces IngressRules, `tagsOf`
+ * reads the tags map; expanding them here would duplicate). When the
+ * `for_each` collection resolves (via scope) to a concrete list/map of
+ * literals, the content is EXPANDED — one copy per element, with
+ * `<iterator>.value` references substituted — so it yields definite attribute
+ * values. When the collection is UNRESOLVABLE (a var without default, a
+ * `toset(...)`/function call), the content is kept once as-is with its values
+ * unresolved, correctly yielding "could not evaluate" (matching the
+ * ingress/egress dynamic-block behavior). The block path is recorded so
+ * `mustHaveBlock`/`denyBlockPresence` see the (dynamically-generated) block.
+ */
+function expandDynamicInto(
+  prefix: string,
+  dyn: unknown,
+  scope: Scope,
+  out: Extracted,
+): void {
+  if (!dyn || typeof dyn !== 'object' || Array.isArray(dyn)) return
+  // hcl2json: `dynamic: { <name>: [ { for_each, content, iterator }, ... ] }`.
+  for (const [name, entries] of Object.entries(
+    dyn as Record<string, unknown>,
+  )) {
+    // ingress/egress/tags have dedicated extractors — skip to avoid dupes.
+    if (NON_ATTR_BLOCKS.has(name)) continue
+    const blockPrefix = prefix ? `${prefix}.${name}` : name
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const dobj = asObject(entry)
+      const contents = Array.isArray(dobj.content) ? dobj.content : []
+      if (contents.length === 0) continue
+      const iterator = typeof dobj.iterator === 'string' ? dobj.iterator : name
+      const collection = resolveRaw(dobj.for_each, scope)
+      const elements = Array.isArray(collection)
+        ? collection
+        : collection && typeof collection === 'object'
+          ? Object.values(collection)
+          : undefined
+      // Record the block path — the dynamic block generates `<name>` (per
+      // element), so it IS present for mustHaveBlock/denyBlockPresence.
+      out.blocks.push(blockPrefix)
+      if (elements) {
+        for (const el of elements)
+          for (const c of contents)
+            collect(
+              blockPrefix,
+              substituteIterator(asObject(c), iterator, el),
+              scope,
+              out,
+            )
+      } else {
+        // Unresolvable for_each → keep content once, values unresolved (honest).
+        for (const c of contents) collect(blockPrefix, asObject(c), scope, out)
+      }
+    }
+  }
+}
+
+/**
  * Extract scalar attributes and list-valued attributes from a block,
  * recursing through nested blocks and flattening to dotted keys
  * (`vpc_config { public_access_cidrs = [...] }` -> list
  * `vpc_config.public_access_cidrs`; `metadata_options { http_tokens = x }`
  * -> attribute `metadata_options.http_tokens`). Maps (tags) are skipped;
- * ingress/egress/dynamic are handled elsewhere.
+ * ingress/egress are handled elsewhere; `dynamic "<name>"` blocks are
+ * expanded by `expandDynamicInto` (for any name except ingress/egress/tags).
  */
 function collect(
   prefix: string,
@@ -594,7 +995,14 @@ function collect(
 ): void {
   for (const [k, v] of Object.entries(obj)) {
     if (v === null) continue
-    if (prefix === '' && NON_ATTR_BLOCKS.has(k)) continue
+    // `dynamic` may appear at ANY nesting depth (e.g. a `dynamic` inside a
+    // `network_interface` block), so handle it before the prefix-guarded skip.
+    if (k === 'dynamic') {
+      expandDynamicInto(prefix, v, scope, out)
+      continue
+    }
+    if (prefix === '' && (NON_ATTR_BLOCKS.has(k) || RESOURCE_META.has(k)))
+      continue
     const key = prefix ? `${prefix}.${k}` : k
     if (isNestedBlock(v)) {
       out.blocks.push(key) // record the block path (even if empty)
@@ -1076,6 +1484,20 @@ function envVarsOf(
   return { kind: 'parsed', vars }
 }
 
+/**
+ * Provisioner types declared on a resource (hcl2json shape:
+ * `provisioner: { "local-exec": [{ … }], "remote-exec": [{ … }] }` — a map of
+ * name → array-of-block-objects, like `dynamic`). Returns the declared type
+ * names, sorted for stable output; empty array when none. `collect` drops
+ * `provisioner` (it's an object, not a nested-block array), so this is the
+ * sole extraction path.
+ */
+function provisionersOf(block: Record<string, unknown> | undefined): string[] {
+  const p = block?.provisioner
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return []
+  return Object.keys(p as Record<string, unknown>).sort()
+}
+
 const escapeRegExp = (s: string): string =>
   s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -1092,9 +1514,113 @@ function findLine(text: string, type: string, name: string): number {
   return 1
 }
 
+/** Best-effort line of a `data "type" "name"` block via text scan. */
+function findDataLine(text: string, type: string, name: string): number {
+  const lines = text.split(/\r?\n/)
+  // eslint-disable-next-line security/detect-non-literal-regexp -- inputs escaped above
+  const needle = new RegExp(
+    `data\\s+"${escapeRegExp(type)}"\\s+"${escapeRegExp(name)}"`,
+  )
+  for (let i = 0; i < lines.length; i++) {
+    if (needle.test(lines[i] ?? '')) return i + 1
+  }
+  return 1
+}
+
+/**
+ * The provider alias a resource is pinned to (`provider = aws.dr` → "dr"), or
+ * undefined for the default provider. hcl2json emits the value as
+ * `${aws.dr}` (interpolated) — strip the wrapper and take the segment after
+ * the dot. A bare `aws` (no dot) is the default provider → undefined.
+ */
+function providerAliasOf(
+  block: Record<string, unknown> | undefined,
+): string | undefined {
+  const p = block?.provider
+  if (typeof p !== 'string') return undefined
+  const s = p.replace(/^\$\{|\}$/g, '').trim()
+  const dot = s.indexOf('.')
+  return dot === -1 ? undefined : s.slice(dot + 1)
+}
+
+/**
+ * The Terraform provider NAME a resource type belongs to (the prefix before
+ * the first `_`): `aws_*` / `data.aws_*` → "aws", `google_*` → "google",
+ * `azurerm_*` → "azurerm". Used to apply a module-call `providers` map
+ * remap to a child resource on the DEFAULT provider (no explicit `provider`
+ * arg) — `providers = { aws = aws.dr }` means the child's default `aws`
+ * resources run under the parent's `aws.dr` alias.
+ */
+const providerNameForType = (type: string): string | undefined => {
+  const t = type.startsWith('data.') ? type.slice(5) : type
+  if (t.startsWith('aws_')) return 'aws'
+  if (t.startsWith('google_')) return 'google'
+  if (t.startsWith('azurerm_')) return 'azurerm'
+  return undefined
+}
+
+/**
+ * Build ONE NormalizedResource from a single resource block. Shared by the
+ * no-for_each path (one call) and the for_each-expansion path (one call per
+ * element, with `each.*` threaded into a per-instance scope and `instanceKey`
+ * set so violations distinguish instances). `scope` is the resolution scope
+ * for this instance (the caller's scope, or a per-instance copy with
+ * `each.key`/`each.value` set).
+ */
+function normalizeOne(
+  type: string,
+  name: string,
+  block: Record<string, unknown> | undefined,
+  file: string,
+  line: number,
+  scope: Scope,
+  environmentOverride: string | undefined,
+  pd: ProviderDefaults | undefined,
+  instanceKey?: string,
+  providerAlias?: string,
+): NormalizedResource {
+  const extracted = extractAttrs(block, scope)
+  return {
+    type: type as AnyResource,
+    name,
+    file,
+    line,
+    instanceKey,
+    providerAlias,
+    ingress: ingressFor(type, block, scope),
+    egress: egressFor(block, scope),
+    tags: tagsOf(type, block, scope, pd),
+    attributes: extracted.attributes,
+    lists: extracted.lists,
+    blocks: extracted.blocks,
+    policy: policyOf(block),
+    containers: containersOf(block),
+    envVars: envVarsOf(type, block, scope),
+    provisioners: provisionersOf(block),
+    // Precedence: a root's declared environment wins over the resource's
+    // own tag, which wins over the provider default (environmentOf).
+    environment:
+      environmentOverride !== undefined
+        ? { kind: 'literal', value: environmentOverride }
+        : environmentOf(type, block, scope, pd),
+  }
+}
+
 /**
  * Adapter boundary (doc 06): parser output -> dotzen's own model.
  * The engine never sees `Hcl2JsonRoot`. `scope` resolves var/local refs.
+ * `pd` (provider default_tags/default_labels) is threaded from `parseTf`/
+ * `followModules` so a resource inherits its provider's tag defaults.
+ *
+ * Resource `for_each` (resolvable literal map/list, or a var resolving to
+ * one) is EXPANDED per element — one NormalizedResource per instance, with
+ * `each.key`/`each.value` threaded into a per-instance scope (so `each.*`
+ * refs in attributes resolve to the element) and `instanceKey` set so
+ * violations distinguish instances (`type.name[key]`). An UNRESOLVABLE
+ * for_each (`toset(...)`, a var with no default) is followed once honestly
+ * with no `each.*` bindings (dependent checks degrade to could-not-evaluate),
+ * matching module-level for_each handling. `count = 0` / an empty for_each
+ * collection yields zero instances (skipped silently — no false violation).
  */
 export function normalize(
   parsed: Hcl2JsonRoot,
@@ -1102,37 +1628,334 @@ export function normalize(
   rawText: string,
   scope: Scope = new Map(),
   environmentOverride?: string,
+  pd?: ProviderDefaults,
+  /** A module-call `providers = { aws = aws.dr }` remap, mapping a CHILD
+   *  provider name → the PARENT alias. Applied to a child resource on the
+   *  DEFAULT provider (no explicit `provider` arg): its inferred provider
+   *  name is looked up here when `providerAliasOf(block)` is undefined.
+   *  Undefined at the root (root resources aren't remapped). */
+  providerAliasRemap?: Map<string, string>,
 ): NormalizedResource[] {
   const out: NormalizedResource[] = []
   const byType = parsed.resource ?? {}
+
+  // Resolve a resource's provider alias: explicit `provider = aws.x` wins;
+  // else, if a module-call remap covers the resource's inferred provider
+  // name, the child default runs under that parent alias.
+  const aliasFor = (
+    type: string,
+    block: Record<string, unknown> | undefined,
+  ) => {
+    const explicit = providerAliasOf(block)
+    if (explicit !== undefined) return explicit
+    if (!providerAliasRemap) return undefined
+    const provName = providerNameForType(type)
+    return provName ? providerAliasRemap.get(provName) : undefined
+  }
 
   for (const [type, byName] of Object.entries(byType)) {
     if (!KNOWN_TYPES.has(type)) continue
     for (const [name, blocks] of Object.entries(byName)) {
       const block = (Array.isArray(blocks) ? blocks[0] : blocks) as
         Record<string, unknown> | undefined
-      const extracted = extractAttrs(block, scope)
-      out.push({
-        type: type as AnyResource,
-        name,
-        file,
-        line: findLine(rawText, type, name),
-        ingress: ingressFor(type, block, scope),
-        egress: egressFor(block, scope),
-        tags: tagsOf(type, block, scope),
-        attributes: extracted.attributes,
-        lists: extracted.lists,
-        blocks: extracted.blocks,
-        policy: policyOf(block),
-        containers: containersOf(block),
-        envVars: envVarsOf(type, block, scope),
-        // A root's declared environment wins over the resource's own tag.
-        environment:
-          environmentOverride !== undefined
-            ? { kind: 'literal', value: environmentOverride }
-            : environmentOf(type, block, scope),
-      })
+      // count = 0 (literal, or a var resolving to it) disables the resource —
+      // there are no instances to evaluate; skip silently (no could-not-eval
+      // gap, same rationale as module-level count=0 in followModules).
+      if (block?.count !== undefined && countIsZero(block.count, scope))
+        continue
+      // for_each resolving to an EMPTY collection (literal [], {}, or a var
+      // defaulting to one) → zero instances → skip silently. An UNRESOLVABLE
+      // for_each (toset(...)/no-default var) is followed once honestly —
+      // matching module behavior; dependent checks degrade to could-not-eval.
+      if (
+        block?.for_each !== undefined &&
+        forEachIsEmpty(block.for_each, scope)
+      )
+        continue
+
+      // No for_each → a single instance (the common case).
+      if (block?.for_each === undefined) {
+        out.push(
+          normalizeOne(
+            type,
+            name,
+            block,
+            file,
+            findLine(rawText, type, name),
+            scope,
+            environmentOverride,
+            pd,
+            undefined,
+            aliasFor(type, block),
+          ),
+        )
+        continue
+      }
+
+      // for_each present and non-empty → expand per element. `expandForEach`
+      // never returns null here (for_each !== undefined) and never returns []
+      // (forEachIsEmpty already returned for empty), so the array is non-empty.
+      const elements = expandForEach(block.for_each, scope) ?? []
+      for (const el of elements) {
+        // Per-instance scope: copy the caller's scope so each.* bindings are
+        // isolated to this instance (do NOT mutate the shared scope).
+        const instScope = new Map(scope)
+        // Synthetic '?' marks an UNRESOLVABLE for_each → follow once with no
+        // each.* bindings and no instanceKey (one instance, honest).
+        if (el.key !== '?' && el.key !== '') {
+          instScope.set('each.value', el.value)
+          instScope.set('each.key', el.key)
+        }
+        const instanceKey = el.key !== '' && el.key !== '?' ? el.key : undefined
+        out.push(
+          normalizeOne(
+            type,
+            name,
+            block,
+            file,
+            findLine(rawText, type, name),
+            instScope,
+            environmentOverride,
+            pd,
+            instanceKey,
+            aliasFor(type, block),
+          ),
+        )
+      }
+    }
+  }
+
+  // Data sources (`data "aws_ami" "x" {}`) — normalized as resources with
+  // type `data.<t>` so the existing conditions govern them (e.g. an `aws_ami`
+  // data source must declare `owners`). hcl2json shape mirrors `resource`.
+  // No count/for_each expansion (data sources are single-instance queries);
+  // no provider-alias scoping (a data source uses the provider of the module
+  // it lives in — governed via the resource-side alias, not here).
+  const byDataType = parsed.data ?? {}
+  for (const [type, byName] of Object.entries(byDataType)) {
+    const dataType = `data.${type}`
+    if (!KNOWN_TYPES.has(dataType)) continue
+    for (const [name, blocks] of Object.entries(byName)) {
+      const block = (Array.isArray(blocks) ? blocks[0] : blocks) as
+        Record<string, unknown> | undefined
+      out.push(
+        normalizeOne(
+          dataType,
+          name,
+          block,
+          file,
+          findDataLine(rawText, type, name),
+          scope,
+          environmentOverride,
+          pd,
+          undefined,
+          aliasFor(dataType, block),
+        ),
+      )
+    }
+  }
+
+  return out
+}
+
+/** Best-effort line of an `output "name"` block via text scan. */
+function findOutputLine(text: string, name: string): number {
+  const lines = text.split(/\r?\n/)
+  // eslint-disable-next-line security/detect-non-literal-regexp -- name escaped
+  const needle = new RegExp(`output\\s+"${escapeRegExp(name)}"`)
+  for (let i = 0; i < lines.length; i++) {
+    if (needle.test(lines[i] ?? '')) return i + 1
+  }
+  return 1
+}
+
+/**
+ * Normalize top-level `output` blocks. hcl2json: `output: { <name>: [{ value,
+ * sensitive? }] }`. `value` is kept as a NormalizedValue (a literal or an
+ * unresolved ref, expr preserved for secret-attr matching). `sensitive` is a
+ * literal `true`/`false` (absent → false), or `'unresolved'` when it is a
+ * var/local ref. Outputs are a separate surface from resources; the engine's
+ * `denyInsensitiveSecretOutput` pass governs them.
+ */
+export function normalizeOutputs(
+  parsed: Hcl2JsonRoot,
+  file: string,
+  rawText: string,
+  scope: Scope,
+): NormalizedOutput[] {
+  const out: NormalizedOutput[] = []
+  for (const [name, blocks] of Object.entries(parsed.output ?? {})) {
+    const block = asObject(Array.isArray(blocks) ? blocks[0] : undefined)
+    // Resolve through scope so a sole var/local ref to a secret bottoms out
+    // at the resource-ref expr (the engine's secret matcher sees the real
+    // attr, not the indirection). Compound / resource refs keep their expr.
+    const value = resolveValue(block.value, scope)
+    // bool literal → true/false; a ref → unresolved; absent → false.
+    let sensitive: boolean | 'unresolved' = false
+    if (block.sensitive === true || block.sensitive === false) {
+      sensitive = block.sensitive
+    } else if (block.sensitive !== undefined) {
+      // A ref or compound expr — cannot statically resolve the flag.
+      sensitive = 'unresolved'
+    }
+    out.push({
+      name,
+      file,
+      line: findOutputLine(rawText, name),
+      value,
+      sensitive,
+    })
+  }
+  return out
+}
+
+/** Whether a raw value is a plaintext scalar literal (not a `${ref}` nor a
+ *  compound/object/array) — used to flag a local holding a hardcoded secret. */
+function isScalarLiteral(v: unknown): boolean {
+  if (typeof v === 'string') return !isInterpolated(v)
+  return typeof v === 'number' || typeof v === 'boolean'
+}
+
+/** Best-effort line of a `variable "name"` block via text scan. */
+function findVariableLine(text: string, name: string): number {
+  const lines = text.split(/\r?\n/)
+  // eslint-disable-next-line security/detect-non-literal-regexp -- name escaped
+  const needle = new RegExp(`variable\\s+"${escapeRegExp(name)}"`)
+  for (let i = 0; i < lines.length; i++) {
+    if (needle.test(lines[i] ?? '')) return i + 1
+  }
+  return 1
+}
+
+/** Best-effort line of a `locals {` block (all entries share it — per-entry
+ *  line would need block-interior scanning; best-effort, like findLine fallback). */
+function findLocalsLine(text: string): number {
+  const lines = text.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*locals\s*\{/.test(lines[i] ?? '')) return i + 1
+  }
+  return 1
+}
+
+/**
+ * Normalize the named-value bindings: `variable` blocks (carrying a
+ * `sensitive` flag) and `locals` entries. A separate surface from resources
+ * (like outputs) — `denyInsensitiveVariable` and `denyPlaintextLocalSecret`
+ * govern them in the bindings eval pass. `sensitive` is a literal
+ * true/false (absent → false) or `"unresolved"` (a var ref); `isLiteral` marks
+ * a plaintext scalar value (the leak vector for locals secrets).
+ */
+export function normalizeBindings(
+  parsed: Hcl2JsonRoot,
+  file: string,
+  rawText: string,
+): NormalizedBinding[] {
+  const out: NormalizedBinding[] = []
+  for (const [name, blocks] of Object.entries(parsed.variable ?? {})) {
+    const block = asObject(Array.isArray(blocks) ? blocks[0] : undefined)
+    let sensitive: boolean | 'unresolved' = false
+    if (block.sensitive === true || block.sensitive === false) {
+      sensitive = block.sensitive
+    } else if (block.sensitive !== undefined) {
+      sensitive = 'unresolved'
+    }
+    out.push({
+      kind: 'variable',
+      name,
+      file,
+      line: findVariableLine(rawText, name),
+      sensitive,
+      isLiteral: isScalarLiteral(block.default),
+    })
+  }
+  if (Array.isArray(parsed.locals)) {
+    const line = findLocalsLine(rawText)
+    for (const block of parsed.locals) {
+      for (const [name, value] of Object.entries(asObject(block))) {
+        out.push({
+          kind: 'local',
+          name,
+          file,
+          line,
+          sensitive: false,
+          isLiteral: isScalarLiteral(value),
+        })
+      }
     }
   }
   return out
+}
+
+/** Best-effort line of a `terraform {` block. */
+function findTerraformLine(text: string): number {
+  const lines = text.split(/\r?\n/)
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*terraform\s*\{/.test(lines[i] ?? '')) return i + 1
+  }
+  return 1
+}
+
+/**
+ * Normalize the top-level `terraform {}` settings block: `required_version`
+ * (the TF engine constraint string) and `required_providers` (per-provider
+ * `{ name, version }` constraints). A separate surface; version-pinning rules
+ * govern it. Returns at most one entry (one `terraform` block per dir; extra
+ * blocks merge into the first in HCL — dotzen reads the first).
+ */
+export function normalizeSettings(
+  parsed: Hcl2JsonRoot,
+  file: string,
+  rawText: string,
+): NormalizedTerraformSettings[] {
+  if (!Array.isArray(parsed.terraform) || parsed.terraform.length === 0)
+    return []
+  const block = asObject(parsed.terraform[0])
+  const requiredVersion =
+    typeof block.required_version === 'string'
+      ? block.required_version
+      : undefined
+  const requiredProviders: { name: string; version: string }[] = []
+  const rp = block.required_providers
+  if (Array.isArray(rp)) {
+    for (const entry of rp) {
+      for (const [name, spec] of Object.entries(asObject(entry))) {
+        const v = asObject(spec).version
+        if (typeof v === 'string') requiredProviders.push({ name, version: v })
+      }
+    }
+  }
+  // Backend: hcl2json emits `backend: { <type>: [{ …attrs }] }` (one entry).
+  let backend: NormalizedBackend | undefined
+  const be = block.backend
+  if (be && typeof be === 'object' && !Array.isArray(be)) {
+    for (const [type, entries] of Object.entries(
+      be as Record<string, unknown>,
+    )) {
+      const cfg = asObject(Array.isArray(entries) ? entries[0] : undefined)
+      let encrypted: boolean | 'unresolved' | undefined = undefined
+      if (cfg.encrypt === true || cfg.encrypt === false) {
+        encrypted = cfg.encrypt
+      } else if (cfg.encrypt !== undefined) {
+        encrypted = 'unresolved'
+      }
+      backend = {
+        type,
+        encrypted,
+        locked:
+          typeof cfg.dynamodb_table === 'string' ||
+          typeof cfg.lock_table === 'string' ||
+          cfg.use_lockfile === true,
+      }
+      break // one backend per terraform block
+    }
+  }
+  return [
+    {
+      requiredVersion,
+      requiredProviders,
+      backend,
+      file,
+      line: findTerraformLine(rawText),
+    },
+  ]
 }

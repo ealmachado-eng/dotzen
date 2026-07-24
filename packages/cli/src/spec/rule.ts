@@ -7,6 +7,7 @@ import {
   Environment,
   Approver,
   Block,
+  Provisioner,
   AnyResource,
   AnyAttribute,
 } from '../vocabulary'
@@ -106,12 +107,78 @@ export type Condition =
   // Same-resource: this resource must NOT declare a given nested block
   // (e.g. a GCP instance `access_config` = an ephemeral public IP).
   | { readonly kind: 'denyBlockPresence'; readonly block: Block }
+  // Same-resource: flag if `lifecycle { ignore_changes = [...] }` lists any of
+  // the given attribute paths — hiding drift on security-critical attrs
+  // bypasses governance. `ignore_changes` entries are attribute PATHS (bare
+  // identifiers hcl2json wraps as `${tags}`), not value refs, so a dedicated
+  // matcher strips the interpolation wrapper.
+  | { readonly kind: 'denyIgnoreChanges'; readonly attrs: string[] }
+  // Same-resource: this resource must NOT declare any of the named provisioner
+  // types (e.g. `local-exec`/`remote-exec`), which run arbitrary commands on
+  // apply/destroy — a supply-chain / exfiltration surface.
+  | { readonly kind: 'denyProvisioner'; readonly names: string[] }
+  // Output-surface: an output whose `value` references a secret-bearing
+  // attribute (a full `type.attr` string, name wildcarded — e.g.
+  // `aws_db_instance.master_password`) must set `sensitive = true`, else it
+  // leaks the secret in state / CI logs. Applies to `output` blocks, evaluated
+  // in the outputs pass (not against resources).
+  | {
+      readonly kind: 'denyInsensitiveSecretOutput'
+      readonly secretAttrs: string[]
+    }
+  // Binding-surface: a `variable` whose name looks like a secret (PASSWORD,
+  // SECRET, KEY, TOKEN, CREDENTIAL) must set `sensitive = true`, else it leaks
+  // in plans / logs. Zero-arg (built-in name pattern). Evaluated in the
+  // bindings pass (not against resources).
+  | { readonly kind: 'denyInsensitiveVariable' }
+  // Binding-surface: a `locals` entry whose name looks like a secret AND whose
+  // value is a plaintext literal (not a `${ref}`) — a hardcoded secret. The
+  // safe pattern is a reference (Secrets Manager / SSM). Zero-arg. Evaluated
+  // in the bindings pass.
+  | { readonly kind: 'denyPlaintextLocalSecret' }
+  // Settings-surface: `terraform.required_version` must be an EXACT pin
+  // (`= X.Y.Z`). A floating constraint (bare `X.Y.Z`, `~>`, `>=`) lets the TF
+  // engine drift → supply-chain / consistency risk. Zero-arg. Evaluated in
+  // the settings pass.
+  | { readonly kind: 'requireExactTerraformVersion' }
+  // Settings-surface: the named providers' `required_providers` version
+  // constraints must be pinned (`=` exact or `~>` pessimistic — both block a
+  // major-version drift). A floating constraint (bare, `>=`, `>`) or an
+  // absent provider entry is the violation. Evaluated in the settings pass.
+  | { readonly kind: 'denyFloatingProviderVersion'; readonly names: string[] }
+  // Settings-surface: the state backend must be declared and encrypted. Flags
+  // when no backend is declared (Terraform defaults to local unencrypted state)
+  // or `encrypt` is not literally true. Zero-arg. Evaluated in the settings pass.
+  | { readonly kind: 'requireEncryptedBackend' }
+  // Settings-surface: the state backend must NOT be `local` (or absent — which
+  // Terraform treats as local). Local state is unencrypted, unshared, and not
+  // locked → a catastrophic leak / corruption risk for any team. Zero-arg.
+  | { readonly kind: 'denyLocalBackend' }
+  // Same-resource: a `connection {}` block (used by file/remote-exec
+  // provisioners) with a plaintext secret — a `private_key`/`password`/token
+  // literal (not a `${ref}`). The safe pattern is a reference (Secrets Manager
+  // / SSM / a file path read at runtime). Zero-arg (built-in secret-name
+  // pattern, scans connection.* attributes).
+  | { readonly kind: 'denyPlaintextConnectionSecret' }
+  // Module-call-surface: a registry module (`source = "terraform-aws-modules/
+  // vpc/aws"`) must pin its `version` (`=` or `~>` — both block a major drift).
+  // A floating constraint (bare, `>=`) or absent version is the violation.
+  // Local modules (`./`/`../`) carry no version and are never flagged.
+  // Zero-arg. Evaluated in the module-calls pass.
+  | { readonly kind: 'denyFloatingModuleVersion' }
 
 export interface Rule {
   readonly id: string
   readonly target: ResourceTarget
   /** If set, the rule applies only to resources in this environment. */
   readonly environment?: Environment
+  /**
+   * If set, the rule applies only to resources pinned to this provider alias
+   * (`provider = aws.dr` → "dr"). Lets orgs scope rules to a specific account/
+   * region provider without modeling the region itself. Undefined → applies to
+   * every resource regardless of its provider alias.
+   */
+  readonly providerAlias?: string
   readonly conditions: Condition[]
   readonly effect: Effect
   readonly message: string
@@ -128,6 +195,7 @@ export interface Rule {
 export class RuleBuilder {
   private _target?: ResourceTarget
   private _environment?: Environment
+  private _providerAlias?: string
   private _conditions: Condition[] = []
   private _effect: Effect = Effect.Block
   private _message?: string
@@ -146,6 +214,19 @@ export class RuleBuilder {
 
   environment(env: Environment): this {
     this._environment = env
+    return this
+  }
+
+  /**
+   * Scope the rule to resources pinned to this provider alias (`provider =
+   * aws.dr` → "dr"). Lets orgs target rules at a specific account/region
+   * provider (e.g. stricter controls in the dr account) without modeling the
+   * region itself. A resource on the default provider (no `provider` arg) is
+   * skipped by an alias-scoped rule. Like `.environment(X)`, this is a
+   * fail-open filter, not a check — pair it with a condition.
+   */
+  providerAlias(alias: string): this {
+    this._providerAlias = alias
     return this
   }
 
@@ -333,6 +414,141 @@ export class RuleBuilder {
     return this
   }
 
+  /**
+   * Flag a resource whose `lifecycle { ignore_changes = [...] }` lists any of
+   * the given attribute paths — hiding drift on a security-critical attribute
+   * (e.g. `tags`, `encryption`) silently bypasses governance over it. Entries
+   * are attribute paths (`tags`, `root_block_device.encrypted`), not value
+   * refs; pass them as strings (or an org enum of governed attr paths).
+   */
+  denyIgnoreChanges(...attrs: (string & {})[]): this {
+    this._conditions.push({ kind: 'denyIgnoreChanges', attrs })
+    return this
+  }
+
+  /**
+   * Flag this resource if it declares any of the named provisioner types
+   * (e.g. `local-exec`/`remote-exec`). Provisioners run arbitrary commands on
+   * apply/destroy — a supply-chain / exfiltration surface most orgs forbid in
+   * governed modules. Pass `Provisioner.LocalExec, Provisioner.RemoteExec` to
+   * deny both; a resource with no provisioners passes.
+   */
+  denyProvisioner(...names: (Provisioner | (string & {}))[]): this {
+    this._conditions.push({ kind: 'denyProvisioner', names })
+    return this
+  }
+
+  /**
+   * Flag an output whose `value` references a secret-bearing attribute but
+   * does not set `sensitive = true` — the secret would leak in state / CI logs.
+   * Each `secretAttr` is a full `type.attr` string with the resource NAME
+   * wildcarded (e.g. `aws_db_instance.master_password`,
+   * `aws_secretsmanager_secret_version.secret_string`). Applies to `output`
+   * blocks; use with `.allResources()` (output rules target every output).
+   * A `sensitive = true` output passes; an output referencing no secret passes;
+   * a `sensitive` flag that is itself an unresolvable var degrades to
+   * could-not-evaluate rather than a guess.
+   */
+  denyInsensitiveSecretOutput(...secretAttrs: (string & {})[]): this {
+    this._conditions.push({ kind: 'denyInsensitiveSecretOutput', secretAttrs })
+    return this
+  }
+
+  /**
+   * Flag a `variable` whose name looks like a secret (PASSWORD, SECRET, KEY,
+   * TOKEN, CREDENTIAL) but does not set `sensitive = true` — its value leaks
+   * in plans / CI logs. Terraform's own guidance: mark secret variables
+   * sensitive. Zero-arg (built-in name pattern); use with `.allResources()`
+   * (binding rules target every variable). A `sensitive = true` variable
+   * passes; a `sensitive` flag that is itself an unresolvable var degrades to
+   * could-not-evaluate.
+   */
+  denyInsensitiveVariable(): this {
+    this._conditions.push({ kind: 'denyInsensitiveVariable' })
+    return this
+  }
+
+  /**
+   * Flag a `locals` entry whose name looks like a secret (PASSWORD, SECRET,
+   * KEY, TOKEN, CREDENTIAL) AND whose value is a plaintext literal — a
+   * hardcoded secret. The safe pattern is a reference (Secrets Manager / SSM
+   * Parameter Store / Key Vault). Zero-arg; use with `.allResources()`.
+   */
+  denyPlaintextLocalSecret(): this {
+    this._conditions.push({ kind: 'denyPlaintextLocalSecret' })
+    return this
+  }
+
+  /**
+   * Require `terraform.required_version` to be an EXACT pin (`= X.Y.Z`).
+   * Flags when it is absent or uses a floating constraint (bare `X.Y.Z`,
+   * `~>`, `>=`, …) — the TF engine would drift on `terraform init`. Zero-arg;
+   * use with `.allResources()` (settings rules target the terraform block).
+   */
+  requireExactTerraformVersion(): this {
+    this._conditions.push({ kind: 'requireExactTerraformVersion' })
+    return this
+  }
+
+  /**
+   * Flag the named providers whose `required_providers` version constraint is
+   * floating (bare, `>=`, `>`) or absent. `=` (exact) and `~>` (pessimistic —
+   * blocks a major bump) pass. An absent provider entry is a violation (the
+   * provider is not pinned at all). Pass provider names as strings (e.g.
+   * `'aws'`, `'google'`) — they're the keys under `required_providers`.
+   */
+  denyFloatingProviderVersion(...names: (string & {})[]): this {
+    this._conditions.push({ kind: 'denyFloatingProviderVersion', names })
+    return this
+  }
+
+  /**
+   * Require the state backend to be declared AND encrypted (`encrypt = true`).
+   * Flags when no `backend` block exists (Terraform then defaults to a local
+   * unencrypted `terraform.tfstate`) or the backend's `encrypt` is not
+   * literally true. An unencrypted `encrypt` flag that is itself a var ref
+   * degrades to could-not-evaluate. Zero-arg; use with `.allResources()`.
+   */
+  requireEncryptedBackend(): this {
+    this._conditions.push({ kind: 'requireEncryptedBackend' })
+    return this
+  }
+
+  /**
+   * Forbid a `local` backend (or no backend — Terraform defaults to local).
+   * Local state is unencrypted, unshared, and unlocked — a catastrophic
+   * leak / corruption risk for any team. Use to enforce remote state. Zero-arg.
+   */
+  denyLocalBackend(): this {
+    this._conditions.push({ kind: 'denyLocalBackend' })
+    return this
+  }
+
+  /**
+   * Flag a `connection {}` block (used by `file`/`remote-exec` provisioners)
+   * that hardcodes a secret — a `private_key`/`password`/`token`/`credential`
+   * literal string (not a `${ref}`). The safe pattern is a reference (Secrets
+   * Manager / SSM Parameter Store) or a file read at runtime. Zero-arg
+   * (built-in secret-name pattern); scans the `connection.*` nested-block
+   * attributes the parser flattens.
+   */
+  denyPlaintextConnectionSecret(): this {
+    this._conditions.push({ kind: 'denyPlaintextConnectionSecret' })
+    return this
+  }
+
+  /**
+   * Flag a REGISTRY module (`source = "terraform-aws-modules/vpc/aws"`) whose
+   * `version` constraint is floating (bare, `>=`) or absent — `terraform init`
+   * would pull a different revision on each run (supply-chain drift). `=`
+   * (exact) and `~>` (pessimistic) pass. Local modules (`./`/`../`) carry no
+   * version and are never flagged. Zero-arg; use with `.allResources()`.
+   */
+  denyFloatingModuleVersion(): this {
+    this._conditions.push({ kind: 'denyFloatingModuleVersion' })
+    return this
+  }
+
   onViolation(effect: Effect): this {
     this._effect = effect
     return this
@@ -371,6 +587,7 @@ export class RuleBuilder {
       id: `rule-${index + 1}`,
       target: this._target!,
       environment: this._environment,
+      providerAlias: this._providerAlias,
       conditions: this._conditions,
       effect: this._effect,
       message: this._message!,

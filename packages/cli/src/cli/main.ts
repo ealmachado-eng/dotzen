@@ -10,6 +10,7 @@ import {
 } from '../report/report'
 import { CheckReport } from '../engine/evaluate'
 import { initProject } from './scaffold'
+import { CI_TEMPLATE_HINT } from '../templates/ci-templates'
 
 /**
  * Emit the approval signal for CI (doc 04), so a later manual-approval job
@@ -95,6 +96,7 @@ function runInit(dir: string, terraform?: string): number {
       '\nNext: add .tf files under terraform/, then run: npx @dotzen/dotzen check\n',
     )
   }
+  process.stdout.write(CI_TEMPLATE_HINT)
   return 0
 }
 

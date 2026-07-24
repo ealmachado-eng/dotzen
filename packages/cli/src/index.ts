@@ -15,6 +15,8 @@ export {
   TlsPolicy,
   Protocol,
   Block,
+  Provisioner,
+  LifecycleAttribute,
   Wildcard,
   ApiGatewayAuthorization,
   XrayMode,
@@ -32,4 +34,13 @@ export {
   OauthScope,
   SqlSslMode,
   IngressSetting,
+  DataResource,
+  DataAttribute,
 } from './vocabulary'
+
+// Curated CIS preset rule packs (#24). Spread into a spec:
+//   import { cisAws } from '@dotzen/dotzen'
+//   export const spec = [...cisAws, /* your rules *\/]
+export { cisAws } from './presets/cis-aws'
+export { cisAzure } from './presets/cis-azure'
+export { cisGcp } from './presets/cis-gcp'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalize, buildScope } from './normalize'
+import { normalize, buildScope, providerDefaults } from './normalize'
 
 const raw = `resource "aws_s3_bucket" "tagged" {}
 resource "aws_s3_bucket" "untagged" {}
@@ -159,5 +159,137 @@ describe('normalize — merge() with a concrete threaded var.tags', () => {
     scope.set('var.tags', { apm_id: 'APM1' })
     const r = normalize(parsed as never, 'main.tf', '', scope)[0]!
     expect(r.tags.kind).toBe('partial')
+  })
+})
+
+// Provider default_tags / default_labels (AWS/Azure `default_tags`, GCP
+// `default_labels`) are inherited by every resource at apply time. dotzen
+// threads them so a `mustHaveTags` rule does not flag a resource whose
+// required tag is supplied by the provider rather than the resource block.
+describe('normalize — provider default_tags / default_labels', () => {
+  // Mirrors parseTf: build scope, compute provider defaults, thread to normalize.
+  const norm = (parsed: object) => {
+    const scope = buildScope([parsed as never])
+    const pd = providerDefaults([parsed as never], scope)
+    return normalize(parsed as never, 'main.tf', '', scope, undefined, pd)
+  }
+
+  it('upgrades an unresolved resource-tag map to PARTIAL with provider keys', () => {
+    // Resource has tags = var.tags (unresolvable), but provider default_tags
+    // supplies Env + Team → both are proven present → partial (not unresolved).
+    const r = norm({
+      provider: {
+        aws: [{ default_tags: [{ tags: { Env: 'prod', Team: 'infra' } }] }],
+      },
+      resource: {
+        aws_s3_bucket: { x: [{ tags: '${var.tags}' }] },
+      },
+    })[0]!
+    expect(r.tags.kind).toBe('partial')
+    if (r.tags.kind === 'partial')
+      expect(r.tags.keys.sort()).toEqual(['Env', 'Team'])
+  })
+
+  it('unions provider keys with a resolved resource-tag map (complete)', () => {
+    const r = norm({
+      provider: {
+        aws: [{ default_tags: [{ tags: { Env: 'prod' } }] }],
+      },
+      resource: {
+        aws_s3_bucket: { x: [{ tags: { team: 'core' } }] },
+      },
+    })[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved')
+      expect(r.tags.keys.sort()).toEqual(['Env', 'team'])
+  })
+
+  it('unions provider keys with a PARTIAL merge() set', () => {
+    const r = norm({
+      provider: {
+        aws: [{ default_tags: [{ tags: { Env: 'prod' } }] }],
+      },
+      resource: {
+        aws_s3_bucket: {
+          x: [{ tags: '${merge({ team = "core" }, var.tags)}' }],
+        },
+      },
+    })[0]!
+    expect(r.tags.kind).toBe('partial')
+    if (r.tags.kind === 'partial')
+      expect(r.tags.keys.sort()).toEqual(['Env', 'team'])
+  })
+
+  it('treats a tagless resource as resolved with the provider keys', () => {
+    const r = norm({
+      provider: {
+        aws: [{ default_tags: [{ tags: { Env: 'prod' } }] }],
+      },
+      resource: { aws_s3_bucket: { x: [{}] } },
+    })[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved') expect(r.tags.keys).toEqual(['Env'])
+  })
+
+  it('reads GCP default_labels (not default_tags)', () => {
+    const r = norm({
+      provider: {
+        google: [{ default_labels: [{ labels: { env: 'dev' } }] }],
+      },
+      resource: { google_storage_bucket: { x: [{}] } },
+    })[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved') expect(r.tags.keys).toEqual(['env'])
+  })
+
+  it('omits provider keys whose value is an unresolvable reference', () => {
+    // default_tags = var.base — var.base has no default → not statically
+    // proven present → no keys contributed → resource stays unresolved.
+    const r = norm({
+      variable: { base: [{}] },
+      provider: {
+        aws: [{ default_tags: [{ tags: '${var.base}' }] }],
+      },
+      resource: {
+        aws_s3_bucket: { x: [{ tags: '${var.tags}' }] },
+      },
+    })[0]!
+    expect(r.tags).toEqual({ kind: 'unresolved' })
+  })
+
+  it('resolves a provider default_tags that references a var with a default', () => {
+    const r = norm({
+      variable: { base: [{ default: { Env: 'prod', Team: 'infra' } }] },
+      provider: {
+        aws: [{ default_tags: [{ tags: '${var.base}' }] }],
+      },
+      resource: { aws_s3_bucket: { x: [{}] } },
+    })[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved')
+      expect(r.tags.keys.sort()).toEqual(['Env', 'Team'])
+  })
+
+  it('unions keys across multiple provider blocks', () => {
+    const r = norm({
+      provider: {
+        aws: [{ default_tags: [{ tags: { Env: 'prod' } }] }],
+        google: [{ default_labels: [{ labels: { team: 'core' } }] }],
+      },
+      resource: { aws_s3_bucket: { x: [{}] } },
+    })[0]!
+    expect(r.tags.kind).toBe('resolved')
+    if (r.tags.kind === 'resolved')
+      expect(r.tags.keys.sort()).toEqual(['Env', 'team'])
+  })
+
+  it('leaves tags unresolved when no provider declares default_tags', () => {
+    const r = norm({
+      provider: { aws: [{ region: 'us-east-1' }] },
+      resource: {
+        aws_s3_bucket: { x: [{ tags: '${var.tags}' }] },
+      },
+    })[0]!
+    expect(r.tags).toEqual({ kind: 'unresolved' })
   })
 })

@@ -3,11 +3,25 @@ import * as path from 'path'
 import { parse as hcl2json } from '@cdktf/hcl2json'
 import { Result, ok, err } from '../result/result'
 import { DotzenError } from '../result/errors'
-import { NormalizedResource } from './model'
+import {
+  NormalizedResource,
+  NormalizedOutput,
+  NormalizedBinding,
+  NormalizedTerraformSettings,
+  NormalizedModuleCall,
+} from './model'
 import {
   normalize,
+  normalizeOutputs,
+  normalizeBindings,
+  normalizeSettings,
   buildScope,
   resolveRaw,
+  countIsZero,
+  expandForEach,
+  providerDefaults,
+  mergeProviderDefaults,
+  ProviderDefaults,
   Hcl2JsonRoot,
   Scope,
 } from './normalize'
@@ -46,10 +60,88 @@ export interface ModuleSkip {
   readonly reason: string
 }
 
-/** `parseTf` success payload: followed resources + skipped module calls. */
+/** `parseTf` success payload: followed resources + skipped module calls +
+ * normalized outputs (a separate surface governed by output rules) +
+ * normalized bindings (variables/locals, governed by binding rules). */
 export interface ParseOutput {
   readonly resources: NormalizedResource[]
   readonly skips: ModuleSkip[]
+  readonly outputs: NormalizedOutput[]
+  readonly bindings: NormalizedBinding[]
+  readonly settings: NormalizedTerraformSettings[]
+  readonly moduleCalls: NormalizedModuleCall[]
+  readonly ignores: IgnoreDirective[]
+}
+
+/**
+ * An inline `# dotzen:ignore` (or `// dotzen:ignore`) directive. Suppresses
+ * ALL findings (violations + could-not-evaluate) on the block it precedes (or
+ * is on the same line as). The optional `: <reason>` text is a human
+ * justification (auditability), not a matcher. Matched by (file, line) where
+ * `line` is the block-START line the comment targets.
+ */
+export interface IgnoreDirective {
+  readonly file: string
+  readonly line: number
+  readonly reason?: string
+}
+
+/** An own-line `# dotzen:ignore[: reason]` / `// dotzen:ignore[: reason]`
+ *  comment — the `#`/`//` is the FIRST non-whitespace content on the line.
+ *  Anchored at `^\s*` so a token inside a string value (e.g.
+ *  `description = "# dotzen:ignore"`) does NOT false-match. */
+const IGNORE_OWN_LINE_RE = /^\s*(#|\/\/)\s*dotzen:ignore(?::\s*(.*))?$/i
+
+/** A trailing `# dotzen:ignore[: reason]` / `// dotzen:ignore[: reason]`
+ *  comment on a BLOCK-START line (e.g. `resource "x" "y" { # dotzen:ignore`).
+ *  Only checked on lines that match BLOCK_START_RE, so a token inside a
+ *  string value on a non-block line never matches. */
+const IGNORE_TRAILING_RE = /(#|\/\/)\s*dotzen:ignore(?::\s*(.*))?$/i
+
+/** A top-level block header — the target of an ignore directive. */
+const BLOCK_START_RE =
+  /^\s*(?:resource|data|output|variable|module|provider|terraform|locals)\b/
+
+/**
+ * Scan raw text for `dotzen:ignore` directives. Two forms:
+ *  1. Own-line: `# dotzen:ignore\nresource "x" "y"` → targets the NEXT
+ *     block-start line at or after the comment.
+ *  2. Trailing: `resource "x" "y" { # dotzen:ignore` → targets THIS line
+ *     (the block-start line the comment trails).
+ * A `dotzen:ignore` token inside a string value (e.g.
+ * `description = "# dotzen:ignore"`) is NOT matched — the own-line regex
+ * is anchored at `^\s*`, and the trailing regex only runs on block-start
+ * lines. Returns directives keyed by physical file rel path + targeted line.
+ */
+export function scanIgnores(text: string, fileRel: string): IgnoreDirective[] {
+  const lines = text.split(/\r?\n/)
+  const out: IgnoreDirective[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    const isBlockStart = BLOCK_START_RE.test(line)
+    // Own-line: `#`/`//` is the first non-whitespace → targets next block.
+    const own = IGNORE_OWN_LINE_RE.exec(line)
+    // Trailing: on a block-start line → targets this line.
+    const trailing = isBlockStart ? IGNORE_TRAILING_RE.exec(line) : null
+    const m = own ?? trailing
+    if (!m) continue
+    const reason = m[2]?.trim() || undefined
+    if (own) {
+      // Find the next block-start line at or after the comment line.
+      for (let j = i; j < lines.length; j++) {
+        if (BLOCK_START_RE.test(lines[j] ?? '')) {
+          if (!out.some((d) => d.line === j + 1))
+            out.push({ file: fileRel, line: j + 1, reason })
+          break
+        }
+      }
+    } else if (trailing) {
+      // The comment is ON the block-start line → target this line.
+      if (!out.some((d) => d.line === i + 1))
+        out.push({ file: fileRel, line: i + 1, reason })
+    }
+  }
+  return out
 }
 
 /** Parse every `.tf` under `dir` (no normalization). */
@@ -101,71 +193,6 @@ function findModuleLine(text: string, label: string): number {
 }
 
 /**
- * Resolve a `module` block's `count` against the caller scope to a number.
- * A literal 0 (or a var that resolves to it) → the module is disabled and
- * has no resources to evaluate; dotzen skips it silently (no skip note — it
- * is correct, not a gap). Any compound expression (`var.x ? 0 : 1`) does not
- * resolve → return undefined → do not skip (follow once, honest).
- */
-const countIsZero = (count: unknown, scope: Scope): boolean => {
-  const resolved = typeof count === 'string' ? resolveRaw(count, scope) : count
-  return resolved === 0
-}
-
-/** A single `for_each` element to expand a module block over. */
-interface ForEachElement {
-  /** Stringified element key — list index, set element, or map key. */
-  readonly key: string
-  /** Raw element value (threaded into the module scope as `each.value`). */
-  readonly value: unknown
-}
-
-/**
- * Resolve a `module` block's `for_each` to the per-element expansion.
- * Returns:
- *  - `null`  → no `for_each`: one iteration, no `each.*` bindings.
- *  - `[]`    → `for_each = toset([])` / empty literal — no instances (silent).
- *  - `[{…}]` → one entry per element; `each.value` / `each.key` get threaded.
- *  - `[{key: '?'}]` (single, key '?') → unresolvable; follow once honestly
- *    without `each.*` (the engine degrades dependent checks to
- *    could-not-evaluate). Distinguishable from a real one-element set by the
- *    synthetic key '?' used only on the unresolvable path.
- */
-function expandForEach(
-  forEach: unknown,
-  scope: Scope,
-): ForEachElement[] | null {
-  if (forEach === undefined) return null
-  // Literal object map — hcl2json yields a plain object.
-  if (forEach && typeof forEach === 'object' && !Array.isArray(forEach)) {
-    return Object.entries(forEach as Record<string, unknown>).map(
-      ([key, value]) => ({ key, value }),
-    )
-  }
-  // Literal array / a var-resolved list — treated like `toset(...)`:
-  // each.key = each.value = the element (Terraform's for_each-over-set rule).
-  if (Array.isArray(forEach)) {
-    return forEach.map((value) => ({ key: String(value), value }))
-  }
-  // Reference: `${var.x}` / `${local.x}` → resolveRaw to a literal collection.
-  if (typeof forEach === 'string') {
-    const resolved = resolveRaw(forEach, scope)
-    if (Array.isArray(resolved)) {
-      return resolved.map((value) => ({ key: String(value), value }))
-    }
-    if (resolved && typeof resolved === 'object') {
-      return Object.entries(resolved as Record<string, unknown>).map(
-        ([key, value]) => ({ key, value }),
-      )
-    }
-    // Unresolvable (no default, or a `toset(...)`/function-call compound) →
-    // follow once honestly, no `each.*` bindings.
-    return [{ key: '?', value: undefined }]
-  }
-  return [{ key: '?', value: undefined }]
-}
-
-/**
  * Module-following (doc 08). For each local `module { source, <inputs> }`
  * call in the caller's files, parse the module dir and normalize its
  * resources with a scope = the module's own defaults/locals overlaid with
@@ -198,12 +225,28 @@ async function followModules(
   environmentOverride: string | undefined,
   /** Resolved absolute dirs on the current follow-path (cycle bound). */
   pathStack: Set<string> = new Set(),
+  /**
+   * Provider default_tags/default_labels inherited from enclosing dirs. A
+   * child module with no provider block of its own inherits these (Terraform
+   * provider inheritance); a child's own provider defaults merge in (child
+   * wins on key conflicts). Threaded to `normalize` and to the recursive
+   * `followModules` so deep modules see the full inherited chain.
+   */
+  inheritedPd?: ProviderDefaults,
 ): Promise<Result<ParseOutput, DotzenError>> {
   const out: NormalizedResource[] = []
   const skips: ModuleSkip[] = []
+  const outputs: NormalizedOutput[] = []
+  const bindings: NormalizedBinding[] = []
+  const settings: NormalizedTerraformSettings[] = []
+  const moduleCalls: NormalizedModuleCall[] = []
+  const ignores: IgnoreDirective[] = []
 
   for (const { file, text, parsed } of callerFiles) {
     const fileRel = toPosix(path.relative(projectRoot, file))
+    // Inline ignore directives in this caller file (a directive on a module
+    // block suppresses findings on the module's resources via the block line).
+    ignores.push(...scanIgnores(text, fileRel))
     for (const [label, calls] of Object.entries(parsed.module ?? {})) {
       for (const raw of Array.isArray(calls) ? calls : []) {
         const block = (raw ?? {}) as Record<string, unknown>
@@ -216,6 +259,22 @@ async function followModules(
           line,
           reason,
         })
+
+        // Capture the call metadata for the module-version-pinning surface
+        // (#19) — BEFORE any skip, so registry modules (which are skipped
+        // below) still have their `version` constraint governed. Local modules
+        // carry no version and are never flagged by the condition.
+        if (typeof source === 'string') {
+          moduleCalls.push({
+            label,
+            source,
+            version:
+              typeof block.version === 'string' ? block.version : undefined,
+            registry: !isLocalSource(source),
+            file: fileRel,
+            line,
+          })
+        }
 
         // count = 0 (literal, or a var resolving to it) disables the module
         // — there are no resources to evaluate; skip silently (not a gap).
@@ -274,6 +333,37 @@ async function followModules(
             moduleScope.set('each.value', el.value)
             moduleScope.set('each.key', el.key)
           }
+          // Provider defaults for this module dir, merged with the inherited
+          // chain: the child's own provider blocks (resolved against the
+          // child's scope) override the inherited defaults on key conflicts.
+          const childPd = mergeProviderDefaults(
+            inheritedPd,
+            providerDefaults(
+              parsedModule.value.map((f) => f.parsed),
+              moduleScope,
+            ),
+          )
+          // Provider-alias remap from the module call's `providers = { aws =
+          // aws.dr }` map: child provider name → parent alias. Applied to the
+          // child's DEFAULT-provider resources (no explicit `provider` arg)
+          // so a module run under a remapped provider inherits the alias (#13).
+          // Explicit `provider = aws.x` on a child resource wins and is NOT
+          // remapped; nested-module remaps are relative to the child (one
+          // level — a documented limitation).
+          const providerAliasRemap = new Map<string, string>()
+          const pm = block.providers
+          if (pm && typeof pm === 'object' && !Array.isArray(pm)) {
+            for (const [childName, ref] of Object.entries(
+              pm as Record<string, unknown>,
+            )) {
+              if (typeof ref === 'string') {
+                const s = ref.replace(/^\$\{|\}$/g, '').trim()
+                const dot = s.indexOf('.')
+                if (dot !== -1)
+                  providerAliasRemap.set(childName, s.slice(dot + 1))
+              }
+            }
+          }
           // Per-instance trace. for_each expansions append `[key]`; the
           // synthetic '?' marks an unresolvable for_each (one iteration, no
           // each bindings) and is omitted from the label.
@@ -292,8 +382,23 @@ async function followModules(
                 m.text,
                 moduleScope,
                 environmentOverride,
+                childPd,
+                providerAliasRemap,
               ),
             )
+            // Outputs declared in the followed module — normalize with the
+            // traced file (a leak in a module output names the hop).
+            outputs.push(
+              ...normalizeOutputs(m.parsed, trace, m.text, moduleScope),
+            )
+            // Bindings (variables/locals) declared in the followed module.
+            bindings.push(...normalizeBindings(m.parsed, trace, m.text))
+            // Settings (terraform block) declared in the followed module.
+            settings.push(...normalizeSettings(m.parsed, trace, m.text))
+            // Inline ignores in the module file — keyed by the PHYSICAL file
+            // path (modRel, before the › trace) so they match findings from
+            // every instantiation of this module.
+            ignores.push(...scanIgnores(m.text, modRel))
             if (!childTraceRoot) childTraceRoot = base
           }
           // When the module has NO direct files (edge case), fall back to
@@ -314,15 +419,29 @@ async function followModules(
             moduleScope,
             environmentOverride,
             new Set([...pathStack, moduleDir]),
+            childPd,
           )
           if (!nested.ok) return nested
           out.push(...nested.value.resources)
           skips.push(...nested.value.skips)
+          outputs.push(...nested.value.outputs)
+          bindings.push(...nested.value.bindings)
+          settings.push(...nested.value.settings)
+          moduleCalls.push(...nested.value.moduleCalls)
+          ignores.push(...nested.value.ignores)
         }
       }
     }
   }
-  return ok({ resources: out, skips })
+  return ok({
+    resources: out,
+    skips,
+    outputs,
+    bindings,
+    settings,
+    moduleCalls,
+    ignores,
+  })
 }
 
 /**
@@ -348,10 +467,33 @@ export async function parseTf(
 
   // Build the cross-file var/local scope, then normalize direct resources.
   const scope = buildScope(parsedFiles.value.map((p) => p.parsed))
+  // Provider default_tags/default_labels declared in this root dir — every
+  // direct resource inherits them, and they're threaded into followed modules
+  // (a child with no provider block inherits the root's defaults).
+  const pd = providerDefaults(
+    parsedFiles.value.map((p) => p.parsed),
+    scope,
+  )
   const resources: NormalizedResource[] = []
+  const outputs: NormalizedOutput[] = []
+  const bindings: NormalizedBinding[] = []
+  const settings: NormalizedTerraformSettings[] = []
+  const moduleCalls: NormalizedModuleCall[] = []
+  const ignores: IgnoreDirective[] = []
   for (const { file, text, parsed } of parsedFiles.value) {
     const rel = toPosix(path.relative(projectRoot, file))
-    resources.push(...normalize(parsed, rel, text, scope, environmentOverride))
+    resources.push(
+      ...normalize(parsed, rel, text, scope, environmentOverride, pd),
+    )
+    // Direct outputs in this root (the common case — outputs live at the
+    // root, not inside child modules).
+    outputs.push(...normalizeOutputs(parsed, rel, text, scope))
+    // Direct bindings (variables/locals) in this root.
+    bindings.push(...normalizeBindings(parsed, rel, text))
+    // Direct terraform settings in this root.
+    settings.push(...normalizeSettings(parsed, rel, text))
+    // Inline ignore directives in this root file.
+    ignores.push(...scanIgnores(text, rel))
   }
 
   // Follow local module calls, threading caller inputs into their vars.
@@ -362,9 +504,39 @@ export async function parseTf(
     projectRoot,
     scope,
     environmentOverride,
+    new Set(),
+    pd,
   )
   if (!followed.ok) return followed
   resources.push(...followed.value.resources)
+  outputs.push(...followed.value.outputs)
+  bindings.push(...followed.value.bindings)
+  settings.push(...followed.value.settings)
+  moduleCalls.push(...followed.value.moduleCalls)
+  ignores.push(...followed.value.ignores)
 
-  return ok({ resources, skips: followed.value.skips })
+  // If NO terraform {} block was found in any file (root or followed module),
+  // synthesize a default entry so settings-surface rules still evaluate
+  // against the implicit defaults (no backend = local, no required_version =
+  // floating). Without this, requireEncryptedBackend / denyLocalBackend /
+  // requireExactTerraformVersion would silently not fire — a false negative.
+  if (settings.length === 0) {
+    settings.push({
+      requiredVersion: undefined,
+      requiredProviders: [],
+      backend: undefined,
+      file: rootRel,
+      line: 1,
+    })
+  }
+
+  return ok({
+    resources,
+    skips: followed.value.skips,
+    outputs,
+    bindings,
+    settings,
+    moduleCalls,
+    ignores,
+  })
 }

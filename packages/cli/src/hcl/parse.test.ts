@@ -604,3 +604,195 @@ describe('parseTf — direct (non-module) behavior', () => {
     if (!r.ok) expect(r.error.kind).toBe('PathNotFound')
   })
 })
+
+// Provider default_tags declared at the root are inherited by every resource,
+// including those reached through followed modules (Terraform provider
+// inheritance). A child module with NO provider block of its own inherits the
+// root's defaults — so a mustHaveTags rule on the module's resource should
+// pass when the tag is supplied by the root provider, not flag a violation.
+describe('parseTf — provider default_tags inheritance into modules', () => {
+  const taglessModule = `
+resource "aws_s3_bucket" "this" {
+  bucket = "mod-bucket"
+}
+`
+
+  it('a followed module inherits the root provider default_tags', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`provider "aws" {
+  default_tags {
+    tags = {
+      Env = "prod"
+    }
+  }
+}
+
+module "b" {
+  source = "../../modules/bucket"
+}`),
+      'modules/bucket/main.tf': taglessModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.resources).toHaveLength(1)
+    const b = r.value.resources[0]!
+    // The module resource has no tags block, but inherits Env from the root
+    // provider → resolved with [Env], not resolved-empty.
+    expect(b.tags.kind).toBe('resolved')
+    if (b.tags.kind === 'resolved') expect(b.tags.keys).toEqual(['Env'])
+  })
+
+  it('a child module with its own provider defaults merges with inherited (union, child wins)', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`provider "aws" {
+  default_tags {
+    tags = {
+      Env = "prod"
+    }
+  }
+}
+
+module "b" {
+  source = "../../modules/bucket"
+}`),
+      'modules/bucket/main.tf': `provider "aws" {
+  default_tags {
+    tags = {
+      Team = "infra"
+    }
+  }
+}
+
+resource "aws_s3_bucket" "this" {
+  bucket = "mod-bucket"
+}`,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const b = r.value.resources[0]!
+    expect(b.tags.kind).toBe('resolved')
+    if (b.tags.kind === 'resolved')
+      expect(b.tags.keys.sort()).toEqual(['Env', 'Team'])
+  })
+
+  it('a nested (two-deep) module inherits the root provider defaults through the chain', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`provider "aws" {
+  default_tags {
+    tags = {
+      Env = "prod"
+    }
+  }
+}
+
+module "outer" {
+  source = "../../modules/outer"
+}`),
+      'modules/outer/main.tf': `module "inner" {
+  source = "../inner"
+}`,
+      'modules/inner/main.tf': taglessModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const b = r.value.resources[0]!
+    expect(b.tags.kind).toBe('resolved')
+    if (b.tags.kind === 'resolved') expect(b.tags.keys).toEqual(['Env'])
+  })
+
+  it('a root with no provider block leaves a tagless module resource resolved-empty', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "b" {
+  source = "../../modules/bucket"
+}`),
+      'modules/bucket/main.tf': taglessModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const b = r.value.resources[0]!
+    expect(b.tags.kind).toBe('resolved')
+    if (b.tags.kind === 'resolved') expect(b.tags.keys).toEqual([])
+  })
+})
+
+// A module call's `providers = { aws = aws.dr }` remaps the child's DEFAULT
+// provider to the parent's `aws.dr` alias — so a child resource with no
+// explicit `provider` arg inherits alias "dr" (#13, closes #9 across module
+// boundaries). An explicit `provider = aws.x` on a child resource wins and is
+// NOT remapped.
+describe('parseTf — module providers map remaps child provider alias (#13)', () => {
+  const childModule = `
+resource "aws_instance" "default_prov" {
+  ami = "ami-1"
+}
+
+resource "aws_instance" "explicit_prov" {
+  ami      = "ami-2"
+  provider = aws.staging
+}
+`
+
+  it("a child resource on the default provider inherits the parent's alias", async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`provider "aws" {
+  alias  = "dr"
+  region = "us-west-2"
+}
+
+module "m" {
+  source   = "../../modules/mod"
+  providers = {
+    aws = aws.dr
+  }
+}`),
+      'modules/mod/main.tf': childModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const def = r.value.resources.find((x) => x.name === 'default_prov')
+    // default-provider child → remapped to "dr"
+    expect(def?.providerAlias).toBe('dr')
+  })
+
+  it('an explicit provider on a child resource is NOT remapped', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`provider "aws" {
+  alias  = "dr"
+  region = "us-west-2"
+}
+
+module "m" {
+  source   = "../../modules/mod"
+  providers = {
+    aws = aws.dr
+  }
+}`),
+      'modules/mod/main.tf': childModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const expl = r.value.resources.find((x) => x.name === 'explicit_prov')
+    // explicit `provider = aws.staging` wins → "staging", not remapped to "dr"
+    expect(expl?.providerAlias).toBe('staging')
+  })
+
+  it('a module call with no providers map leaves child defaults un-aliased', async () => {
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "m" {
+  source = "../../modules/mod"
+}`),
+      'modules/mod/main.tf': childModule,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const def = r.value.resources.find((x) => x.name === 'default_prov')
+    expect(def?.providerAlias).toBeUndefined()
+  })
+})

@@ -134,7 +134,7 @@ gitleaks:
     entrypoint: ['']
   rules: !reference [.default_rules, rules]
   script:
-    - gitleaks detect --source . --no-banner --redact
+    - gitleaks detect --source . --no-banner --redact --config .gitleaks.toml
 
 # ── release: publish to npm on a vX.Y.Z tag ──
 # Runs only after the test + security stages pass on the tag pipeline.

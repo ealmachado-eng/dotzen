@@ -1,0 +1,10 @@
+# gitleaks config — allowlist paths that intentionally contain fake secret
+# patterns (test fixtures for denyPlaintextLocalSecret / denyInsensitiveVariable).
+# These are NOT real secrets — the values are repeated placeholder characters.
+
+[allowlist]
+description = "Test fixtures with intentional fake secret patterns"
+paths = [
+  '''packages/cli/tests/integration/fixtures/.*\.tf''',
+  '''packages/cli/src/.*\.test\.ts''',
+]

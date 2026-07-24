@@ -18,10 +18,18 @@ function dotzenJson(
 }
 
 function specTs(): string {
-  return `import { rule, AwsResource, Port, Tag, AwsAttribute, Acl } from '@dotzen/dotzen'
+  return `import { rule, AwsResource, Port, Tag, AwsAttribute, Acl, Provisioner } from '@dotzen/dotzen'
 
 // Prose as Code: each rule reads like a policy statement. Autocomplete
 // guides every choice, and a typo is a compile error, not a silent gap.
+//
+// Curated CIS preset packs are available for all three clouds:
+//   import { cisAws } from '@dotzen/dotzen'   // 23 rules
+//   import { cisAzure } from '@dotzen/dotzen' // 17 rules
+//   import { cisGcp } from '@dotzen/dotzen'   // 21 rules
+// Spread one into your spec and extend with custom rules:
+//   export const spec = [...cisAws, rule().resource(...).mustBeTrue(...)]
+
 export const spec = [
   rule()
     .resource(AwsResource.SecurityGroup)
@@ -48,6 +56,34 @@ export const spec = [
     .resource(AwsResource.S3Bucket)
     .denyAcl(Acl.PublicRead, Acl.PublicReadWrite)
     .message('S3 buckets must not have a public ACL'),
+
+  // Supply-chain: no arbitrary command execution on apply/destroy.
+  rule()
+    .allResources()
+    .denyProvisioner(Provisioner.LocalExec, Provisioner.RemoteExec)
+    .message('Provisioners are forbidden — use user_data / a config manager')
+    .rationale('Provisioners run arbitrary commands during apply'),
+
+  // Secrets: mark sensitive variables, never hardcode in locals.
+  rule()
+    .allResources()
+    .denyInsensitiveVariable()
+    .message('Secret-looking variables must be marked sensitive'),
+
+  rule()
+    .allResources()
+    .denyPlaintextLocalSecret()
+    .message('Locals must not hardcode secrets — use a reference'),
+
+  // State: encrypted, remote, not local.
+  rule()
+    .allResources()
+    .requireEncryptedBackend()
+    .message('State backend must be encrypted'),
+
+  // Suppress a known-acceptable finding with an inline comment:
+  //   # dotzen:ignore: <reason>
+  //   resource "aws_security_group" "bastion" { ... }
 ]
 `
 }

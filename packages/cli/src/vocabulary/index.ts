@@ -1,5 +1,6 @@
 import { AzureResource, AzureAttribute } from './azure'
 import { GcpResource, GcpAttribute } from './gcp'
+import { DataResource, DataAttribute } from './data'
 
 /**
  * Closed vocabulary for every domain value (doc 02). No bare strings.
@@ -78,6 +79,38 @@ export enum Block {
   Identity = 'identity',
 }
 
+/**
+ * Terraform provisioner types (the `"x"` in `provisioner "x" {}`). These run
+ * arbitrary commands on apply/destroy — a supply-chain / exfiltration surface
+ * dotzen can govern with `denyProvisioner`. `local-exec` runs on the operator's
+ * machine; `remote-exec` runs on the provisioned resource over SSH/WinRM.
+ */
+export enum Provisioner {
+  LocalExec = 'local-exec',
+  RemoteExec = 'remote-exec',
+  /** `file` provisioner — copies files to the provisioned resource over the
+   *  `connection` (SSH/WinRM). Less exfil-prone than local/remote-exec but
+   *  still arbitrary I/O during apply; governable with `denyProvisioner`. */
+  File = 'file',
+}
+
+/**
+ * Resource `lifecycle {}` meta-attributes (flattened to `lifecycle.<key>` by
+ * normalize — `lifecycle` is a nested block, NOT a meta-arg, so it IS
+ * harvested). `prevent_destroy` blocks deletion (a safety control worth
+ * requiring on stateful resources); `create_before_destroy` swaps the update
+ * order to avoid outage. Target with the existing `mustBeTrue` /
+ * `denyWhenTrue` conditions — no new condition needed.
+ */
+export enum LifecycleAttribute {
+  PreventDestroy = 'lifecycle.prevent_destroy',
+  CreateBeforeDestroy = 'lifecycle.create_before_destroy',
+  /** `lifecycle { ignore_changes = [...] }` — harvested as a LIST attribute.
+   *  Govern with `listContains(LifecycleAttribute.IgnoreChanges, 'tags', …)`
+   *  to flag resources that hide drift on security-critical attributes. */
+  IgnoreChanges = 'lifecycle.ignore_changes',
+}
+
 // Wildcard sentinel for list/value checks (e.g. an IAM/RBAC action of "*").
 export enum Wildcard {
   All = '*',
@@ -109,8 +142,15 @@ export {
   SqlSslMode,
   IngressSetting,
 } from './gcp'
-export type AnyResource = AwsResource | AzureResource | GcpResource
-export type AnyAttribute = AwsAttribute | AzureAttribute | GcpAttribute
+export { DataResource, DataAttribute } from './data'
+export type AnyResource =
+  AwsResource | AzureResource | GcpResource | DataResource
+export type AnyAttribute =
+  | AwsAttribute
+  | AzureAttribute
+  | GcpAttribute
+  | DataAttribute
+  | LifecycleAttribute
 
 export enum Port {
   SSH = 22,
@@ -207,6 +247,9 @@ export enum AwsAttribute {
   // AWS Lambda
   TracingMode = 'tracing_config.mode',
   LambdaKmsKeyArn = 'kms_key_arn',
+  // ElastiCache replication group
+  AtRestEncryptionEnabled = 'at_rest_encryption_enabled',
+  TransitEncryptionEnabled = 'transit_encryption_enabled',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

@@ -3,9 +3,15 @@ import { Result, ok } from '../result/result'
 import { DotzenError } from '../result/errors'
 import { readDotzenJson, enforceVersion } from '../version/config'
 import { importSpecModule, loadSpec } from '../spec/load'
-import { parseTf, ModuleSkip } from '../hcl/parse'
+import { parseTf, ModuleSkip, IgnoreDirective } from '../hcl/parse'
 import { evaluate, CheckReport, Unevaluable } from '../engine/evaluate'
-import { NormalizedResource } from '../hcl/model'
+import {
+  NormalizedResource,
+  NormalizedOutput,
+  NormalizedBinding,
+  NormalizedTerraformSettings,
+  NormalizedModuleCall,
+} from '../hcl/model'
 
 /**
  * The pipeline (doc 06). Railway: every operational stage short-circuits
@@ -38,6 +44,11 @@ export async function check(
   // rule scoping by folder instead of by tag.
   const roots = Array.isArray(terraform) ? terraform : [terraform]
   const resources: NormalizedResource[] = []
+  const outputs: NormalizedOutput[] = []
+  const bindings: NormalizedBinding[] = []
+  const settings: NormalizedTerraformSettings[] = []
+  const moduleCalls: NormalizedModuleCall[] = []
+  const ignores: IgnoreDirective[] = []
   const skips: ModuleSkip[] = []
   for (const root of roots) {
     const rootPath = typeof root === 'string' ? root : root.path
@@ -45,6 +56,11 @@ export async function check(
     const parsed = await parseTf(path.resolve(baseDir, rootPath), baseDir, env)
     if (!parsed.ok) return parsed
     resources.push(...parsed.value.resources)
+    outputs.push(...parsed.value.outputs)
+    bindings.push(...parsed.value.bindings)
+    settings.push(...parsed.value.settings)
+    moduleCalls.push(...parsed.value.moduleCalls)
+    ignores.push(...parsed.value.ignores)
     skips.push(...parsed.value.skips)
   }
 
@@ -59,9 +75,28 @@ export async function check(
     reason: `not followed: ${s.reason} (source=${s.source})`,
   }))
 
-  const report = evaluate(rules.value, resources)
+  const report = evaluate(
+    rules.value,
+    resources,
+    outputs,
+    bindings,
+    settings,
+    moduleCalls,
+  )
+
+  // Apply inline `dotzen:ignore` directives — suppress findings (violations +
+  // could-not-evaluate) whose PHYSICAL file + block-start line match an
+  // ignore. The physical file is the segment before any `›` trace so an ignore
+  // in a module file suppresses findings from every instantiation of it.
+  const ignored = new Set(ignores.map((d) => `${d.file}::${d.line}`))
+  const physicalFile = (f: string) => f.split(' › ')[0]!
+  const isIgnored = (file: string, line: number) =>
+    ignored.has(`${physicalFile(file)}::${line}`)
   return ok({
-    ...report,
-    couldNotEvaluate: [...moduleSkips, ...report.couldNotEvaluate],
+    violations: report.violations.filter((v) => !isIgnored(v.file, v.line)),
+    passed: report.passed,
+    couldNotEvaluate: [...moduleSkips, ...report.couldNotEvaluate].filter(
+      (u) => !isIgnored(u.file, u.line),
+    ),
   })
 }

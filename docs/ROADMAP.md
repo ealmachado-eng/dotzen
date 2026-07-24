@@ -384,3 +384,68 @@ A companion resource that points at its parent by a literal name is not
 linked (rare; documented in the evaluator). An *unresolvable* chain
 (`var.x` with no default and no module input) degrades to
 could-not-evaluate rather than a false violation.
+
+---
+
+## 1.0.0 — engine feature-complete + product surface
+
+### Terraform structure coverage (DONE)
+
+- ✅ **Provider `default_tags`/`default_labels` inheritance** — a provider's
+  default tags merge into every resource's tag set; threaded through module
+  following (nested modules inherit the root's defaults). Fixes a false
+  violation on tagless resources whose tags come from the provider.
+- ✅ **Resource `count = 0` / `for_each`-empty skip** — disabled resources
+  are skipped silently (no false violation). Unresolvable `count`/`for_each`
+  followed once (honest).
+- ✅ **Resource `for_each` per-element expansion** — a resolvable `for_each`
+  expands into one `NormalizedResource` per element, with `each.*` threaded
+  into a per-instance scope. Violations show `type.name[key]`.
+- ✅ **`dynamic` blocks beyond ingress/egress** — a `dynamic "settings" {}`
+  on any block (except ingress/egress/tags) is expanded into `<name>.*`
+  attributes. `mustHaveBlock`/`denyBlockPresence` see the block.
+- ✅ **Data sources as governed resources** — `data "aws_ami" "x" {}`
+  normalized with type `data.aws_ami`; existing conditions apply.
+- ✅ **Provider alias scoping + module `providers` map remapping** —
+  `.providerAlias(X)` scopes a rule to a provider alias; a module call's
+  `providers = { aws = aws.dr }` remaps the child's default to the parent
+  alias.
+- ✅ **Conservative ternary evaluation** — `${ref (==|!=) scalar ? scalar
+  : scalar}` resolves to a literal; anything compound stays unresolved.
+- ✅ **Meta-arg filtering** — `count`/`for_each`/`depends_on`/`provider`
+  excluded from attribute harvesting; `lifecycle` kept as nested block.
+
+### New rule conditions (DONE — 20+)
+
+- Resource: `denyProvisioner`, `denyIgnoreChanges`,
+  `denyPlaintextConnectionSecret`, provider-alias scoping.
+- Output: `denyInsensitiveSecretOutput` (multi-segment data-source attrs).
+- Binding: `denyInsensitiveVariable`, `denyPlaintextLocalSecret`.
+- Settings: `requireExactTerraformVersion`, `denyFloatingProviderVersion`,
+  `requireEncryptedBackend`, `denyLocalBackend`.
+- Module-call: `denyFloatingModuleVersion`.
+- Lifecycle: `mustBeTrue`/`denyWhenTrue` on `lifecycle.prevent_destroy` /
+  `create_before_destroy` (via `LifecycleAttribute` enum — no new condition).
+
+### New vocabulary (DONE)
+
+- `Provisioner { LocalExec, RemoteExec, File }`
+- `LifecycleAttribute { PreventDestroy, CreateBeforeDestroy, IgnoreChanges }`
+- `DataResource { AwsAmi }`, `DataAttribute { AmiOwners }`
+- `AwsAttribute.AtRestEncryptionEnabled`, `TransitEncryptionEnabled`
+
+### Product surface (DONE)
+
+- ✅ **Inline ignore directives** (`# dotzen:ignore[: reason]`) — suppress
+  findings on a block; anchored regex (no false match on string values).
+- ✅ **Frozen JSON schema** (`schemaVersion: 1`) — top-level + per-entry
+  fields pinned by a schema-stability test.
+- ✅ **Curated CIS presets** — `cisAws` (23 rules), `cisAzure` (17),
+  `cisGcp` (21). Each proven end-to-end on real Terraform fixtures.
+- ✅ **CI integration templates** — GitHub Actions + GitLab CI YAML.
+- ✅ **Performance verified** — ~195ms for 1200 resources.
+- ✅ **Scaffold updated** — shows presets, new conditions, ignore directives.
+
+**The engine is feature-complete for static Terraform governance across
+AWS, Azure, and GCP.** 492 unit + 34 integration tests. Build, typecheck,
+lint, format all green.

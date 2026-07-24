@@ -1,9 +1,14 @@
 import { Rule, Condition, ResourceTarget } from '../spec/rule'
 import {
   NormalizedResource,
+  NormalizedOutput,
+  NormalizedBinding,
+  NormalizedTerraformSettings,
+  NormalizedModuleCall,
   IngressRule,
   NormalizedValue,
   address,
+  displayAddress,
 } from '../hcl/model'
 import { Effect, AwsResource, Port, Cidr } from '../vocabulary'
 
@@ -72,6 +77,41 @@ type DenyLiteral = Extract<Condition, { kind: 'denyLiteral' }>
 type MustHaveAssociated = Extract<Condition, { kind: 'mustHaveAssociated' }>
 type MustHaveBlock = Extract<Condition, { kind: 'mustHaveBlock' }>
 type DenyBlockPresence = Extract<Condition, { kind: 'denyBlockPresence' }>
+type DenyIgnoreChanges = Extract<Condition, { kind: 'denyIgnoreChanges' }>
+type DenyProvisioner = Extract<Condition, { kind: 'denyProvisioner' }>
+type DenyInsensitiveSecretOutput = Extract<
+  Condition,
+  { kind: 'denyInsensitiveSecretOutput' }
+>
+type DenyInsensitiveVariable = Extract<
+  Condition,
+  { kind: 'denyInsensitiveVariable' }
+>
+type DenyPlaintextLocalSecret = Extract<
+  Condition,
+  { kind: 'denyPlaintextLocalSecret' }
+>
+type RequireExactTerraformVersion = Extract<
+  Condition,
+  { kind: 'requireExactTerraformVersion' }
+>
+type DenyFloatingProviderVersion = Extract<
+  Condition,
+  { kind: 'denyFloatingProviderVersion' }
+>
+type RequireEncryptedBackend = Extract<
+  Condition,
+  { kind: 'requireEncryptedBackend' }
+>
+type DenyLocalBackend = Extract<Condition, { kind: 'denyLocalBackend' }>
+type DenyPlaintextConnectionSecret = Extract<
+  Condition,
+  { kind: 'denyPlaintextConnectionSecret' }
+>
+type DenyFloatingModuleVersion = Extract<
+  Condition,
+  { kind: 'denyFloatingModuleVersion' }
+>
 const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 
 /**
@@ -204,6 +244,17 @@ function environmentMatches(rule: Rule, r: NormalizedResource): boolean {
     r.environment?.kind === 'literal' &&
     r.environment.value === rule.environment
   )
+}
+
+/**
+ * Provider-alias scoping is a fail-open filter (like environment scoping): a
+ * `.providerAlias(X)` rule applies only to resources pinned to alias X. A
+ * resource on the default provider (no `provider` arg → undefined alias) is
+ * skipped by an alias-scoped rule; an un-scoped rule applies to all.
+ */
+function providerAliasMatches(rule: Rule, r: NormalizedResource): boolean {
+  if (!rule.providerAlias) return true
+  return r.providerAlias === rule.providerAlias
 }
 
 const isLiteralNumber = (
@@ -868,6 +919,344 @@ function evalDenyBlockPresence(
     : { kind: 'pass' }
 }
 
+/**
+ * Flag a resource whose `lifecycle.ignore_changes` lists any of the denied
+ * attribute paths. `ignore_changes` entries are attribute PATHS (bare
+ * identifiers hcl2json wraps as `${tags}`), so each list item is matched by
+ * stripping the `${…}` wrapper (a literal item is used as-is). A compound
+ * (non-sole) expression degrades to could-not-evaluate.
+ */
+function evalDenyIgnoreChanges(
+  c: DenyIgnoreChanges,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const l = r.lists?.['lifecycle.ignore_changes']
+  if (!l) {
+    // The whole ignore_changes might be an unresolved scalar ref.
+    return r.attributes['lifecycle.ignore_changes']?.kind === 'unresolved'
+      ? {
+          kind: 'cannotEvaluate',
+          reason: 'lifecycle.ignore_changes is an unresolved reference',
+        }
+      : { kind: 'pass' } // no ignore_changes declared → nothing hidden
+  }
+  if (l.kind === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason: 'lifecycle.ignore_changes is an unresolved reference',
+    }
+  const sawUnknown: string[] = []
+  for (const item of l.items) {
+    const path =
+      item.kind === 'literal'
+        ? String(item.value)
+        : item.kind === 'unresolved' &&
+            /^\$\{[A-Za-z0-9_.-]+\}$/.test(item.expr)
+          ? item.expr.slice(2, -1) // strip ${ } — a bare attr path
+          : undefined
+    if (path === undefined) {
+      sawUnknown.push(item.kind === 'unresolved' ? item.expr : '?')
+      continue
+    }
+    if (c.attrs.includes(path))
+      return {
+        kind: 'violation',
+        detail: `lifecycle.ignore_changes hides drift on "${path}"`,
+      }
+  }
+  if (sawUnknown.length > 0)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `lifecycle.ignore_changes has an unresolvable entry: ${sawUnknown.join(', ')}`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Same-resource: flag iff the resource declares any of the named provisioner
+ * types (arbitrary-command execution on apply/destroy). Passes when the
+ * resource has no provisioners or none of the denied ones.
+ */
+function evalDenyProvisioner(
+  c: DenyProvisioner,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const declared = r.provisioners ?? []
+  if (declared.length === 0) return { kind: 'pass' }
+  const denied = c.names.filter((n) => declared.includes(n))
+  if (denied.length === 0) return { kind: 'pass' }
+  return {
+    kind: 'violation',
+    detail: `provisioner(s) not allowed: ${denied.join(', ')}`,
+  }
+}
+
+const escRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Build, for a `type.attr` secret descriptor (name wildcarded), two regexes
+ * matching a `${<type>.<anyName>.<attr>}` reference: a SOLE-ref (whole-expr)
+ * matcher and a PARTIAL (contains) matcher. A sole secret ref in an
+ * insensitive output is a definite leak; a secret ref embedded in a compound
+ * expression (`"prefix-${...}"`) degrades to could-not-evaluate.
+ */
+function secretMatchers(secretAttr: string): {
+  sole: RegExp
+  partial: RegExp
+} {
+  // Split on the LAST dot so multi-segment data-source types work: a
+  // `data.aws_ssm_parameter.value` descriptor splits into type
+  // `data.aws_ssm_parameter` + attr `value`, matching
+  // `${data.aws_ssm_parameter.<name>.value}`. (Splitting on the first dot
+  // would make type=`data`, attr=`aws_ssm_parameter.value` → never match.)
+  const dot = secretAttr.lastIndexOf('.')
+  const type = dot === -1 ? secretAttr : secretAttr.slice(0, dot)
+  const attr = dot === -1 ? '' : secretAttr.slice(dot + 1)
+  const head = `\\$\\{\\s*${escRe(type)}\\.[A-Za-z0-9_-]+\\.${escRe(attr)}\\s*\\}`
+  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped parts
+  return { sole: new RegExp(`^${head}$`), partial: new RegExp(head) }
+}
+
+/**
+ * Evaluate a `denyInsensitiveSecretOutput` condition against one output.
+ *  - `sensitive = true` → pass (protected).
+ *  - `sensitive` is an unresolvable var → could-not-evaluate (can't tell if
+ *    the output is protected).
+ *  - else (unprotected): a `value` that is a SOLE secret ref → violation; a
+ *    compound expr CONTAINING a secret ref → could-not-evaluate; otherwise pass.
+ */
+function evalInsensitiveSecretOutput(
+  c: DenyInsensitiveSecretOutput,
+  o: NormalizedOutput,
+): ConditionOutcome {
+  if (o.sensitive === true) return { kind: 'pass' }
+  if (o.sensitive === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'sensitive flag is an unresolvable reference — cannot determine if the output is protected',
+    }
+  // Unprotected (sensitive false / absent) — check the value for secret refs.
+  if (o.value.kind !== 'unresolved') return { kind: 'pass' } // literal — no ref
+  const expr = o.value.expr
+  const soleHit: string[] = []
+  const partialHit: string[] = []
+  for (const sa of c.secretAttrs) {
+    const { sole, partial } = secretMatchers(sa)
+    if (sole.test(expr)) {
+      soleHit.push(sa)
+    } else if (partial.test(expr)) {
+      partialHit.push(sa)
+    }
+  }
+  if (soleHit.length > 0)
+    return {
+      kind: 'violation',
+      detail: `output references a secret attribute without sensitive = true: ${soleHit.join(', ')}`,
+    }
+  if (partialHit.length > 0)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `output value contains a secret reference in a compound expression — cannot prove it is safe: ${partialHit.join(', ')}`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Binding-surface: a `variable` whose name looks like a secret must be marked
+ * `sensitive = true` (else its value leaks in plans / CI logs). Passes a
+ * non-secret-named variable and a sensitive one; degrades to
+ * could-not-evaluate when the `sensitive` flag is itself an unresolvable var.
+ */
+function evalInsensitiveVariable(
+  _c: DenyInsensitiveVariable,
+  b: NormalizedBinding,
+): ConditionOutcome {
+  if (b.kind !== 'variable') return { kind: 'pass' }
+  if (!SECRET_NAME_PATTERN.test(b.name)) return { kind: 'pass' }
+  if (b.sensitive === true) return { kind: 'pass' }
+  if (b.sensitive === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason: `sensitive flag on "${b.name}" is an unresolvable reference — cannot determine if it is protected`,
+    }
+  return {
+    kind: 'violation',
+    detail: `secret-looking variable "${b.name}" is not marked sensitive — it leaks in plans/logs`,
+  }
+}
+
+/**
+ * Binding-surface: a `locals` entry whose name looks like a secret AND whose
+ * value is a plaintext literal — a hardcoded secret. A referenced value
+ * (`${var.x}` / Secrets Manager / SSM) is the safe pattern and passes.
+ */
+function evalPlaintextLocalSecret(
+  _c: DenyPlaintextLocalSecret,
+  b: NormalizedBinding,
+): ConditionOutcome {
+  if (b.kind !== 'local') return { kind: 'pass' }
+  if (!SECRET_NAME_PATTERN.test(b.name)) return { kind: 'pass' }
+  if (!b.isLiteral) return { kind: 'pass' } // a reference — the safe pattern
+  return {
+    kind: 'violation',
+    detail: `plaintext secret in local "${b.name}" — use a reference (Secrets Manager / SSM Parameter Store)`,
+  }
+}
+
+/**
+ * Whether a version constraint string is "pinned" (blocks a major-version
+ * drift): an EXACT pin (`= X.Y.Z`) or a PESSIMISTIC pin (`~> X.Y` / `~> X.Y.Z`).
+ * Bare (`X.Y.Z` = `>= X.Y.Z`), `>=`, `>`, `<=` are floating.
+ */
+const isPinnedConstraint = (v: string): boolean =>
+  /^\s*=/.test(v) || /^\s*~>/.test(v)
+
+/**
+ * Settings-surface: `required_version` must be an EXACT pin (`= X.Y.Z`).
+ * Absent or any non-`=` constraint (bare/`~>`/`>=`) is the violation.
+ */
+function evalRequireExactTerraformVersion(
+  _c: RequireExactTerraformVersion,
+  s: NormalizedTerraformSettings,
+): ConditionOutcome {
+  if (!s.requiredVersion)
+    return {
+      kind: 'violation',
+      detail:
+        'terraform.required_version is not set — the TF engine is not pinned',
+    }
+  if (!/^\s*=/.test(s.requiredVersion))
+    return {
+      kind: 'violation',
+      detail: `terraform.required_version "${s.requiredVersion}" is not an exact pin (use "= X.Y.Z")`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Settings-surface: each named provider must be present in required_providers
+ * with a PINNED constraint (`=` or `~>`). Absent or floating → violation.
+ */
+function evalDenyFloatingProviderVersion(
+  c: DenyFloatingProviderVersion,
+  s: NormalizedTerraformSettings,
+): ConditionOutcome {
+  const failing: string[] = []
+  for (const name of c.names) {
+    const entry = s.requiredProviders.find((p) => p.name === name)
+    if (!entry) {
+      failing.push(`${name} (not pinned in required_providers)`)
+    } else if (!isPinnedConstraint(entry.version)) {
+      failing.push(`${name} ("${entry.version}")`)
+    }
+  }
+  if (failing.length > 0)
+    return {
+      kind: 'violation',
+      detail: `floating/absent provider version constraints: ${failing.join(', ')}`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Settings-surface: the state backend must be declared and encrypted. Absent
+ * backend (local default) → violation. `encrypt = true` passes; `encrypt` not
+ * literally true → violation; `encrypt` as a var ref → could-not-evaluate.
+ * Backends with no `encrypt` concept (e.g. `local`) → violation (can't prove
+ * encryption).
+ */
+function evalRequireEncryptedBackend(
+  _c: RequireEncryptedBackend,
+  s: NormalizedTerraformSettings,
+): ConditionOutcome {
+  const be = s.backend
+  if (!be)
+    return {
+      kind: 'violation',
+      detail: 'no backend declared — Terraform uses unencrypted local state',
+    }
+  if (be.encrypted === 'unresolved')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'backend `encrypt` flag is an unresolvable reference — cannot determine if state is encrypted',
+    }
+  if (be.encrypted === true) return { kind: 'pass' }
+  return {
+    kind: 'violation',
+    detail: `backend "${be.type}" is not encrypted (encrypt != true)`,
+  }
+}
+
+/**
+ * Settings-surface: forbid a `local` backend (or no backend — Terraform
+ * defaults to local). Local state is unencrypted, unshared, and unlocked.
+ */
+function evalDenyLocalBackend(
+  _c: DenyLocalBackend,
+  s: NormalizedTerraformSettings,
+): ConditionOutcome {
+  const be = s.backend
+  if (!be || be.type === 'local')
+    return {
+      kind: 'violation',
+      detail: be
+        ? 'backend is "local" — use a remote, encrypted, locked backend'
+        : 'no backend declared — Terraform defaults to local state',
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Same-resource: a `connection {}` block (used by file/remote-exec
+ * provisioners) with a plaintext secret — a `connection.<key>` attribute
+ * whose key matches the secret-name pattern (PASSWORD/SECRET/KEY/TOKEN/
+  CREDENTIAL) AND whose value is a literal (not a `${ref}`). The safe pattern
+ * is a reference (Secrets Manager / SSM / a runtime file read).
+ */
+function evalDenyPlaintextConnectionSecret(
+  _c: DenyPlaintextConnectionSecret,
+  r: NormalizedResource,
+): ConditionOutcome {
+  const hits: string[] = []
+  for (const [attr, v] of Object.entries(r.attributes)) {
+    if (!attr.startsWith('connection.')) continue
+    if (v.kind !== 'literal') continue // a reference — the safe pattern
+    const field = attr.slice('connection.'.length)
+    if (SECRET_NAME_PATTERN.test(field)) hits.push(field)
+  }
+  if (hits.length > 0)
+    return {
+      kind: 'violation',
+      detail: `plaintext secret in connection block: ${hits.join(', ')} — use a reference (Secrets Manager / SSM / a runtime file read)`,
+    }
+  return { kind: 'pass' }
+}
+
+/**
+ * Module-call-surface: a REGISTRY module must pin its `version` (`=` or `~>`).
+ * Absent or floating (bare/`>=`/`>`) → violation. Local modules (`./`/`../`)
+ * carry no version and pass.
+ */
+function evalDenyFloatingModuleVersion(
+  _c: DenyFloatingModuleVersion,
+  m: NormalizedModuleCall,
+): ConditionOutcome {
+  if (!m.registry) return { kind: 'pass' } // local module — no version
+  if (!m.version)
+    return {
+      kind: 'violation',
+      detail: `registry module "${m.label}" (${m.source}) has no version constraint — supply-chain drift risk`,
+    }
+  if (!isPinnedConstraint(m.version))
+    return {
+      kind: 'violation',
+      detail: `registry module "${m.label}" version "${m.version}" is floating (use "= X.Y.Z" or "~> X.Y")`,
+    }
+  return { kind: 'pass' }
+}
+
 /** Exhaustive dispatch: a new condition kind is a compile error (Layer 4). */
 function evalCondition(
   c: Condition,
@@ -925,6 +1314,35 @@ function evalCondition(
       return evalMustHaveBlock(c, r)
     case 'denyBlockPresence':
       return evalDenyBlockPresence(c, r)
+    case 'denyIgnoreChanges':
+      return evalDenyIgnoreChanges(c, r)
+    case 'denyPlaintextConnectionSecret':
+      return evalDenyPlaintextConnectionSecret(c, r)
+    case 'denyProvisioner':
+      return evalDenyProvisioner(c, r)
+    // Output-targeted conditions are no-ops in the RESOURCE pass — they are
+    // evaluated in the outputs pass (outputs are not typed resources). Returning
+    // pass here avoids double-counting and keeps the dispatch exhaustive.
+    case 'denyInsensitiveSecretOutput':
+      return { kind: 'pass' }
+    // Binding-surface conditions are evaluated in the BINDINGS pass — no-op
+    // here (kept exhaustive; never reached because the resource loop skips them).
+    case 'denyInsensitiveVariable':
+      return { kind: 'pass' }
+    case 'denyPlaintextLocalSecret':
+      return { kind: 'pass' }
+    // Settings-surface conditions — evaluated in the SETTINGS pass (no-op here).
+    case 'requireExactTerraformVersion':
+      return { kind: 'pass' }
+    case 'denyFloatingProviderVersion':
+      return { kind: 'pass' }
+    case 'requireEncryptedBackend':
+      return { kind: 'pass' }
+    case 'denyLocalBackend':
+      return { kind: 'pass' }
+    // Module-call-surface condition — evaluated in the MODULE-CALLS pass.
+    case 'denyFloatingModuleVersion':
+      return { kind: 'pass' }
     default:
       return assertNever(c)
   }
@@ -937,6 +1355,10 @@ function evalCondition(
 export function evaluate(
   rules: Rule[],
   resources: NormalizedResource[],
+  outputs: NormalizedOutput[] = [],
+  bindings: NormalizedBinding[] = [],
+  settings: NormalizedTerraformSettings[] = [],
+  moduleCalls: NormalizedModuleCall[] = [],
 ): CheckReport {
   const violations: Violation[] = []
   const couldNotEvaluate: Unevaluable[] = []
@@ -946,7 +1368,23 @@ export function evaluate(
   for (const rule of rules) {
     for (const resource of resources) {
       if (!environmentMatches(rule, resource)) continue
+      if (!providerAliasMatches(rule, resource)) continue
       for (const condition of rule.conditions) {
+        // Output-targeted conditions are evaluated in the OUTPUTS pass (outputs are
+        // not resources) — skip them here so they neither violate nor inflate
+        // the passed count against resources. Same for binding-targeted
+        // conditions (variables/locals), evaluated in the BINDINGS pass.
+        if (
+          condition.kind === 'denyInsensitiveSecretOutput' ||
+          condition.kind === 'denyInsensitiveVariable' ||
+          condition.kind === 'denyPlaintextLocalSecret' ||
+          condition.kind === 'requireExactTerraformVersion' ||
+          condition.kind === 'denyFloatingProviderVersion' ||
+          condition.kind === 'requireEncryptedBackend' ||
+          condition.kind === 'denyLocalBackend' ||
+          condition.kind === 'denyFloatingModuleVersion'
+        )
+          continue
         if (!inScope(condition, rule.target, resource)) continue
 
         const outcome = evalCondition(condition, resource, ctx)
@@ -957,7 +1395,7 @@ export function evaluate(
               message: rule.message,
               rationale: rule.rationale,
               effect: rule.effect,
-              resource: address(resource),
+              resource: displayAddress(resource),
               file: resource.file,
               line: resource.line,
               approvers: rule.approvers,
@@ -966,9 +1404,179 @@ export function evaluate(
           case 'cannotEvaluate':
             couldNotEvaluate.push({
               ruleId: rule.id,
-              resource: address(resource),
+              resource: displayAddress(resource),
               file: resource.file,
               line: resource.line,
+              reason: outcome.reason,
+            })
+            break
+          case 'pass':
+            passed += 1
+            break
+        }
+      }
+    }
+  }
+
+  // Outputs pass — output-targeted conditions (denyInsensitiveSecretOutput)
+  // apply to every output regardless of the rule's `.resource()`/`.allResources()`
+  // target (outputs are not typed resources).
+  for (const rule of rules) {
+    for (const output of outputs) {
+      for (const condition of rule.conditions) {
+        if (condition.kind !== 'denyInsensitiveSecretOutput') continue
+        const outcome = evalInsensitiveSecretOutput(condition, output)
+        switch (outcome.kind) {
+          case 'violation':
+            violations.push({
+              ruleId: rule.id,
+              message: rule.message,
+              rationale: rule.rationale,
+              effect: rule.effect,
+              resource: `output.${output.name}`,
+              file: output.file,
+              line: output.line,
+              approvers: rule.approvers,
+            })
+            break
+          case 'cannotEvaluate':
+            couldNotEvaluate.push({
+              ruleId: rule.id,
+              resource: `output.${output.name}`,
+              file: output.file,
+              line: output.line,
+              reason: outcome.reason,
+            })
+            break
+          case 'pass':
+            passed += 1
+            break
+        }
+      }
+    }
+  }
+
+  // Bindings pass — binding-targeted conditions (denyInsensitiveVariable /
+  // denyPlaintextLocalSecret) apply to every variable/local regardless of the
+  // rule's resource target (bindings are not typed resources). The resource
+  // address is `variable.<name>` / `local.<name>`.
+  for (const rule of rules) {
+    for (const binding of bindings) {
+      for (const condition of rule.conditions) {
+        // Gate by kind: a variable rule only evaluates variables, a local rule
+        // only locals — avoids cross-kind "pass" inflation of the passed count.
+        const outcome =
+          condition.kind === 'denyInsensitiveVariable' &&
+          binding.kind === 'variable'
+            ? evalInsensitiveVariable(condition, binding)
+            : condition.kind === 'denyPlaintextLocalSecret' &&
+                binding.kind === 'local'
+              ? evalPlaintextLocalSecret(condition, binding)
+              : null
+        if (outcome === null) continue
+        switch (outcome.kind) {
+          case 'violation':
+            violations.push({
+              ruleId: rule.id,
+              message: rule.message,
+              rationale: rule.rationale,
+              effect: rule.effect,
+              resource: `${binding.kind}.${binding.name}`,
+              file: binding.file,
+              line: binding.line,
+              approvers: rule.approvers,
+            })
+            break
+          case 'cannotEvaluate':
+            couldNotEvaluate.push({
+              ruleId: rule.id,
+              resource: `${binding.kind}.${binding.name}`,
+              file: binding.file,
+              line: binding.line,
+              reason: outcome.reason,
+            })
+            break
+          case 'pass':
+            passed += 1
+            break
+        }
+      }
+    }
+  }
+
+  // Settings pass — settings-targeted conditions (requireExactTerraformVersion
+  // / denyFloatingProviderVersion) apply to every terraform settings block
+  // (one per root). Address: `terraform` / `terraform.provider.<name>`.
+  for (const rule of rules) {
+    for (const s of settings) {
+      for (const condition of rule.conditions) {
+        const outcome =
+          condition.kind === 'requireExactTerraformVersion'
+            ? evalRequireExactTerraformVersion(condition, s)
+            : condition.kind === 'denyFloatingProviderVersion'
+              ? evalDenyFloatingProviderVersion(condition, s)
+              : condition.kind === 'requireEncryptedBackend'
+                ? evalRequireEncryptedBackend(condition, s)
+                : condition.kind === 'denyLocalBackend'
+                  ? evalDenyLocalBackend(condition, s)
+                  : null
+        if (outcome === null) continue
+        switch (outcome.kind) {
+          case 'violation':
+            violations.push({
+              ruleId: rule.id,
+              message: rule.message,
+              rationale: rule.rationale,
+              effect: rule.effect,
+              resource: 'terraform',
+              file: s.file,
+              line: s.line,
+              approvers: rule.approvers,
+            })
+            break
+          case 'cannotEvaluate':
+            couldNotEvaluate.push({
+              ruleId: rule.id,
+              resource: 'terraform',
+              file: s.file,
+              line: s.line,
+              reason: outcome.reason,
+            })
+            break
+          case 'pass':
+            passed += 1
+            break
+        }
+      }
+    }
+  }
+
+  // Module-calls pass — registry module version-pinning (denyFloatingModule
+  // Version). Address: `module.<label>`.
+  for (const rule of rules) {
+    for (const m of moduleCalls) {
+      for (const condition of rule.conditions) {
+        if (condition.kind !== 'denyFloatingModuleVersion') continue
+        const outcome = evalDenyFloatingModuleVersion(condition, m)
+        switch (outcome.kind) {
+          case 'violation':
+            violations.push({
+              ruleId: rule.id,
+              message: rule.message,
+              rationale: rule.rationale,
+              effect: rule.effect,
+              resource: `module.${m.label}`,
+              file: m.file,
+              line: m.line,
+              approvers: rule.approvers,
+            })
+            break
+          case 'cannotEvaluate':
+            couldNotEvaluate.push({
+              ruleId: rule.id,
+              resource: `module.${m.label}`,
+              file: m.file,
+              line: m.line,
               reason: outcome.reason,
             })
             break

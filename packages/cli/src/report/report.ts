@@ -120,9 +120,22 @@ export function renderTerminal(
   return lines.join('\n')
 }
 
+/**
+ * The JSON output schema version. Frozen for 1.0 — external tooling (CI
+ * dashboards, PR annotators) can depend on this shape. Bumped only on a
+ * breaking change to the JSON contract (a removed/renamed field); additive
+ * fields (a new violation attribute) do NOT bump it (consumers must ignore
+ * unknown fields per robust JSON handling). See doc 09.
+ */
+export const JSON_SCHEMA_VERSION = 1
+
 export function renderJson(report: CheckReport): string {
   return JSON.stringify(
-    { ...report, requiresApproval: requiresApproval(report) },
+    {
+      schemaVersion: JSON_SCHEMA_VERSION,
+      ...report,
+      requiresApproval: requiresApproval(report),
+    },
     null,
     2,
   )
