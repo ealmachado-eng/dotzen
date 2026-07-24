@@ -15,6 +15,7 @@ import {
   normalizeOutputs,
   normalizeBindings,
   normalizeSettings,
+  collectUngoverned,
   buildScope,
   resolveRaw,
   countIsZero,
@@ -74,6 +75,22 @@ export interface ParseOutput {
   readonly settings: NormalizedTerraformSettings[]
   readonly moduleCalls: NormalizedModuleCall[]
   readonly ignores: IgnoreDirective[]
+  /** Resources dotzen saw but could NOT govern (type not in the vocabulary).
+   *  Surfaced as informational telemetry so users know what's NOT covered —
+   *  a silent skip is worse than an honest gap. */
+  readonly ungoverned: UngovernedResource[]
+}
+
+/**
+ * A resource dotzen parsed but could not govern — its type is not in the
+ *  closed vocabulary (`KNOWN_TYPES`). Surfaced as informational telemetry
+ *  (not a violation, not could-not-evaluate) so users know coverage gaps.
+ */
+export interface UngovernedResource {
+  readonly type: string
+  readonly name: string
+  readonly file: string
+  readonly line: number
 }
 
 /**
@@ -86,20 +103,22 @@ export interface ParseOutput {
 export interface IgnoreDirective {
   readonly file: string
   readonly line: number
+  /** Optional ruleId to suppress ONLY that rule on this block
+   *  (`# dotzen:ignore rule-5: <reason>`). Undefined = suppress ALL rules. */
+  readonly ruleId?: string
   readonly reason?: string
 }
 
 /** An own-line `# dotzen:ignore[: reason]` / `// dotzen:ignore[: reason]`
- *  comment — the `#`/`//` is the FIRST non-whitespace content on the line.
- *  Anchored at `^\s*` so a token inside a string value (e.g.
- *  `description = "# dotzen:ignore"`) does NOT false-match. */
-const IGNORE_OWN_LINE_RE = /^\s*(#|\/\/)\s*dotzen:ignore(?::\s*(.*))?$/i
+ *  comment. Supports an optional ruleId: `# dotzen:ignore rule-5: <reason>`
+ *  to suppress only that rule. Without a ruleId, suppresses ALL findings.
+ *  Anchored at `^\s*` so a token inside a string value does NOT false-match. */
+const IGNORE_OWN_LINE_RE =
+  /^\s*(#|\/\/)\s*dotzen:ignore(?:\s+(rule-\d+))?(?::\s*(.*))?$/i
 
-/** A trailing `# dotzen:ignore[: reason]` / `// dotzen:ignore[: reason]`
- *  comment on a BLOCK-START line (e.g. `resource "x" "y" { # dotzen:ignore`).
- *  Only checked on lines that match BLOCK_START_RE, so a token inside a
- *  string value on a non-block line never matches. */
-const IGNORE_TRAILING_RE = /(#|\/\/)\s*dotzen:ignore(?::\s*(.*))?$/i
+/** A trailing comment on a block-start line (same semantics as own-line). */
+const IGNORE_TRAILING_RE =
+  /(#|\/\/)\s*dotzen:ignore(?:\s+(rule-\d+))?(?::\s*(.*))?$/i
 
 /** A top-level block header — the target of an ignore directive. */
 const BLOCK_START_RE =
@@ -128,20 +147,21 @@ export function scanIgnores(text: string, fileRel: string): IgnoreDirective[] {
     const trailing = isBlockStart ? IGNORE_TRAILING_RE.exec(line) : null
     const m = own ?? trailing
     if (!m) continue
-    const reason = m[2]?.trim() || undefined
+    const ruleId = m[2]?.trim() || undefined
+    const reason = m[3]?.trim() || undefined
     if (own) {
       // Find the next block-start line at or after the comment line.
       for (let j = i; j < lines.length; j++) {
         if (BLOCK_START_RE.test(lines[j] ?? '')) {
           if (!out.some((d) => d.line === j + 1))
-            out.push({ file: fileRel, line: j + 1, reason })
+            out.push({ file: fileRel, line: j + 1, ruleId, reason })
           break
         }
       }
     } else if (trailing) {
       // The comment is ON the block-start line → target this line.
       if (!out.some((d) => d.line === i + 1))
-        out.push({ file: fileRel, line: i + 1, reason })
+        out.push({ file: fileRel, line: i + 1, ruleId, reason })
     }
   }
   return out
@@ -249,6 +269,7 @@ async function followModules(
   const settings: NormalizedTerraformSettings[] = []
   const moduleCalls: NormalizedModuleCall[] = []
   const ignores: IgnoreDirective[] = []
+  const ungoverned: UngovernedResource[] = []
 
   for (const { file, text, parsed } of callerFiles) {
     const fileRel = toPosix(path.relative(projectRoot, file))
@@ -414,6 +435,8 @@ async function followModules(
             // path (modRel, before the › trace) so they match findings from
             // every instantiation of this module.
             ignores.push(...scanIgnores(m.text, modRel))
+            // Ungoverned resources in the followed module file.
+            ungoverned.push(...collectUngoverned(m.parsed, trace, m.text))
             if (!childTraceRoot) childTraceRoot = base
           }
           // When the module has NO direct files (edge case), fall back to
@@ -445,6 +468,7 @@ async function followModules(
           settings.push(...nested.value.settings)
           moduleCalls.push(...nested.value.moduleCalls)
           ignores.push(...nested.value.ignores)
+          ungoverned.push(...nested.value.ungoverned)
         }
       }
     }
@@ -457,6 +481,7 @@ async function followModules(
     settings,
     moduleCalls,
     ignores,
+    ungoverned,
   })
 }
 
@@ -500,6 +525,7 @@ export async function parseTf(
   const settings: NormalizedTerraformSettings[] = []
   const moduleCalls: NormalizedModuleCall[] = []
   const ignores: IgnoreDirective[] = []
+  const ungoverned: UngovernedResource[] = []
   for (const { file, text, parsed } of parsedFiles.value) {
     const rel = toPosix(path.relative(projectRoot, file))
     resources.push(
@@ -514,6 +540,8 @@ export async function parseTf(
         regions,
       ),
     )
+    // Ungoverned resources in this root file (type not in vocabulary).
+    ungoverned.push(...collectUngoverned(parsed, rel, text))
     // Direct outputs in this root (the common case — outputs live at the
     // root, not inside child modules).
     outputs.push(...normalizeOutputs(parsed, rel, text, scope))
@@ -544,6 +572,7 @@ export async function parseTf(
   settings.push(...followed.value.settings)
   moduleCalls.push(...followed.value.moduleCalls)
   ignores.push(...followed.value.ignores)
+  ungoverned.push(...followed.value.ungoverned)
 
   // If NO terraform {} block was found in any file (root or followed module),
   // synthesize a default entry so settings-surface rules still evaluate
@@ -568,5 +597,6 @@ export async function parseTf(
     settings,
     moduleCalls,
     ignores,
+    ungoverned,
   })
 }

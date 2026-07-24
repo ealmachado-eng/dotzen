@@ -36,6 +36,15 @@ export interface CheckReport {
   readonly violations: Violation[]
   readonly passed: number
   readonly couldNotEvaluate: Unevaluable[]
+  /** Resources dotzen saw but could NOT govern (type not in the vocabulary).
+   *  Informational — not violations, not could-not-evaluate. Surfaced so
+   *  users know coverage gaps (a silent skip is worse than an honest gap). */
+  readonly ungoverned: {
+    type: string
+    name: string
+    file: string
+    line: number
+  }[]
 }
 
 type ConditionOutcome =
@@ -1639,5 +1648,5 @@ export function evaluate(
     }
   }
 
-  return { violations, passed, couldNotEvaluate }
+  return { violations, passed, couldNotEvaluate, ungoverned: [] }
 }

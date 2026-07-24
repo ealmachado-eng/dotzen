@@ -9,7 +9,12 @@ import {
 import { CheckReport } from '../engine/evaluate'
 import { Effect } from '../vocabulary'
 
-const empty: CheckReport = { violations: [], passed: 3, couldNotEvaluate: [] }
+const empty: CheckReport = {
+  violations: [],
+  passed: 3,
+  couldNotEvaluate: [],
+  ungoverned: [],
+}
 
 describe('report', () => {
   it('exit code is 0 with no violations, 1 with violations', () => {
@@ -28,6 +33,7 @@ describe('report', () => {
         ],
         passed: 0,
         couldNotEvaluate: [],
+        ungoverned: [],
       }),
     ).toBe(1)
   })
@@ -70,6 +76,7 @@ describe('report', () => {
           reason: 'tags',
         },
       ],
+      ungoverned: [],
     }
     const out = renderTerminal(withCne)
     expect(out).not.toMatch(/✓ passed/) // caveat, not a clean pass
@@ -105,6 +112,7 @@ describe('report', () => {
           reason: 'tags unresolved',
         },
       ],
+      ungoverned: [],
     }
     const json = JSON.parse(renderJson(full)) as Record<string, unknown>
 
@@ -119,6 +127,7 @@ describe('report', () => {
         'passed',
         'requiresApproval',
         'schemaVersion',
+        'ungoverned',
         'violations',
       ])
     })

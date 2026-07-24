@@ -1846,6 +1846,40 @@ function findOutputLine(text: string, name: string): number {
  * var/local ref. Outputs are a separate surface from resources; the engine's
  * `denyInsensitiveSecretOutput` pass governs them.
  */
+/**
+ * Collect resources whose type is NOT in the closed vocabulary (`KNOWN_TYPES`)
+ * — dotzen parsed them but cannot govern them. Surfaced as informational
+ * telemetry so users know what's NOT covered (a silent skip is worse than an
+ * honest gap). Returns `{type, name, file, line}` for each ungoverned
+ * resource (data sources included). Does NOT normalize — just scans + filters.
+ */
+export function collectUngoverned(
+  parsed: Hcl2JsonRoot,
+  file: string,
+  rawText: string,
+): { type: string; name: string; file: string; line: number }[] {
+  const out: { type: string; name: string; file: string; line: number }[] = []
+  for (const [type, byName] of Object.entries(parsed.resource ?? {})) {
+    if (KNOWN_TYPES.has(type)) continue
+    for (const name of Object.keys(byName)) {
+      out.push({ type, name, file, line: findLine(rawText, type, name) })
+    }
+  }
+  for (const [type, byName] of Object.entries(parsed.data ?? {})) {
+    const dataType = `data.${type}`
+    if (KNOWN_TYPES.has(dataType)) continue
+    for (const name of Object.keys(byName)) {
+      out.push({
+        type: dataType,
+        name,
+        file,
+        line: findDataLine(rawText, type, name),
+      })
+    }
+  }
+  return out
+}
+
 export function normalizeOutputs(
   parsed: Hcl2JsonRoot,
   file: string,

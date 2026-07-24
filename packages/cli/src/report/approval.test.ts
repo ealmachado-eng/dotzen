@@ -23,6 +23,7 @@ const rep = (violations: Violation[]): CheckReport => ({
   violations,
   passed: 0,
   couldNotEvaluate: [],
+  ungoverned: [],
 })
 
 describe('effect-driven exit codes', () => {

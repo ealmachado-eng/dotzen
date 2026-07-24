@@ -86,6 +86,17 @@ export function renderTerminal(
     }
   }
 
+  if (report.ungoverned.length > 0) {
+    lines.push(
+      paint('── NOT GOVERNED (vocabulary gap) ──', ANSI.yellow, ANSI.bold),
+    )
+    for (const r of report.ungoverned) {
+      lines.push(
+        `${paint('•', ANSI.yellow)} ${r.type}.${r.name}  (${r.file}:${r.line})`,
+      )
+    }
+  }
+
   lines.push('')
   if (report.violations.length === 0) {
     if (cne === 0) {

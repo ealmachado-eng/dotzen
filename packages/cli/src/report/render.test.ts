@@ -25,6 +25,7 @@ const report: CheckReport = {
       reason: 'unresolved var',
     },
   ],
+  ungoverned: [],
 }
 
 describe('renderTerminal (non-empty report)', () => {

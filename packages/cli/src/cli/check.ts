@@ -3,7 +3,12 @@ import { Result, ok } from '../result/result'
 import { DotzenError } from '../result/errors'
 import { readDotzenJson, enforceVersion } from '../version/config'
 import { importSpecModule, loadSpec } from '../spec/load'
-import { parseTf, ModuleSkip, IgnoreDirective } from '../hcl/parse'
+import {
+  parseTf,
+  ModuleSkip,
+  IgnoreDirective,
+  UngovernedResource,
+} from '../hcl/parse'
 import { evaluate, CheckReport, Unevaluable } from '../engine/evaluate'
 import {
   NormalizedResource,
@@ -49,6 +54,7 @@ export async function check(
   const settings: NormalizedTerraformSettings[] = []
   const moduleCalls: NormalizedModuleCall[] = []
   const ignores: IgnoreDirective[] = []
+  const ungoverned: UngovernedResource[] = []
   const skips: ModuleSkip[] = []
   for (const root of roots) {
     const rootPath = typeof root === 'string' ? root : root.path
@@ -61,6 +67,7 @@ export async function check(
     settings.push(...parsed.value.settings)
     moduleCalls.push(...parsed.value.moduleCalls)
     ignores.push(...parsed.value.ignores)
+    ungoverned.push(...parsed.value.ungoverned)
     skips.push(...parsed.value.skips)
   }
 
@@ -88,15 +95,27 @@ export async function check(
   // could-not-evaluate) whose PHYSICAL file + block-start line match an
   // ignore. The physical file is the segment before any `›` trace so an ignore
   // in a module file suppresses findings from every instantiation of it.
-  const ignored = new Set(ignores.map((d) => `${d.file}::${d.line}`))
+  // A directive WITH a ruleId (`# dotzen:ignore rule-5: reason`) suppresses
+  // ONLY that rule on the block; without a ruleId, suppresses ALL findings.
+  const allIgnores = ignores.filter((d) => !d.ruleId)
+  const perRuleIgnores = ignores.filter((d) => d.ruleId)
+  const allIgnored = new Set(allIgnores.map((d) => `${d.file}::${d.line}`))
   const physicalFile = (f: string) => f.split(' › ')[0]!
-  const isIgnored = (file: string, line: number) =>
-    ignored.has(`${physicalFile(file)}::${line}`)
+  const isIgnored = (file: string, line: number, ruleId: string) => {
+    const key = `${physicalFile(file)}::${line}`
+    if (allIgnored.has(key)) return true
+    return perRuleIgnores.some(
+      (d) => `${d.file}::${d.line}` === key && d.ruleId === ruleId,
+    )
+  }
   return ok({
-    violations: report.violations.filter((v) => !isIgnored(v.file, v.line)),
+    violations: report.violations.filter(
+      (v) => !isIgnored(v.file, v.line, v.ruleId),
+    ),
     passed: report.passed,
     couldNotEvaluate: [...moduleSkips, ...report.couldNotEvaluate].filter(
-      (u) => !isIgnored(u.file, u.line),
+      (u) => !isIgnored(u.file, u.line, u.ruleId),
     ),
+    ungoverned,
   })
 }
