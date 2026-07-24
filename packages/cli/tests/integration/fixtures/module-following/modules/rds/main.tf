@@ -11,7 +11,10 @@ variable "tags" {
 }
 
 resource "aws_db_instance" "this" {
-  tags = var.tags
+  engine           = "postgres"
+  instance_class   = "db.t3.micro"
+  allocated_storage = 20
+  tags             = var.tags
 }
 
 resource "aws_security_group" "this" {

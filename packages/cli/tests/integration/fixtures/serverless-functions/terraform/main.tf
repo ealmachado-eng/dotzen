@@ -52,6 +52,7 @@ resource "azurerm_linux_function_app" "bad" {
   name                          = "bad"
   resource_group_name           = "rg"
   service_plan_id               = "plan"
+  storage_account_name          = "fnbadstorage"
   https_only                    = false
   public_network_access_enabled = true
 
@@ -71,6 +72,7 @@ resource "azurerm_linux_function_app" "good" {
   name                          = "good"
   resource_group_name           = "rg"
   service_plan_id               = "plan"
+  storage_account_name          = "fngoodstorage"
   https_only                    = true
   public_network_access_enabled = false
 

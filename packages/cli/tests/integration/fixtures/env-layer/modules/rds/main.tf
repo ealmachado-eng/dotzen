@@ -27,6 +27,9 @@ locals {
 
 resource "aws_db_instance" "this" {
   identifier              = "app-db"
+  engine                  = "postgres"
+  instance_class          = "db.t3.micro"
+  allocated_storage       = 20
   storage_encrypted       = true
   publicly_accessible     = false
   deletion_protection     = var.deletion_protection
