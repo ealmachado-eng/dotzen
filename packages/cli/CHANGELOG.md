@@ -6,6 +6,57 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.1.0
+
+### Changed — CIS presets are now composable additions to coreSecurity
+
+**Breaking for CIS preset users.** The three CIS packs (`cisAws`,
+`cisAzure`, `cisGcp`) previously contained standalone rules that
+duplicated `coreSecurity` (network, encryption, IAM, secrets, tags,
+provisioners). Composing `[...cisAws, ...pciDss]` produced **duplicate
+violations** — the same resource flagged twice under different ruleIds.
+
+All 8 preset packs now compose on top of `coreSecurity`:
+
+```ts
+// Before (v1.0.x) — standalone, duplicating coreSecurity:
+import { cisAws } from '@dotzen/dotzen'
+export const spec = [...cisAws]
+
+// After (v1.1.0) — composable, no duplicates:
+import { coreSecurity, cisAws } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...cisAws]
+
+// Mix CIS + framework packs without duplicate violations:
+import { coreSecurity, cisAws, pciDss } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...cisAws, ...pciDss]
+```
+
+Rule count changes:
+
+- `cisAws`: 23 → 6 (stripped 17 shared with coreSecurity)
+- `cisAzure`: 17 → 15 (stripped 2 shared: secrets/provisioners)
+- `cisGcp`: 21 → 18 (stripped 3 shared: secrets/provisioners)
+
+New test: `no duplicate messages between coreSecurity and CIS packs` —
+guards against regression.
+
+### Migration
+
+If you used a CIS pack standalone in v1.0.x:
+
+```ts
+// v1.0.x:
+export const spec = [...cisAws]
+
+// v1.1.0 — add coreSecurity to keep the same coverage:
+import { coreSecurity, cisAws } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...cisAws]
+```
+
+If you used a framework pack (`pciDss`, `soc2`, etc.) with `coreSecurity`,
+no change needed — those were already composable.
+
 ## 1.0.1
 
 ### Added — composable framework presets + GDPR/LGPD data residency
