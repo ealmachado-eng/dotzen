@@ -6,6 +6,35 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.3.0
+
+### Added — stable author-chosen rule IDs
+
+Rules can now have a stable, human-readable ID for use in ignore directives
+and JSON output — safe across reorders, unlike the auto-generated positional
+`rule-N`:
+
+```ts
+rule()
+  .id('no-public-ssh')
+  .resource(AwsResource.SecurityGroup)
+  .denyIngress(Port.SSH)
+  .message('SSH must not be open')
+```
+
+Then in Terraform:
+
+```hcl
+# dotzen:ignore no-public-ssh: bastion host — SSH is intentional
+resource "aws_security_group" "bastion" { ... }
+```
+
+- `.id()` is **optional** — if not set, dotzen auto-generates `rule-N` (backward compatible).
+- Must match `[a-z][a-z0-9-]*` and be unique within the spec (validated at load time).
+- The ignore directive regex now accepts any stable ID, not just `rule-\d+`.
+- **Why:** positional `rule-N` IDs are fragile — reordering rules shifts IDs,
+  silently suppressing the wrong rule. A stable ID makes per-rule ignores safe.
+
 ## 1.2.0
 
 ### Added — ungoverned-resource telemetry

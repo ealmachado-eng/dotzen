@@ -36,6 +36,7 @@ function specTs(): string {
 
 export const spec = [
   rule()
+    .id('no-public-ssh-rdp')
     .resource(AwsResource.SecurityGroup)
     .denyIngress(Port.SSH, Port.RDP)
     .message('SSH and RDP must not be open to the internet')

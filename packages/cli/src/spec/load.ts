@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { createJiti } from 'jiti'
 import { Result, ok, err, combineWithAllErrors } from '../result/result'
-import { DotzenError } from '../result/errors'
+import { DotzenError, RuleValidationError } from '../result/errors'
 import { RuleBuilder, Rule } from './rule'
 
 /**
@@ -51,6 +51,28 @@ export async function importSpecModule(
  */
 export function loadSpec(builders: RuleBuilder[]): Result<Rule[], DotzenError> {
   const validated = combineWithAllErrors(builders.map((b, i) => b.validate(i)))
-  if (validated.ok) return ok(validated.value)
-  return err({ kind: 'SpecInvalid', errors: validated.error.flat() })
+  if (!validated.ok)
+    return err({ kind: 'SpecInvalid', errors: validated.error.flat() })
+
+  // Check for duplicate author-chosen rule IDs (positional rule-N IDs are
+  // inherently unique; only stable .id() values can collide).
+  const seen = new Map<string, number>() // id → first index
+  const dupErrors: RuleValidationError[] = []
+  for (const [i, rule] of validated.value.entries()) {
+    // Skip positional auto-generated IDs (rule-1, rule-2, ...).
+    if (/^rule-\d+$/.test(rule.id)) continue
+    const prev = seen.get(rule.id)
+    if (prev !== undefined) {
+      dupErrors.push({
+        ruleIndex: i,
+        problem: `duplicate rule ID "${rule.id}" (also used by rule ${prev + 1})`,
+      })
+    } else {
+      seen.set(rule.id, i)
+    }
+  }
+  if (dupErrors.length > 0)
+    return err({ kind: 'SpecInvalid', errors: dupErrors })
+
+  return ok(validated.value)
 }

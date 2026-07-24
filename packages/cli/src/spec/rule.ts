@@ -203,6 +203,7 @@ export interface Rule {
  * on success or ACCUMULATES problems on failure (doc 06, ROP form).
  */
 export class RuleBuilder {
+  private _id?: string
   private _target?: ResourceTarget
   private _environment?: Environment
   private _providerAlias?: string
@@ -220,6 +221,18 @@ export class RuleBuilder {
 
   allResources(): this {
     this._target = { kind: 'all' }
+    return this
+  }
+
+  /**
+   * Assign a stable, human-readable rule ID for use in ignore directives
+   * and JSON output. If not set, dotzen auto-generates `rule-<N>` (positional
+   * — fragile if rules are reordered). A stable ID (`no-public-ssh`) makes
+   * `# dotzen:ignore no-public-ssh: <reason>` safe across reorders. Must be
+   * unique within the spec and match `[a-z][a-z0-9-]*`.
+   */
+  id(id: string): this {
+    this._id = id
     return this
   }
 
@@ -617,10 +630,16 @@ export class RuleBuilder {
     if (!hasTarget) fail('missing .resource() or .allResources()')
     if (this._conditions.length === 0) fail('no conditions')
 
+    // Validate author-chosen ID format if set.
+    const STABLE_ID_RE = /^[a-z][a-z0-9-]*$/
+    const authorId = this._id
+    if (authorId && !STABLE_ID_RE.test(authorId))
+      fail(`.id() must match [a-z][a-z0-9-]* (got "${authorId}")`)
+
     if (problems.length > 0) return err(problems)
 
     return ok({
-      id: `rule-${index + 1}`,
+      id: authorId ?? `rule-${index + 1}`,
       target: this._target!,
       environment: this._environment,
       providerAlias: this._providerAlias,

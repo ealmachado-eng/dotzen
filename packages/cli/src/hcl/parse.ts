@@ -114,11 +114,11 @@ export interface IgnoreDirective {
  *  to suppress only that rule. Without a ruleId, suppresses ALL findings.
  *  Anchored at `^\s*` so a token inside a string value does NOT false-match. */
 const IGNORE_OWN_LINE_RE =
-  /^\s*(#|\/\/)\s*dotzen:ignore(?:\s+(rule-\d+))?(?::\s*(.*))?$/i
+  /^\s*(#|\/\/)\s*dotzen:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
 
 /** A trailing comment on a block-start line (same semantics as own-line). */
 const IGNORE_TRAILING_RE =
-  /(#|\/\/)\s*dotzen:ignore(?:\s+(rule-\d+))?(?::\s*(.*))?$/i
+  /(#|\/\/)\s*dotzen:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
 
 /** A top-level block header — the target of an ignore directive. */
 const BLOCK_START_RE =

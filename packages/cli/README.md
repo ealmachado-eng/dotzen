@@ -189,8 +189,21 @@ resource "aws_s3_bucket" "cdn" {
 ```
 
 - `# dotzen:ignore rule-5: <reason>` — suppresses only `rule-5` on this block.
+- `# dotzen:ignore no-public-ssh: <reason>` — suppresses a rule with a stable author-chosen ID.
 - `# dotzen:ignore: <reason>` — suppresses ALL rules on this block.
 - `# dotzen:ignore` — suppresses ALL rules, no reason.
+
+To use stable rule IDs (recommended for any spec with per-rule ignores):
+
+```ts
+rule()
+  .id('no-public-ssh') // ← stable, survives reorders
+  .resource(AwsResource.SecurityGroup)
+  .denyIngress(Port.SSH)
+  .message('SSH must not be open')
+```
+
+Then `# dotzen:ignore no-public-ssh: <reason>` is safe across rule reorders — unlike positional `rule-N` which shifts when rules are added/removed.
 
 Both `#` and `//` work, on their own line or trailing a block header. The optional `: <reason>` is for auditability.
 

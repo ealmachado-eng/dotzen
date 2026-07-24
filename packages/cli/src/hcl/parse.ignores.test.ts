@@ -99,4 +99,37 @@ resource "aws_s3_bucket" "b" {
 }`
     expect(scanIgnores(text, 'main.tf')).toEqual([])
   })
+
+  it('captures a per-rule ID (stable author-chosen: no-public-ssh)', () => {
+    const text = `# dotzen:ignore no-public-ssh: bastion host — SSH is intentional
+resource "aws_security_group" "bastion" {}`
+    const dirs = scanIgnores(text, 'main.tf')
+    expect(dirs).toHaveLength(1)
+    expect(dirs[0]?.ruleId).toBe('no-public-ssh')
+    expect(dirs[0]?.reason).toBe('bastion host — SSH is intentional')
+  })
+
+  it('captures a per-rule ID (positional: rule-5)', () => {
+    const text = `# dotzen:ignore rule-5: known exception
+resource "aws_s3_bucket" "cdn" {}`
+    const dirs = scanIgnores(text, 'main.tf')
+    expect(dirs[0]?.ruleId).toBe('rule-5')
+    expect(dirs[0]?.reason).toBe('known exception')
+  })
+
+  it('without a ruleId, ruleId is undefined (suppress all)', () => {
+    const text = `# dotzen:ignore: suppress everything on this block
+resource "aws_s3_bucket" "x" {}`
+    const dirs = scanIgnores(text, 'main.tf')
+    expect(dirs[0]?.ruleId).toBeUndefined()
+    expect(dirs[0]?.reason).toBe('suppress everything on this block')
+  })
+
+  it('trailing comment with a per-rule ID', () => {
+    const text = `resource "aws_s3_bucket" "x" { # dotzen:ignore no-public-ssh
+  bucket = "x"
+}`
+    const dirs = scanIgnores(text, 'main.tf')
+    expect(dirs[0]?.ruleId).toBe('no-public-ssh')
+  })
 })
