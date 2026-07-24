@@ -156,8 +156,9 @@ publish:
   id_tokens:
     NPM_ID_TOKEN:
       aud: "npm:registry.npmjs.org" # exchanged for a short-lived publish token
-    SIGSTORE_ID_TOKEN:
-      aud: sigstore # for provenance attestation signing
   script:
     - npm run build
-    - npm publish --provenance --access public
+    # No --provenance: the source repo is private on GitLab, and sigstore
+    # provenance bundles require a public source repo (npm E422 otherwise).
+    # Trusted-publishing OIDC auth still works without provenance.
+    - npm publish --access public
