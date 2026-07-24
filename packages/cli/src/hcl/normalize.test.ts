@@ -34,7 +34,7 @@ const parsed = {
       ],
     },
     // an unknown type should be skipped (not in the vocabulary)
-    aws_lambda_function: { fn: [{}] },
+    aws_fictional_unrecognized: { fn: [{}] },
   },
 }
 

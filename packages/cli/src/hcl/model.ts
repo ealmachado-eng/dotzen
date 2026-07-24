@@ -115,6 +115,19 @@ export type ContainerInfo =
   | { readonly kind: 'parsed'; readonly containers: ContainerDef[] }
   | { readonly kind: 'unresolved' }
 
+/**
+ * Environment variables extracted from a serverless function's env-var MAP
+ * (not the ECS `container_definitions` JSON — that lives in `containers`).
+ * Sources: aws_lambda_function `environment.variables`, Azure Functions
+ * `app_settings`, GCP Cloud Run Functions `service_config.environment_variables`.
+ * Same EnvVar shape (name/value/isLiteral) so `denyPlaintextEnvSecrets` scans
+ * both `containers` and `envVars` with one code path. `unresolved` when the
+ * whole map is a `var.x` / `local.x` reference the engine cannot expand.
+ */
+export type EnvVarsInfo =
+  | { readonly kind: 'parsed'; readonly vars: EnvVar[] }
+  | { readonly kind: 'unresolved' }
+
 export interface NormalizedResource {
   readonly type: AnyResource
   readonly name: string
@@ -137,6 +150,9 @@ export interface NormalizedResource {
   readonly policy?: PolicyInfo
   /** Parsed ECS `container_definitions`, if the resource has them. */
   readonly containers?: ContainerInfo
+  /** Parsed serverless env-var map (Lambda/Azure Functions/Cloud Run Functions),
+   *  for `denyPlaintextEnvSecrets`. */
+  readonly envVars?: EnvVarsInfo
 }
 
 export const address = (r: NormalizedResource): string => `${r.type}.${r.name}`

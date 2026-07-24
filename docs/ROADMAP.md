@@ -279,6 +279,40 @@ specific compliance requirement demands it.
 No common "AI writes dangerous Route 53" pattern. Only minor items:
 DNSSEC enabled, query logging. **Skip** unless a compliance need arises.
 
+### Serverless functions (v0.2.0) — DONE
+First cross-cloud serverless tranche: AWS Lambda, Azure Functions, GCP
+Cloud Run Functions. All reuse existing conditions (no new condition kinds);
+the engine work was extending `denyPlaintextEnvSecrets` to serverless
+env-var **maps** (not just ECS `container_definitions` JSON) and fixing GCP
+`labels` tag extraction.
+- ✅ **AWS Lambda** (`aws_lambda_function`) — X-Ray active tracing
+  (`mustEqual` on `tracing_config.mode`, warn), env-var KMS encryption
+  (`mustBeSet` on `kms_key_arn`, warn), plaintext env-var secrets
+  (`denyPlaintextEnvSecrets`).
+- ✅ **Azure Functions** (`azurerm_linux_function_app` /
+  `azurerm_windows_function_app` / `azurerm_function_app`) — HTTPS-only
+  (`mustBeTrue`), TLS 1.2 floor (`mustEqual` on
+  `site_config.minimum_tls_version`, warn), public network access
+  (`denyWhenTrue`, warn), managed identity (`mustHaveBlock(Identity)`,
+  warn — present = use AAD, not a shared/local credential), plaintext
+  `app_settings` secrets (`denyPlaintextEnvSecrets`), diagnostic logging
+  (`mustHaveAssociated` on `azurerm_monitor_diagnostic_setting`, warn).
+- ✅ **GCP Cloud Run Functions** (`google_cloudfunctions2_function`) —
+  unrestricted ingress (`denyValue` on `ALLOW_ALL`), runtime service
+  account (`mustBeSet` on `service_config.service_account_email`, warn),
+  plaintext env-var secrets (`denyPlaintextEnvSecrets`).
+- ✅ **Shared ownership tags** across all serverless resource types
+  (`mustHaveTags`).
+- ✅ **Engine: `denyPlaintextEnvSecrets` extended to env-var maps.** New
+  `EnvVarsInfo` model + `envVarsOf` extractor handles
+  `environment.variables` (Lambda), `app_settings` (Azure Functions),
+  `service_config.environment_variables` (Cloud Run Functions). A
+  whole-map reference (`= var.x`) degrades to could-not-evaluate; a mixed
+  literal/reference map yields definite verdicts for the literal secrets.
+- ✅ **Engine: GCP `labels` tag extraction.** `tagsOf` / `environmentOf`
+  now read `labels` for `google_*` resources (was `tags`-only — a false
+  could-not-evaluate on GCP resources that use `labels`).
+
 ---
 
 ## Suggested sequencing

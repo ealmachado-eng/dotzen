@@ -58,6 +58,9 @@ export enum AwsResource {
   // is "does an analyzer exist?" (a project-level presence check the engine
   // doesn't yet support). Added so the resource is at least recognized.
   AccessAnalyzer = 'aws_accessanalyzer_analyzer',
+  // AWS Lambda (serverless). `tracing_config.mode` carries X-Ray tracing;
+  // `kms_key_arn` encrypts environment variables at rest.
+  LambdaFunction = 'aws_lambda_function',
 }
 
 // Nested block names/paths, for `mustHaveBlock` / `denyBlockPresence`.
@@ -70,6 +73,9 @@ export enum Block {
   Logging = 'logging',
   // AWS API Gateway stage access logging.
   AccessLogSettings = 'access_log_settings',
+  // Azure managed-identity block (function app / web app). Present = the
+  // resource uses a managed identity rather than a shared/local credential.
+  Identity = 'identity',
 }
 
 // Wildcard sentinel for list/value checks (e.g. an IAM/RBAC action of "*").
@@ -101,6 +107,7 @@ export {
   PrimitiveRole,
   OauthScope,
   SqlSslMode,
+  IngressSetting,
 } from './gcp'
 export type AnyResource = AwsResource | AzureResource | GcpResource
 export type AnyAttribute = AwsAttribute | AzureAttribute | GcpAttribute
@@ -197,6 +204,9 @@ export enum AwsAttribute {
   // the `recording_group {}` nested block).
   RecordingGroupAllSupported = 'recording_group.all_supported',
   RecordingGroupIncludeGlobalResourceTypes = 'recording_group.include_global_resource_types',
+  // AWS Lambda
+  TracingMode = 'tracing_config.mode',
+  LambdaKmsKeyArn = 'kms_key_arn',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.
@@ -227,6 +237,12 @@ export enum EksLogType {
 export enum HttpTokens {
   Optional = 'optional',
   Required = 'required',
+}
+
+// AWS Lambda X-Ray tracing modes (for `mustEqual` on tracing_config.mode).
+export enum XrayMode {
+  Active = 'Active',
+  PassThrough = 'PassThrough',
 }
 
 export enum Acl {

@@ -15,6 +15,7 @@ import {
   Block,
   Wildcard,
   ApiGatewayAuthorization,
+  XrayMode,
   AzureResource,
   AzureAttribute,
   StorageTlsVersion,
@@ -28,6 +29,7 @@ import {
   PrimitiveRole,
   OauthScope,
   SqlSslMode,
+  IngressSetting,
 } from '../../../src/index'
 
 export const spec = [
@@ -400,6 +402,41 @@ export const spec = [
     .onViolation(Effect.Warn)
     .message('API Gateway stages should enable X-Ray tracing'),
 
+  // ── AWS Lambda (serverless) ───────────────────────────────────────────
+  rule()
+    .resource(AwsResource.LambdaFunction)
+    .mustEqual(AwsAttribute.TracingMode, XrayMode.Active)
+    .onViolation(Effect.Warn)
+    .message('Lambda functions should enable X-Ray active tracing')
+    .rationale('Tracing gives request-level observability across downstream calls'),
+
+  rule()
+    .resource(AwsResource.LambdaFunction)
+    .mustBeSet(AwsAttribute.LambdaKmsKeyArn)
+    .onViolation(Effect.Warn)
+    .message('Lambda functions should encrypt environment variables with a customer KMS key')
+    .rationale('Without a KMS key, env vars use AWS-managed encryption only'),
+
+  rule()
+    .resource(AwsResource.LambdaFunction)
+    .denyPlaintextEnvSecrets()
+    .message('Lambda environment variables must not contain plaintext secrets')
+    .rationale(
+      'Use Secrets Manager / SSM Parameter Store references, not hardcoded values',
+    ),
+
+  rule()
+    .resource(
+      AwsResource.LambdaFunction,
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+      GcpResource.Cloudfunctions2Function,
+    )
+    .mustHaveTags(Tag.Team, Tag.CostCenter, Tag.Environment)
+    .message('Serverless functions must carry ownership tags')
+    .rationale('FinOps ownership + cost allocation policy'),
+
   // ═══ Azure (azurerm) — same conditions, provider-specific vocabulary ══
   rule()
     .resource(
@@ -479,6 +516,72 @@ export const spec = [
     .mustBeTrue(AzureAttribute.HttpsOnly)
     .message('App Service must enforce HTTPS-only')
     .rationale('https_only defaults to false — plaintext HTTP is allowed'),
+
+  // Azure Functions (serverless) — HTTPS, TLS floor, public access,
+  // managed identity, env-var secrets, and diagnostic logging.
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .mustBeTrue(AzureAttribute.HttpsOnly)
+    .message('Azure Functions must enforce HTTPS-only')
+    .rationale('https_only defaults to false — plaintext HTTP is allowed'),
+
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .mustEqual(AzureAttribute.SiteConfigMinTlsVersion, SqlTlsVersion.V12)
+    .onViolation(Effect.Warn)
+    .message('Azure Functions should require TLS 1.2 (site_config.minimum_tls_version)'),
+
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .denyWhenTrue(AzureAttribute.PublicNetworkAccessEnabled)
+    .onViolation(Effect.Warn)
+    .message('Azure Functions should disable public network access'),
+
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .mustHaveBlock(Block.Identity)
+    .onViolation(Effect.Warn)
+    .message('Azure Functions should use a managed identity (identity {} block)')
+    .rationale('A managed identity replaces shared/local credentials with AAD'),
+
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .denyPlaintextEnvSecrets()
+    .message('Azure Functions app_settings must not contain plaintext secrets')
+    .rationale('Use Key Vault / SSM-style references, not hardcoded values'),
+
+  rule()
+    .resource(
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+      AzureResource.FunctionApp,
+    )
+    .mustHaveAssociated(
+      AzureResource.MonitorDiagnosticSetting,
+      AzureAttribute.TargetResourceId,
+    )
+    .onViolation(Effect.Warn)
+    .message('Azure Functions should have diagnostic logging configured'),
 
   rule()
     .resource(AzureResource.PostgresqlServer, AzureResource.MysqlServer)
@@ -641,6 +744,27 @@ export const spec = [
     )
     .onViolation(Effect.Warn)
     .message('Cloud SQL instances should require SSL (ssl_mode)'),
+
+  // GCP Cloud Run Functions (google_cloudfunctions2_function) — restrict
+  // ingress, set a runtime service account, and scan env-var secrets.
+  rule()
+    .resource(GcpResource.Cloudfunctions2Function)
+    .denyValue(GcpAttribute.IngressSettings, IngressSetting.AllowAll)
+    .message('Cloud Run Functions must not allow unrestricted ingress (ALLOW_ALL)')
+    .rationale('ALLOW_ALL exposes the function to the public internet'),
+
+  rule()
+    .resource(GcpResource.Cloudfunctions2Function)
+    .mustBeSet(GcpAttribute.ServiceAccountEmail)
+    .onViolation(Effect.Warn)
+    .message('Cloud Run Functions should set a runtime service account email')
+    .rationale('The default compute service account is over-broad; scope a dedicated SA'),
+
+  rule()
+    .resource(GcpResource.Cloudfunctions2Function)
+    .denyPlaintextEnvSecrets()
+    .message('Cloud Run Functions environment variables must not contain plaintext secrets')
+    .rationale('Use Secret Manager references, not hardcoded values'),
 
   // GCP CIS L1: GKE hardening + instance hardening + KMS rotation.
   rule()

@@ -222,4 +222,32 @@ describe('check (end-to-end)', () => {
       expect(r.value.passed).toBe(1)
     }
   })
+
+  it('serverless functions: Lambda, Azure Functions, Cloud Run Functions', async () => {
+    // One violating + one compliant function per cloud. The "bad" resources
+    // violate every serverless rule (tracing/KMS/HTTPS/TLS/public-network/
+    // identity/ingress/service-account/env-var-secrets/tags/diag-logging);
+    // the "good" resources pass them all, proving the env-var-map extractor
+    // (denyPlaintextEnvSecrets on Lambda/Azure/GCP maps) and the GCP `labels`
+    // tag extraction both work end-to-end.
+    const r = await check(fixture('serverless-functions'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      const badResources = new Set(r.value.violations.map((v) => v.resource))
+      expect(badResources).toEqual(
+        new Set([
+          'aws_lambda_function.bad',
+          'azurerm_linux_function_app.bad',
+          'google_cloudfunctions2_function.bad',
+        ]),
+      )
+      // 4 (lambda) + 7 (azure) + 4 (gcp) = 15 violations across the bad set.
+      expect(r.value.violations).toHaveLength(15)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      // The three good functions never appear in a violation.
+      expect(
+        r.value.violations.every((v) => !/\.good$/.test(v.resource)),
+      ).toBe(true)
+    }
+  })
 })

@@ -748,24 +748,39 @@ function evalDenyPlaintextEnvSecrets(
   _c: DenyPlaintextEnvSecrets,
   r: NormalizedResource,
 ): ConditionOutcome {
+  const sawUnknown: string[] = []
+  // ECS container_definitions path.
   const c = r.containers
-  if (!c) return { kind: 'pass' }
-  if (c.kind === 'unresolved')
-    return {
-      kind: 'cannotEvaluate',
-      reason:
-        'container_definitions is not statically resolvable (jsonencode(var/local) or non-literal expression)',
-    }
-  for (const container of c.containers) {
-    for (const env of container.environment) {
-      if (env.isLiteral && SECRET_NAME_PATTERN.test(env.name)) {
-        return {
-          kind: 'violation',
-          detail: `plaintext secret in environment variable "${env.name}" of container "${container.name}" — use a reference (Secrets Manager / SSM Parameter Store)`,
+  if (c?.kind === 'unresolved')
+    sawUnknown.push('container_definitions is not statically resolvable')
+  if (c?.kind === 'parsed') {
+    for (const container of c.containers) {
+      for (const env of container.environment) {
+        if (env.isLiteral && SECRET_NAME_PATTERN.test(env.name)) {
+          return {
+            kind: 'violation',
+            detail: `plaintext secret in environment variable "${env.name}" of container "${container.name}" — use a reference (Secrets Manager / SSM Parameter Store)`,
+          }
         }
       }
     }
   }
+  // Serverless env-var map path (Lambda / Azure Functions / Cloud Run Functions).
+  const ev = r.envVars
+  if (ev?.kind === 'unresolved')
+    sawUnknown.push('environment variables map is not statically resolvable')
+  if (ev?.kind === 'parsed') {
+    for (const env of ev.vars) {
+      if (env.isLiteral && SECRET_NAME_PATTERN.test(env.name)) {
+        return {
+          kind: 'violation',
+          detail: `plaintext secret in environment variable "${env.name}" — use a reference (Secrets Manager / SSM Parameter Store / Key Vault)`,
+        }
+      }
+    }
+  }
+  if (sawUnknown.length > 0)
+    return { kind: 'cannotEvaluate', reason: sawUnknown.join('; ') }
   return { kind: 'pass' }
 }
 

@@ -15,6 +15,7 @@ import {
   ContainerInfo,
   ContainerDef,
   EnvVar,
+  EnvVarsInfo,
 } from './model'
 
 /** hcl2json emits `{ resource: { type: { name: [block, ...] } } }`. */
@@ -516,15 +517,25 @@ function tagKeys(
 }
 
 /**
+ * The tag/map field a resource uses to carry its taxonomy: GCP resources
+ * expose `labels`; AWS and Azure use `tags`. Used by tagsOf/environmentOf so
+ * a GCP resource's labels feed `mustHaveTags` and environment scoping the same
+ * way an AWS `tags` map does.
+ */
+const tagField = (type: string): string =>
+  type.startsWith('google_') ? 'labels' : 'tags'
+
+/**
  * Tags: a literal map (or a `var`/`local` reference resolved to one) gives
  * a complete key set; `merge(<literal>, var.tags)` gives a PARTIAL set
  * (known-present keys, may be more); anything else is unresolved.
  */
 function tagsOf(
+  type: string,
   block: Record<string, unknown> | undefined,
   scope: Scope,
 ): TagsInfo {
-  const r = tagKeys(block?.tags, scope)
+  const r = tagKeys(block?.[tagField(type)], scope)
   if (r === null) return { kind: 'unresolved' }
   return r.complete
     ? { kind: 'resolved', keys: r.keys }
@@ -533,10 +544,11 @@ function tagsOf(
 
 /** Resolved value of the `environment` tag (for rule scoping), if present. */
 function environmentOf(
+  type: string,
   block: Record<string, unknown> | undefined,
   scope: Scope,
 ): NormalizedValue | undefined {
-  const t = block?.tags
+  const t = block?.[tagField(type)]
   if (!t || typeof t !== 'object' || Array.isArray(t)) return undefined
   const env = (t as Record<string, unknown>).environment
   return env === undefined ? undefined : resolveValue(env, scope)
@@ -972,6 +984,89 @@ function containersOf(
   return { kind: 'parsed', containers }
 }
 
+/**
+ * The map object at a dotted path inside a block, or null if absent / not a
+ * literal map. Handles two hcl2json shapes: a top-level map attribute
+ * (`app_settings = { ... }` → `{ app_settings: {KEY:...} }`, object) and a
+ * nested-block-then-map path (`environment { variables = {...} }` →
+ * `{ environment: [{ variables: {KEY:...} }] }`, array[1] of object). A
+ * whole-map reference (`= var.x`) shows up as an interpolated string and is
+ * NOT a literal map → the caller treats it as unresolved.
+ */
+function mapAt(
+  block: Record<string, unknown>,
+  path: string[],
+): Record<string, unknown> | null {
+  let cur: unknown = block
+  for (const seg of path) {
+    if (cur && typeof cur === 'object' && !Array.isArray(cur)) {
+      const obj = cur as Record<string, unknown>
+      const v = obj[seg]
+      // Nested block: array of one object — descend into it.
+      if (isNestedBlock(v)) cur = v[0]
+      else cur = v
+    } else return null
+  }
+  if (cur && typeof cur === 'object' && !Array.isArray(cur))
+    return cur as Record<string, unknown>
+  return null
+}
+
+/** true if a raw env-var value string is a `${...}` reference, not a literal. */
+const envVarIsLiteral = (raw: unknown): boolean | undefined => {
+  if (typeof raw === 'string') return !isInterpolated(raw)
+  if (typeof raw === 'number' || typeof raw === 'boolean') return true
+  return undefined // object/array/null — not a scalar env var; skip it
+}
+
+/**
+ * Extract a serverless function's env-var map into EnvVar[] (for
+ * `denyPlaintextEnvSecrets`). Returns undefined when the resource type has no
+ * env-var map (rule passes), `unresolved` when the map is an unresolvable ref,
+ * or `parsed` with the extracted vars. Map locations are per resource type:
+ *  - aws_lambda_function: environment.variables
+ *  - azurerm_*_function_app: app_settings
+ *  - google_cloudfunctions2_function: service_config.environment_variables
+ */
+function envVarsOf(
+  type: string,
+  block: Record<string, unknown> | undefined,
+  scope: Scope,
+): EnvVarsInfo | undefined {
+  let path: string[] | null = null
+  if (type === AwsResource.LambdaFunction) path = ['environment', 'variables']
+  else if (
+    type === AzureResource.LinuxFunctionApp ||
+    type === AzureResource.WindowsFunctionApp ||
+    type === AzureResource.FunctionApp
+  )
+    path = ['app_settings']
+  else if (type === GcpResource.Cloudfunctions2Function)
+    path = ['service_config', 'environment_variables']
+  if (!path || !block) return undefined
+
+  // A whole-map reference (e.g. `app_settings = var.settings`) appears as an
+  // interpolated string at the top-level segment, not a literal map.
+  const top = block[path[0]!]
+  if (typeof top === 'string' && isInterpolated(top))
+    return { kind: 'unresolved' }
+
+  const map = mapAt(block, path)
+  if (map === null) return undefined // no env-var map declared → rule passes
+  const vars: EnvVar[] = []
+  for (const [name, raw] of Object.entries(map)) {
+    const isLit = envVarIsLiteral(raw)
+    if (isLit === undefined) continue // non-scalar value; skip
+    // Resolve through scope so a `var.x` that bottoms out at a literal still
+    // counts as a literal (matches ECS container env-var resolution).
+    const resolved = resolveValue(raw, scope)
+    const value =
+      resolved.kind === 'literal' ? String(resolved.value) : raw?.toString() ?? ''
+    vars.push({ name, value, isLiteral: isLit })
+  }
+  return { kind: 'parsed', vars }
+}
+
 const escapeRegExp = (s: string): string =>
   s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -1015,17 +1110,18 @@ export function normalize(
         line: findLine(rawText, type, name),
         ingress: ingressFor(type, block, scope),
         egress: egressFor(block, scope),
-        tags: tagsOf(block, scope),
+        tags: tagsOf(type, block, scope),
         attributes: extracted.attributes,
         lists: extracted.lists,
         blocks: extracted.blocks,
         policy: policyOf(block),
         containers: containersOf(block),
+        envVars: envVarsOf(type, block, scope),
         // A root's declared environment wins over the resource's own tag.
         environment:
           environmentOverride !== undefined
             ? { kind: 'literal', value: environmentOverride }
-            : environmentOf(block, scope),
+            : environmentOf(type, block, scope),
       })
     }
   }

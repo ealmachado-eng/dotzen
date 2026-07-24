@@ -17,6 +17,7 @@ export {
   Block,
   Wildcard,
   ApiGatewayAuthorization,
+  XrayMode,
   AzureResource,
   AzureAttribute,
   StorageTlsVersion,
@@ -30,4 +31,5 @@ export {
   PrimitiveRole,
   OauthScope,
   SqlSslMode,
+  IngressSetting,
 } from './vocabulary'

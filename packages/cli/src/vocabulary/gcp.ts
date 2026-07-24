@@ -19,6 +19,11 @@ export enum GcpResource {
   ContainerCluster = 'google_container_cluster',
   KmsCryptoKey = 'google_kms_crypto_key',
   ComputeSubnetwork = 'google_compute_subnetwork',
+  // Cloud Run Functions (2nd-gen Cloud Functions, `google_cloudfunctions2_function`).
+  // `service_config.ingress_settings` gates public exposure; `service_config.
+  // service_account_email` is the runtime identity; env-var secrets live in
+  // `service_config.environment_variables` (a map, extracted by envVarsOf).
+  Cloudfunctions2Function = 'google_cloudfunctions2_function',
 }
 
 export enum GcpAttribute {
@@ -45,6 +50,9 @@ export enum GcpAttribute {
   RotationPeriod = 'rotation_period',
   // Storage bucket hardening
   VersioningEnabled = 'versioning.enabled',
+  // Cloud Run Functions (google_cloudfunctions2_function) — service_config.
+  IngressSettings = 'service_config.ingress_settings',
+  ServiceAccountEmail = 'service_config.service_account_email',
 }
 
 export enum PublicAccessPreventionMode {
@@ -74,4 +82,13 @@ export enum OauthScope {
 export enum SqlSslMode {
   EncryptedOnly = 'ENCRYPTED_ONLY',
   TrustedClientCertRequired = 'TRUSTED_CLIENT_CERTIFICATE_REQUIRED',
+}
+
+// Cloud Run Functions ingress settings (google_cloudfunctions2_function
+// service_config.ingress_settings). ALLOW_ALL is the public-exposure
+// anti-pattern; the restricted values gate traffic to the LB/VPC.
+export enum IngressSetting {
+  AllowAll = 'ALLOW_ALL',
+  AllowInternalAndGclb = 'ALLOW_INTERNAL_AND_GCLB',
+  AllowInternalOnly = 'ALLOW_INTERNAL_ONLY',
 }

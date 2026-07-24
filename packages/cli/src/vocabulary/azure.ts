@@ -25,6 +25,14 @@ export enum AzureResource {
   ManagedDisk = 'azurerm_managed_disk',
   MonitorDiagnosticSetting = 'azurerm_monitor_diagnostic_setting',
   ApiManagement = 'azurerm_api_management',
+  // Azure Functions (serverless). v4 preferrred `linux/windows_function_app`;
+  // `function_app` is the legacy v3 combined resource. `https_only`,
+  // `public_network_access_enabled`, and the `identity {}` block are shared
+  // with Linux/Windows web apps; `site_config.minimum_tls_version` is the
+  // function-app TLS floor.
+  LinuxFunctionApp = 'azurerm_linux_function_app',
+  WindowsFunctionApp = 'azurerm_windows_function_app',
+  FunctionApp = 'azurerm_function_app',
 }
 
 export enum AzureAttribute {
@@ -58,6 +66,8 @@ export enum AzureAttribute {
   EnableFrontendTls10 = 'security.enable_frontend_tls10',
   EnableFrontendTls11 = 'security.enable_frontend_tls11',
   EnableBackendSsl30 = 'security.enable_backend_ssl30',
+  // Azure Functions — site_config TLS floor (nested block, dotted).
+  SiteConfigMinTlsVersion = 'site_config.minimum_tls_version',
 }
 
 // Built-in Azure roles that grant broad control (for denyValue on an
