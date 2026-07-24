@@ -67,6 +67,16 @@ export interface ProviderDefaults {
   readonly tagValues: Record<string, unknown>
 }
 
+/**
+ * A map of provider alias → region string, built from `provider {}` blocks in
+ * a directory. The default (no-alias) provider is keyed `""`. Used to resolve
+ * a resource's `providerRegion` for GDPR/LGPD residency rules — a resource
+ * pinned to `provider = aws.eu` gets the region of the `aws.eu` provider
+ * block. Threaded through `followModules` so child modules inherit the root's
+ * region map (a child with no provider block uses the parent's regions).
+ */
+export type ProviderRegionMap = Map<string, string>
+
 const KNOWN_TYPES = new Set<string>([
   ...Object.values(AwsResource),
   ...Object.values(AzureResource),
@@ -323,6 +333,47 @@ export function mergeProviderDefaults(
   const values: Record<string, unknown> = { ...parent.tagValues }
   for (const k of child.tagKeys) values[k] = child.tagValues[k]
   return { tagKeys: [...keys], tagValues: values }
+}
+
+/**
+ * Build a provider alias → region map from all `provider {}` blocks in the
+ * parsed files. The default (no-alias) provider is keyed `""`. hcl2json emits
+ * `provider: { aws: [{ region, alias? }, ...] }` — multiple blocks per
+ * provider type (one per alias). Returns an empty map if no regions found.
+ */
+export function providerRegions(roots: Hcl2JsonRoot[]): ProviderRegionMap {
+  const map: ProviderRegionMap = new Map()
+  for (const root of roots) {
+    for (const [, blocks] of Object.entries(root.provider ?? {})) {
+      for (const b of Array.isArray(blocks) ? blocks : []) {
+        const obj = asObject(b)
+        const region = typeof obj.region === 'string' ? obj.region : undefined
+        if (region === undefined) continue
+        const alias = typeof obj.alias === 'string' ? obj.alias : ''
+        // First-write wins (Terraform errors on duplicate provider configs);
+        // don't overwrite an existing alias→region from an earlier file.
+        if (!map.has(alias)) map.set(alias, region)
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * Merge an inherited region map (parent) with a child's own (child). Child's
+ * aliases override parent's on conflict; parent's default (`""`) is kept
+ * unless the child also declares a default. Used by `followModules` to thread
+ * the root's region map into child modules.
+ */
+export function mergeProviderRegions(
+  parent: ProviderRegionMap | undefined,
+  child: ProviderRegionMap | undefined,
+): ProviderRegionMap {
+  const out: ProviderRegionMap = new Map(parent ?? [])
+  if (child) {
+    for (const [alias, region] of child) out.set(alias, region)
+  }
+  return out
 }
 
 function mapIngressObj(o: unknown, scope: Scope): IngressRule {
@@ -1578,6 +1629,7 @@ function normalizeOne(
   pd: ProviderDefaults | undefined,
   instanceKey?: string,
   providerAlias?: string,
+  providerRegion?: NormalizedValue,
 ): NormalizedResource {
   const extracted = extractAttrs(block, scope)
   return {
@@ -1587,6 +1639,7 @@ function normalizeOne(
     line,
     instanceKey,
     providerAlias,
+    providerRegion,
     ingress: ingressFor(type, block, scope),
     egress: egressFor(block, scope),
     tags: tagsOf(type, block, scope, pd),
@@ -1635,6 +1688,11 @@ export function normalize(
    *  name is looked up here when `providerAliasOf(block)` is undefined.
    *  Undefined at the root (root resources aren't remapped). */
   providerAliasRemap?: Map<string, string>,
+  /** A map of provider alias → region string (from `provider {}` blocks).
+   *  Used to resolve a resource's `providerRegion` for GDPR/LGPD residency
+   *  rules. Threaded through `followModules` so child modules inherit the
+   *  root's region map. */
+  regionMap?: ProviderRegionMap,
 ): NormalizedResource[] {
   const out: NormalizedResource[] = []
   const byType = parsed.resource ?? {}
@@ -1651,6 +1709,18 @@ export function normalize(
     if (!providerAliasRemap) return undefined
     const provName = providerNameForType(type)
     return provName ? providerAliasRemap.get(provName) : undefined
+  }
+
+  // Resolve a resource's provider region from its alias (or the default
+  // provider if no explicit alias) using the region map. Returns a
+  // NormalizedValue: a literal region string, or undefined if no region
+  // is declared (the provider block has no `region` — degrades honestly).
+  const regionFor = (
+    alias: string | undefined,
+  ): NormalizedValue | undefined => {
+    if (!regionMap || regionMap.size === 0) return undefined
+    const region = regionMap.get(alias ?? '')
+    return region !== undefined ? { kind: 'literal', value: region } : undefined
   }
 
   for (const [type, byName] of Object.entries(byType)) {
@@ -1687,6 +1757,7 @@ export function normalize(
             pd,
             undefined,
             aliasFor(type, block),
+            regionFor(aliasFor(type, block)),
           ),
         )
         continue
@@ -1719,6 +1790,7 @@ export function normalize(
             pd,
             instanceKey,
             aliasFor(type, block),
+            regionFor(aliasFor(type, block)),
           ),
         )
       }
@@ -1750,6 +1822,7 @@ export function normalize(
           pd,
           undefined,
           aliasFor(dataType, block),
+          regionFor(aliasFor(dataType, block)),
         ),
       )
     }

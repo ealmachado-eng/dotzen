@@ -112,6 +112,10 @@ type DenyFloatingModuleVersion = Extract<
   Condition,
   { kind: 'denyFloatingModuleVersion' }
 >
+type DenyNonApprovedRegion = Extract<
+  Condition,
+  { kind: 'denyNonApprovedRegion' }
+>
 const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 
 /**
@@ -255,6 +259,21 @@ function environmentMatches(rule: Rule, r: NormalizedResource): boolean {
 function providerAliasMatches(rule: Rule, r: NormalizedResource): boolean {
   if (!rule.providerAlias) return true
   return r.providerAlias === rule.providerAlias
+}
+
+/**
+ * Region scoping is a fail-open filter: a `.region(X, Y)` rule applies only
+ * to resources in those regions. A resource whose region is unknown is
+ * skipped (NOT flagged) — pairing with `denyNonApprovedRegion` handles the
+ * "unknown region" case via could-not-evaluate. This filter alone doesn't
+ * flag; it just narrows the scope.
+ */
+function regionMatches(rule: Rule, r: NormalizedResource): boolean {
+  if (!rule.regions || rule.regions.length === 0) return true
+  return (
+    r.providerRegion?.kind === 'literal' &&
+    rule.regions.includes(r.providerRegion.value as string)
+  )
 }
 
 const isLiteralNumber = (
@@ -1257,6 +1276,36 @@ function evalDenyFloatingModuleVersion(
   return { kind: 'pass' }
 }
 
+/**
+ * Same-resource: flag if the resource's provider region is NOT in the
+ * approved list (GDPR/LGPD data residency). A resource whose region is
+ * unknown (no provider block declaring a region) degrades to
+ * could-not-evaluate — never a false pass (an unknown region might be EU).
+ */
+function evalDenyNonApprovedRegion(
+  c: DenyNonApprovedRegion,
+  r: NormalizedResource,
+): ConditionOutcome {
+  if (!r.providerRegion)
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'provider region is unknown (no provider block declaring a region) — cannot determine residency',
+    }
+  if (r.providerRegion.kind !== 'literal')
+    return {
+      kind: 'cannotEvaluate',
+      reason:
+        'provider region is an unresolvable reference — cannot determine residency',
+    }
+  const region = r.providerRegion.value as string
+  if (c.regions.includes(region)) return { kind: 'pass' }
+  return {
+    kind: 'violation',
+    detail: `resource is in region "${region}" — not in the approved residency list: ${c.regions.join(', ')}`,
+  }
+}
+
 /** Exhaustive dispatch: a new condition kind is a compile error (Layer 4). */
 function evalCondition(
   c: Condition,
@@ -1343,6 +1392,8 @@ function evalCondition(
     // Module-call-surface condition — evaluated in the MODULE-CALLS pass.
     case 'denyFloatingModuleVersion':
       return { kind: 'pass' }
+    case 'denyNonApprovedRegion':
+      return evalDenyNonApprovedRegion(c, r)
     default:
       return assertNever(c)
   }
@@ -1369,6 +1420,7 @@ export function evaluate(
     for (const resource of resources) {
       if (!environmentMatches(rule, resource)) continue
       if (!providerAliasMatches(rule, resource)) continue
+      if (!regionMatches(rule, resource)) continue
       for (const condition of rule.conditions) {
         // Output-targeted conditions are evaluated in the OUTPUTS pass (outputs are
         // not resources) — skip them here so they neither violate nor inflate

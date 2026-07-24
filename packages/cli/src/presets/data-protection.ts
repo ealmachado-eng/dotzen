@@ -118,10 +118,18 @@ export const dataProtection = [
     .message('Must not hide drift on data-protection attrs via ignore_changes')
     .rationale('GDPR Art. 32 — security configurations must be auditable'),
 
-  // ── KNOWN GAP: Data residency ──────────────────────────────────────────
-  // "Personal data must not leave the EU" requires region awareness. dotzen
-  // has provider-alias scoping (#9) but NOT region extraction. A future
-  // `providerRegion` extraction + a `.region('eu-west-*')` scoping mechanism
-  // would enable residency rules. Until then, pair with a cloud-native
-  // config rule (AWS Config, GCP Org Policy) for residency enforcement.
+  // ── Data residency: personal data must stay in EU regions (GDPR Art. 44) ─
+  // Flags any resource in a non-EU region. Replace the approved list with
+  // your org's approved regions. A resource whose region is unknown (no
+  // provider block) degrades to could-not-evaluate — never a false pass.
+  // NOTE: this is an EXAMPLE — uncomment and tailor the region list.
+  // rule()
+  //   .allResources()
+  //   .denyNonApprovedRegion(
+  //     'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1', 'eu-north-1',
+  //     'europe-west1', 'europe-west2', 'europe-west3', 'europe-west4',
+  //     'europe-west6', 'europe-central2', 'europe-north1',
+  //   )
+  //   .message('Personal data must not leave EU regions (GDPR Art. 44)')
+  //   .rationale('GDPR Art. 44 — prohibit transfers of personal data outside the EU'),
 ] as const

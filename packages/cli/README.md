@@ -71,7 +71,16 @@ export const spec = [...coreSecurity, ...pciDss /* your rules */]
 - **`pciDss`** (14 rules) — PCI DSS v4.0 additions: encrypt ALL data stores, all four S3 public-access-block flags, backup retention ≥30 days, encrypted + non-local state, no drift hiding on security attrs, DynamoDB PITR.
 - **`soc2`** (8 rules) — SOC 2 TSC additions: change management (version pinning for TF/providers/modules), encrypted + non-local state, ECR scan-on-push, CloudTrail log validation.
 - **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5 additions: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
-- **`dataProtection`** (12 rules) — GDPR/LGPD additions: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data-residency is a documented gap (needs region awareness).
+- **`dataProtection`** (12 rules) — GDPR/LGPD additions: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data residency is now supported via `denyNonApprovedRegion` (see below).
+
+### Data residency (GDPR/LGPD)
+
+```ts
+rule()
+  .allResources()
+  .denyNonApprovedRegion('eu-west-1', 'eu-central-1', 'europe-west1')
+  .message('Personal data must not leave EU regions (GDPR Art. 44)')
+```
 
 Each rule carries `.rationale()` citing the framework control. Compose freely — `coreSecurity` + `pciDss` + `dataProtection` gives you a PCI + GDPR combined spec.
 

@@ -166,6 +166,11 @@ export type Condition =
   // Local modules (`./`/`../`) carry no version and are never flagged.
   // Zero-arg. Evaluated in the module-calls pass.
   | { readonly kind: 'denyFloatingModuleVersion' }
+  // Same-resource: flag if the resource's provider region is NOT in the
+  // approved list (GDPR/LGPD data residency — e.g. data must stay in EU
+  // regions). A resource whose region is unknown (no provider block) degrades
+  // to could-not-evaluate — never a false pass.
+  | { readonly kind: 'denyNonApprovedRegion'; readonly regions: string[] }
 
 export interface Rule {
   readonly id: string
@@ -179,6 +184,11 @@ export interface Rule {
    * every resource regardless of its provider alias.
    */
   readonly providerAlias?: string
+  /** If set, the rule applies only to resources whose provider region is in
+   *  this allowlist (e.g. `['eu-west-1', 'europe-west1']` for GDPR residency).
+   *  A resource whose region is unknown (no provider block) degrades to
+   *  could-not-evaluate — never a false pass. */
+  readonly regions?: string[]
   readonly conditions: Condition[]
   readonly effect: Effect
   readonly message: string
@@ -196,6 +206,7 @@ export class RuleBuilder {
   private _target?: ResourceTarget
   private _environment?: Environment
   private _providerAlias?: string
+  private _regions?: string[]
   private _conditions: Condition[] = []
   private _effect: Effect = Effect.Block
   private _message?: string
@@ -227,6 +238,18 @@ export class RuleBuilder {
    */
   providerAlias(alias: string): this {
     this._providerAlias = alias
+    return this
+  }
+
+  /**
+   * Scope the rule to resources in the listed provider regions (e.g.
+   * `.region('eu-west-1', 'europe-west1')` for GDPR residency). A resource
+   * whose region is unknown (no provider block declaring a region) degrades
+   * to could-not-evaluate — never a false pass. Like `.environment(X)`, this
+   * is a fail-open filter, not a check.
+   */
+  region(...regions: (string & {})[]): this {
+    this._regions = regions
     return this
   }
 
@@ -549,6 +572,19 @@ export class RuleBuilder {
     return this
   }
 
+  /**
+   * Flag a resource whose provider region is NOT in the approved list — a
+   * GDPR/LGPD data-residency control (e.g. personal data must stay in EU
+   * regions). Pass region strings (e.g. `'eu-west-1'`, `'europe-west1'`). A
+   * resource whose region is unknown (no provider block declaring a region)
+   * degrades to could-not-evaluate — never a false pass. Use with
+   * `.allResources()` or `.resource(...)`.
+   */
+  denyNonApprovedRegion(...regions: (string & {})[]): this {
+    this._conditions.push({ kind: 'denyNonApprovedRegion', regions })
+    return this
+  }
+
   onViolation(effect: Effect): this {
     this._effect = effect
     return this
@@ -588,6 +624,7 @@ export class RuleBuilder {
       target: this._target!,
       environment: this._environment,
       providerAlias: this._providerAlias,
+      regions: this._regions,
       conditions: this._conditions,
       effect: this._effect,
       message: this._message!,

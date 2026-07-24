@@ -21,7 +21,10 @@ import {
   expandForEach,
   providerDefaults,
   mergeProviderDefaults,
+  providerRegions,
+  mergeProviderRegions,
   ProviderDefaults,
+  ProviderRegionMap,
   Hcl2JsonRoot,
   Scope,
 } from './normalize'
@@ -233,6 +236,12 @@ async function followModules(
    * `followModules` so deep modules see the full inherited chain.
    */
   inheritedPd?: ProviderDefaults,
+  /** Inherited provider alias→region map (from enclosing dirs). A child
+   *  module with no provider block of its own inherits the root's regions
+   *  (Terraform provider inheritance); a child's own provider blocks merge
+   *  in (child's aliases override). Threaded to `normalize` and the recursive
+   *  `followModules` for GDPR/LGPD residency rules. */
+  inheritedRegions?: ProviderRegionMap,
 ): Promise<Result<ParseOutput, DotzenError>> {
   const out: NormalizedResource[] = []
   const skips: ModuleSkip[] = []
@@ -364,6 +373,13 @@ async function followModules(
               }
             }
           }
+          // Provider regions: merge the child dir's own provider blocks with
+          // the inherited chain (child's aliases override parent's). Threaded
+          // to `normalize` so a resource's `providerRegion` resolves.
+          const childRegions = mergeProviderRegions(
+            inheritedRegions,
+            providerRegions(parsedModule.value.map((f) => f.parsed)),
+          )
           // Per-instance trace. for_each expansions append `[key]`; the
           // synthetic '?' marks an unresolvable for_each (one iteration, no
           // each bindings) and is omitted from the label.
@@ -384,6 +400,7 @@ async function followModules(
                 environmentOverride,
                 childPd,
                 providerAliasRemap,
+                childRegions,
               ),
             )
             // Outputs declared in the followed module — normalize with the
@@ -420,6 +437,7 @@ async function followModules(
             environmentOverride,
             new Set([...pathStack, moduleDir]),
             childPd,
+            childRegions,
           )
           if (!nested.ok) return nested
           out.push(...nested.value.resources)
@@ -474,6 +492,10 @@ export async function parseTf(
     parsedFiles.value.map((p) => p.parsed),
     scope,
   )
+  // Provider alias→region map for this root dir — threaded to `normalize`
+  // (for providerRegion on resources) and into `followModules` (children
+  // inherit the root's regions for GDPR/LGPD residency rules).
+  const regions = providerRegions(parsedFiles.value.map((p) => p.parsed))
   const resources: NormalizedResource[] = []
   const outputs: NormalizedOutput[] = []
   const bindings: NormalizedBinding[] = []
@@ -483,7 +505,16 @@ export async function parseTf(
   for (const { file, text, parsed } of parsedFiles.value) {
     const rel = toPosix(path.relative(projectRoot, file))
     resources.push(
-      ...normalize(parsed, rel, text, scope, environmentOverride, pd),
+      ...normalize(
+        parsed,
+        rel,
+        text,
+        scope,
+        environmentOverride,
+        pd,
+        undefined,
+        regions,
+      ),
     )
     // Direct outputs in this root (the common case — outputs live at the
     // root, not inside child modules).
@@ -506,6 +537,7 @@ export async function parseTf(
     environmentOverride,
     new Set(),
     pd,
+    regions,
   )
   if (!followed.ok) return followed
   resources.push(...followed.value.resources)

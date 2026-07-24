@@ -142,6 +142,15 @@ export interface NormalizedResource {
    */
   readonly providerAlias?: string
   /**
+   * The provider's region for this resource (resolved from the `provider {}`
+   * block matching the resource's alias, or the default provider). Used for
+   * GDPR/LGPD data-residency rules (`.region(...)` scoping +
+   * `denyNonApprovedRegion`). Absent when the provider block declares no
+   * region (the resource's region is then unknown — degrades to
+   * could-not-evaluate for residency rules).
+   */
+  readonly providerRegion?: NormalizedValue
+  /**
    * The `for_each` element key when this resource is one of several expanded
    * instances (e.g. `for_each = toset(["dev","prd"])` → two instances with
    * instanceKey "dev" / "prd"). Absent for a plain single-instance resource
