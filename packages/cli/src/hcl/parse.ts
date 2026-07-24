@@ -187,7 +187,6 @@ const isLocalSource = (s: unknown): s is string =>
 /** 1-based line of `module "<label>" {` in the caller file (best-effort). */
 function findModuleLine(text: string, label: string): number {
   const lines = text.split(/\r?\n/)
-  // eslint-disable-next-line security/detect-non-literal-regexp -- label escaped
   const needle = new RegExp(`module\\s+"${escapeRegExp(label)}"`)
   for (let i = 0; i < lines.length; i++) {
     if (needle.test(lines[i] ?? '')) return i + 1
@@ -307,7 +306,6 @@ async function followModules(
           skips.push(note('module cycle detected'))
           continue
         }
-        // eslint-disable-next-line security/detect-non-literal-fs-filename -- moduleDir confined to projectRoot above
         if (!fs.existsSync(moduleDir)) {
           skips.push(note('module path not found'))
           continue

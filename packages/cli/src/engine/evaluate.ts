@@ -1032,7 +1032,6 @@ function secretMatchers(secretAttr: string): {
   const type = dot === -1 ? secretAttr : secretAttr.slice(0, dot)
   const attr = dot === -1 ? '' : secretAttr.slice(dot + 1)
   const head = `\\$\\{\\s*${escRe(type)}\\.[A-Za-z0-9_-]+\\.${escRe(attr)}\\s*\\}`
-  // eslint-disable-next-line security/detect-non-literal-regexp -- escaped parts
   return { sole: new RegExp(`^${head}$`), partial: new RegExp(head) }
 }
 

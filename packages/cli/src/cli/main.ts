@@ -26,7 +26,6 @@ function emitApprovalSignal(report: CheckReport): void {
   const ghEnv = process.env.GITHUB_ENV
   if (ghEnv) fs.appendFileSync(ghEnv, line)
   if (process.env.GITLAB_CI || process.env.CI) {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- CI-controlled dotenv path
     fs.writeFileSync(process.env.DOTZEN_ENV_FILE ?? 'dotzen.env', line)
   }
 }

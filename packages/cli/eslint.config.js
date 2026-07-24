@@ -1,13 +1,11 @@
 // @ts-check
 const tseslint = require('typescript-eslint')
-const security = require('eslint-plugin-security')
 
 module.exports = tseslint.config(
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
   },
   ...tseslint.configs.recommended,
-  security.configs.recommended,
   {
     rules: {
       '@typescript-eslint/no-unused-vars': [

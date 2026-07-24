@@ -530,7 +530,6 @@ export function expandForEach(
 function substituteValue(v: unknown, iterator: string, el: unknown): unknown {
   if (typeof v === 'string') {
     const it = escapeRegExp(iterator)
-    // eslint-disable-next-line security/detect-non-literal-regexp -- iterator escaped
     const field = new RegExp(
       `^\\$\\{${it}\\.value\\.([A-Za-z0-9_-]+)\\}$`,
     ).exec(v)
@@ -1555,7 +1554,6 @@ const escapeRegExp = (s: string): string =>
 /** Best-effort line of a `resource "type" "name"` block via text scan. */
 function findLine(text: string, type: string, name: string): number {
   const lines = text.split(/\r?\n/)
-  // eslint-disable-next-line security/detect-non-literal-regexp -- inputs escaped above
   const needle = new RegExp(
     `resource\\s+"${escapeRegExp(type)}"\\s+"${escapeRegExp(name)}"`,
   )
@@ -1568,7 +1566,6 @@ function findLine(text: string, type: string, name: string): number {
 /** Best-effort line of a `data "type" "name"` block via text scan. */
 function findDataLine(text: string, type: string, name: string): number {
   const lines = text.split(/\r?\n/)
-  // eslint-disable-next-line security/detect-non-literal-regexp -- inputs escaped above
   const needle = new RegExp(
     `data\\s+"${escapeRegExp(type)}"\\s+"${escapeRegExp(name)}"`,
   )
@@ -1834,7 +1831,6 @@ export function normalize(
 /** Best-effort line of an `output "name"` block via text scan. */
 function findOutputLine(text: string, name: string): number {
   const lines = text.split(/\r?\n/)
-  // eslint-disable-next-line security/detect-non-literal-regexp -- name escaped
   const needle = new RegExp(`output\\s+"${escapeRegExp(name)}"`)
   for (let i = 0; i < lines.length; i++) {
     if (needle.test(lines[i] ?? '')) return i + 1
@@ -1892,7 +1888,6 @@ function isScalarLiteral(v: unknown): boolean {
 /** Best-effort line of a `variable "name"` block via text scan. */
 function findVariableLine(text: string, name: string): number {
   const lines = text.split(/\r?\n/)
-  // eslint-disable-next-line security/detect-non-literal-regexp -- name escaped
   const needle = new RegExp(`variable\\s+"${escapeRegExp(name)}"`)
   for (let i = 0; i < lines.length; i++) {
     if (needle.test(lines[i] ?? '')) return i + 1
