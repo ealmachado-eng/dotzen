@@ -178,8 +178,32 @@ resource "aws_security_group" "bastion" {
 }
 ```
 
-Both `# dotzen:ignore` and `// dotzen:ignore` work, on their own line or
-trailing a block header. The optional `: <reason>` is for auditability.
+**Per-rule suppression** — suppress only one rule while keeping others:
+
+```hcl
+# dotzen:ignore rule-3: known exception — this bucket hosts a public CDN
+resource "aws_s3_bucket" "cdn" {
+  bucket = "cdn-assets"
+  acl    = "public-read"
+}
+```
+
+- `# dotzen:ignore rule-5: <reason>` — suppresses only `rule-5` on this block.
+- `# dotzen:ignore: <reason>` — suppresses ALL rules on this block.
+- `# dotzen:ignore` — suppresses ALL rules, no reason.
+
+Both `#` and `//` work, on their own line or trailing a block header. The optional `: <reason>` is for auditability.
+
+## Ungoverned resources
+
+dotzen has a closed vocabulary of resource types it can govern. Resources
+whose type is NOT in the vocabulary (e.g. `aws_msk_cluster`,
+`aws_codebuild_project`) are surfaced in a **`NOT GOVERNED (vocabulary gap)`**
+section of the terminal output, and as an `ungoverned` array in JSON output.
+
+This is informational — not a violation, not a could-not-evaluate. It tells
+you what dotzen **cannot** see, so you know your coverage gaps rather than
+getting a false sense of compliance from a silent skip.
 
 ## CI integration
 

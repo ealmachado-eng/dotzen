@@ -6,6 +6,61 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.2.0
+
+### Added — ungoverned-resource telemetry
+
+Resources whose type is not in dotzen's closed vocabulary (`KNOWN_TYPES`)
+were previously silently skipped. They are now collected and surfaced as a
+**`NOT GOVERNED (vocabulary gap)`** section in terminal output, and as an
+`ungoverned` array in JSON output. Each entry shows `{type, name, file, line}`.
+
+A silent skip is worse than an honest gap — users now see exactly which
+resources dotzen can and cannot govern. The `CheckReport` interface gains
+a `ungoverned` field (additive — existing JSON consumers that ignore
+unknown fields are unaffected; the frozen-schema test now includes it).
+
+### Added — per-rule ignore directives
+
+`# dotzen:ignore` now supports an optional ruleId to suppress ONLY that
+rule on the block, while keeping other rules' findings:
+
+```hcl
+# dotzen:ignore rule-5: bastion host — SSH is intentionally public
+resource "aws_security_group" "bastion" {
+  ingress { ... }
+}
+```
+
+- `# dotzen:ignore rule-5: <reason>` — suppresses only `rule-5` on this block.
+- `# dotzen:ignore: <reason>` — suppresses ALL rules on this block (unchanged).
+- `# dotzen:ignore` — suppresses ALL rules, no reason (unchanged).
+
+The `IgnoreDirective` interface gains an optional `ruleId` field. The
+filter in `check.ts` checks all-block ignores first (fast `Set` lookup),
+then per-rule ignores by `(file, line, ruleId)` match.
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
+`ungoverned` field in `CheckReport` is additive. The per-rule ignore syntax
+is a superset of the existing syntax (no ruleId = suppress all, as before).
+
+To see ungoverned resources:
+
+```bash
+npx @dotzen/dotzen@1.2.0 check
+# The output now includes a "NOT GOVERNED (vocabulary gap)" section if any
+# resources have types not in dotzen's vocabulary.
+```
+
+To suppress a single rule on a block:
+
+```hcl
+# dotzen:ignore rule-3: known exception — this bucket hosts a public CDN
+resource "aws_s3_bucket" "cdn" { ... }
+```
+
 ## 1.1.0
 
 ### Changed — CIS presets are now composable additions to coreSecurity
