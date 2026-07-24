@@ -1,9 +1,11 @@
 # 08 — Module-following (resolving `module {}` calls)
 
-Status: **Designed, not yet implemented** (targets v0.1.0). This is the
+Status: **Implemented** (Tranche 1 + the Tranche-2 hardening slices).
+Local single-level following shipped in v0.1.0; per-instantiation trace
+labels, `count = 0` handling, doc-08 DoD surfacing of non-followed modules,
+nested modules, and module `for_each` all land in v0.3.0. Originally the
 single highest-value feature after the engine itself, identified by
-dogfooding on real module-based AWS repos (see `docs/ROADMAP.md`
-"Post-publish dogfooding findings").
+dogfooding on real module-based AWS repos.
 
 ## The problem (why this matters)
 
@@ -61,14 +63,16 @@ The same module called by `dev` and `prd` is evaluated **once per call**
 with that call's scope (per-instantiation isolation — the same discipline
 as today's multi-root isolated scopes). Findings are per-instantiation.
 
-## Scope for v1 (deliberately bounded — everything else degrades honestly)
+## Scope (deliberately bounded — everything else degrades honestly)
 
-| In scope | Out of scope → could-not-evaluate / skip |
+| Implemented | Degrades to could-not-evaluate / skip |
 |---|---|
-| Local relative `source` | Registry / git / archive sources (need fetching) |
-| Literal caller inputs → `var.*` | Caller inputs that are themselves unresolved |
-| One level (caller → module) | Deep nesting beyond a bounded depth |
-| — | `count` / `for_each` on the `module` block |
+| Local relative `source` | Registry / git / archive sources (surfaced) |
+| Literal caller inputs → `var.*`; sole-ref caller inputs (`var.y`) | Caller inputs that are unresolved compound expressions |
+| One level + **nested modules** (recursive, cycle-bounded) | Re-entering a dir already on the current path (surfaced) |
+| `count = 0` skip (literal or var-resolving-to-0) | `count` per-index expansion (followed once, honest) |
+| `for_each` over a literal map or var-resolved list/set | `for_each` that is a `toset(...)` compound or unresolvable var (followed once, no `each` bindings) |
+| `each.value` / `each.key` (sole refs) threaded into module scope | `each.value.field` (non-sole each refs inside module resources) |
 
 Every out-of-scope case degrades to **could-not-evaluate** (or a skip
 note) — never a false verdict. Nesting may be extended to a bounded depth
@@ -93,10 +97,22 @@ in a later tranche.
 ## Honest limits (state these in output/docs)
 
 - Only **local** module sources are followed; remote sources are reported
-  as not-followed, not silently passed.
+  as not-followed (could-not-evaluate, ruleId `dotzen.module-following`),
+  not silently passed.
 - A caller input that can't be resolved leaves the module's `var`
   unresolved → the dependent check stays could-not-evaluate.
-- No `count`/`for_each` expansion on modules in v1.
+- `count` is honored only as a presence gate (`0` → skip; anything else,
+  including unresolvable, → follow once); no per-index key expansion.
+- `for_each` is expanded only for a literal map or a var-resolved
+  list/set; `toset(...)` and other compound calls, and var refs with no
+  default, are followed once (no `each.*` bindings → degrade honestly).
+- Nested module following is bounded by a path-stack of resolved dirs
+  (a cycle is surfaced as a could-not-evaluate skip, not infinite
+  recursion). Independent diamond paths (two modules calling the same
+  module with different inputs) ARE evaluated per-path — the cycle guard
+  is a current-path test, not a global visited set.
+- `each.value.field` (non-sole each refs inside module resources) is not
+  resolved — the inner field ref degrades to `could-not-evaluate`.
 - This introduces **cross-file/cross-directory resolution** — a new class
   of complexity (and bugs). Built test-first, tranche by tranche, holding
   the "degrade to could-not-evaluate, never false-positive" line.
@@ -106,11 +122,37 @@ in a later tranche.
 1. **Local single-level following** — resolve `source`, thread literal
    inputs into `var.*`, normalize + evaluate the module's resources.
    (Covers the dogfooding cases: rds/vm/s3 `var.tags` + SG
-   `var.allowed_cidrs`.)
+   `var.allowed_cidrs`.) — **DONE v0.1.0**
 2. **Traceable reporting** — `caller › module : resource` paths;
-   per-instantiation dedupe.
-3. **Bounded nested modules** (module → module), then `count`/`for_each`
-   on modules (larger; likely its own effort).
+   per-instantiation trace labels `(module-label)` so two calls of one
+   module are distinguishable in findings; per-instantiation dedupe. —
+   **DONE v0.3.0**
+3. **Non-followed modules surfaced** (doc 08 DoD, slice into tranche 2):
+   remote/registry/git sources, sources that escape the scanned project,
+   and missing module dirs are recorded as `ModuleSkip` notes and surfaced
+   as `couldNotEvaluate` under the stable ruleId `dotzen.module-following`
+   — never a silent `0 checks`. — **DONE v0.3.0**
+4. **`count = 0`** disables a module (literal or var-resolving-to-0);
+   followed silently (correct, no resources, no note). An unresolvable
+   `count` is followed once (honest; no key expansion in v1). — **DONE v0.3.0**
+5. **Bounded nested modules** (module → module), then `for_each` on
+   modules (larger; its own effort). — **DONE v0.3.0**
+   - Nested: `followModules` recurses; a path-stack of resolved absolute
+     dirs bounds it (a self/mutual cycle surfaces as a
+     `dotzen.module-following` could-not-evaluate, not infinite recursion).
+     The trace accumulates the full chain: `env/prd › modules/outer/main.tf
+     (db) › modules/inner/main.tf (inner_db)`.
+   - `for_each`: a resolvable literal map or a var-resolved list is
+     expanded per element — one module instance per key, `each.value` and
+     `each.key` threaded into the module scope (the `SOLE_REF` resolver in
+     `normalize.ts` now follows `each.value`/`each.key`). Trace carries
+     `(module-label[element-key])`. An unresolvable `for_each` (`toset(...)`
+     compound, `var.x` with no default) is followed once honestly — refs to
+     `each.*` inside the module degrade to `could-not-evaluate` rather than
+     false expansion. An empty resolved collection skips silently.
+   - `count` per-index expansion, `each.value.field` (non-sole each refs),
+     and compound caller-input resolution remain out of scope (v1 honest
+     degradation still applies).
 
 ## Definition of Done (per doc 07)
 

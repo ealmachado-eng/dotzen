@@ -6,6 +6,71 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 0.3.0
+
+### Added — module-following: nested modules, `for_each`, trace labels, `count`, and DoD surfacing (doc 08)
+
+This release completes `doc 08 — Module-following` beyond the v0.1.0
+single-level local-source case. No spec DSL vocabulary changes — the
+rule-authoring surface is unchanged. The engine and HCL/parse layer now
+follow and evaluate more of the module-based Terraform that real orgs
+write, and surface (rather than silently skip) what they cannot.
+
+**New module-following behavior:**
+
+- **Nested modules (module → module).** `followModules` is recursive: a
+  followed module's own `module {}` calls are followed too, bounded by a
+  path-stack of resolved absolute dirs. A self/mutual cycle is recorded
+  as a `could-not-evaluate` skip (ruleId `dotzen.module-following`),
+  not infinite recursion. Independent diamond paths (two modules calling
+  the same module with different inputs) are still evaluated per-path —
+  the cycle guard is a current-path test, not a global visited set.
+- **Module `for_each`.** A `for_each` over a resolvable literal map or a
+  var-resolved list/set is expanded per element — one module instance
+  per key, with `each.value` / `each.key` threaded into the module
+  scope. The trace carries a per-key suffix `(module-label[key])`. An
+  unresolvable `for_each` (`toset(...)` compound, `var.x` with no
+  default) is followed once honestly — refs to `each.*` inside the
+  module degrade to `could-not-evaluate` rather than false expansion.
+  An empty resolved collection (`toset([])`) skips silently.
+- **Per-instantiation trace labels.** Each followed call's findings carry
+  `(module-label)` — e.g. `env/prd › modules/rds/main.tf (db_bad)` — so
+  two calls of one module are distinguishable. Nested findings name
+  every hop: `env/prd › modules/outer/main.tf (db) ›
+modules/inner/main.tf (inner_db)`.
+- **`count = 0` honored.** A literal `0`, or a `count` that resolves to
+  `0` via a sole `var`/`local` ref, disables the module — it is skipped
+  silently (correct, no resources to evaluate). An unresolvable `count`
+  is followed once (honest; no per-index expansion).
+
+### Changed — non-followed modules now surface (doc 08 DoD), never a silent `0 checks`
+
+Previously, a `module {}` call dotzen could not follow (remote/registry/git
+source, a source that escapes the scanned project, or a missing module
+dir) was silently skipped — an env layer of only such calls reported
+`0 checks` with no explanation. These are now recorded and surfaced as
+`couldNotEvaluate` under the stable ruleId `dotzen.module-following`,
+with the caller file + line and the source that was not followed.
+
+**Behavioral note for consumers (surfaces NEW findings on existing
+configs):** configs that previously reported `0 checks` on a module-based
+env layer, or `could-not-evaluate` on a module's `var.*`-dependent
+resources, may now produce **definite verdicts** (passes or violations)
+where module-following now resolves the caller-supplied values —
+including nested-module and `for_each` expansions. Review the new
+violations; they reflect values that were always there but previously
+unresolvable. Non-followed modules surface as `couldNotEvaluate`
+(ruleId `dotzen.module-following`) — filter on that ruleId to see only
+the gaps dotzen could not close.
+
+### Internal — `SOLE_REF` resolver accepts `each.value` / `each.key`
+
+The sole-reference resolver in `src/hcl/normalize.ts` (used by
+`resolveValue` / `resolveRaw`) now follows `each.value` and `each.key`
+in addition to `var.*` / `local.*`, so `each.*` references inside a
+module expanded by `for_each` resolve to the threaded element value.
+Scopes without `each.*` set are unaffected.
+
 ## 0.2.0
 
 ### Added — serverless function coverage (AWS Lambda, Azure Functions, GCP Cloud Run Functions)

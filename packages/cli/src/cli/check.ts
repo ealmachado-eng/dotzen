@@ -3,8 +3,8 @@ import { Result, ok } from '../result/result'
 import { DotzenError } from '../result/errors'
 import { readDotzenJson, enforceVersion } from '../version/config'
 import { importSpecModule, loadSpec } from '../spec/load'
-import { parseTf } from '../hcl/parse'
-import { evaluate, CheckReport } from '../engine/evaluate'
+import { parseTf, ModuleSkip } from '../hcl/parse'
+import { evaluate, CheckReport, Unevaluable } from '../engine/evaluate'
 import { NormalizedResource } from '../hcl/model'
 
 /**
@@ -38,13 +38,30 @@ export async function check(
   // rule scoping by folder instead of by tag.
   const roots = Array.isArray(terraform) ? terraform : [terraform]
   const resources: NormalizedResource[] = []
+  const skips: ModuleSkip[] = []
   for (const root of roots) {
     const rootPath = typeof root === 'string' ? root : root.path
     const env = typeof root === 'string' ? undefined : root.environment
     const parsed = await parseTf(path.resolve(baseDir, rootPath), baseDir, env)
     if (!parsed.ok) return parsed
-    resources.push(...parsed.value)
+    resources.push(...parsed.value.resources)
+    skips.push(...parsed.value.skips)
   }
 
-  return ok(evaluate(rules.value, resources))
+  // Modules dotzen could NOT follow (remote/escape/missing, doc 08) surface
+  // as could-not-evaluate so a gap is visible rather than a silent 0 checks.
+  // A stable ruleId lets tooling filter them out of rule-driven entries.
+  const moduleSkips: Unevaluable[] = skips.map((s) => ({
+    ruleId: 'dotzen.module-following',
+    resource: `module.${s.label}`,
+    file: s.file,
+    line: s.line,
+    reason: `not followed: ${s.reason} (source=${s.source})`,
+  }))
+
+  const report = evaluate(rules.value, resources)
+  return ok({
+    ...report,
+    couldNotEvaluate: [...moduleSkips, ...report.couldNotEvaluate],
+  })
 }

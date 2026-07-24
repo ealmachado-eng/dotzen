@@ -36,8 +36,40 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   module's `var.*`, so caller-supplied cidrs/tags become concrete verdicts,
   traced as `env/prd › modules/rds/main.tf`. Also fixed: `cidr_blocks =
   var.list` (whole-list ref) now resolves (and honestly degrades instead of
-  a silent pass). **Remaining tranches:** remote (registry/git) sources,
-  nested modules, module `count`/`for_each`, per-instantiation trace labels.
+  a silent pass).
+- ✅ **DONE (v0.3.0, Tranche 2) — Module-following hardening** (doc 08). (a) Per-instantiation trace labels: each
+  followed call's findings carry `(module-label)` — `env/prd ›
+  modules/rds/main.tf (db_bad)` — so two calls of one module are
+  distinguishable. (b) `count = 0` (literal, or a var that resolves to it)
+  disables the module and it is skipped silently (correct, no resources to
+  evaluate); an unresolvable `count` is followed once (honest, no key
+  expansion). (c) Doc 08 DoD: non-followed modules (remote/registry/git
+  source, source that escapes the scanned project, missing module dir) are
+  recorded and surfaced as `couldNotEvaluate` under the stable ruleId
+  `dotzen.module-following` — never a silent `0 checks`.
+- ✅ **DONE (v0.3.0, Tranche 5) — Nested modules + module `for_each`** (doc 08).
+  (a) `followModules` is now recursive: a followed module's own `module {}`
+  calls are followed too, bounded by a path-stack of resolved absolute dirs
+  — a cycle (module → module → itself, mutually or self-referential) is
+  recorded as a `could-not-evaluate` skip rather than recursing forever.
+  The trace accumulates the full call chain: `env/prd › modules/outer/main.tf
+  (db) › modules/inner/main.tf (inner_db)` so a finding on a deep module
+  names every hop. (b) Module `for_each` over a resolvable literal map or
+  var-resolved list is expanded per element: one module instance per key,
+  `each.value`/`each.key` threaded into the module scope (the `SOLE_REF`
+  regex in `normalize.ts` now accepts `each.value`/`each.key`, so
+  `resolveValue` follows them). The trace carries the per-key suffix
+  `(db[bad])` / `(db[good])`. An unresolvable `for_each` (`toset(...)`,
+  `var.x` no default) is followed once honestly — `each.*` inside degrades
+  to `could-not-evaluate` via the engine, no false expansion. An empty
+  resolved collection (`toset([])`) skips silently (like `count = 0`).
+  Per-instance isolation preserved at every depth: each call's scope and
+  trace label are independent.
+  **Remaining (harder, lower-frequency):** caller inputs that are
+  themselves unresolved compound expressions beyond sole refs; `count`
+  per-index expansion; more than the current sole-ref `each.*` substitution
+  inside module resources (e.g. `each.value.field` on objects — currently
+  left unresolved).
 - ✅ **DONE (v0.1.3)** `mustHaveAssociated` through `local`/`var` indirection.
   Real modules route the parent ref through a local
   (`bucket = local.bucket_id`, where `local.bucket_id = aws_s3_bucket.main.id`).

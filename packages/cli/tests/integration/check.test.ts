@@ -190,6 +190,49 @@ describe('check (end-to-end)', () => {
     }
   })
 
+  it('follows nested modules (env → outer → inner) and threads cidrs two hops (doc 08 tranche 5)', async () => {
+    // env/prd has two calls of `outer`, each threading its allowed_cidrs in.
+    // `outer` calls `inner`, passing those cidrs through as `cidrs`. The SG
+    // lives in `inner` — two hops of scope-threading from the caller. The
+    // good call passes; the bad call (Postgres open to 0.0.0.0/0) violates.
+    // Nested recursion + per-instantiation isolation: 1 pass + 1 violation,
+    // the violation's trace names BOTH hops with their instantiation labels.
+    const r = await check(fixture('nested-modules'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.passed).toBe(1)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      const v = r.value.violations[0]
+      expect(v?.resource).toBe('aws_security_group.this')
+      // Trace MUST include both hops and both instantiation labels: the
+      // outer call label (db_bad) AND the inner call label (inner_db).
+      expect(v?.file).toContain('(db_bad)')
+      expect(v?.file).toContain('(inner_db)')
+      expect(v?.file).toMatch(/modules[/\\]inner[/\\]main\.tf/)
+      expect(v?.file).toMatch(/modules[/\\]outer[/\\]main\.tf/)
+    }
+  })
+
+  it('expands a module `for_each` over a literal map — distinct verdicts per key (doc 08 tranche 5)', async () => {
+    // One `module "db"` block with `for_each = { good = …, bad = … }` → two
+    // module instances. Each expands with its own each.value threaded into
+    // var.cidr → the good key passes, the bad key violates, distinguishable
+    // in the trace by the per-key label suffix `(db[good])` / `(db[bad])`.
+    const r = await check(fixture('module-for-each'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(1)
+      expect(r.value.passed).toBe(1)
+      expect(r.value.couldNotEvaluate).toHaveLength(0)
+      const v = r.value.violations[0]
+      expect(v?.resource).toBe('aws_security_group.this')
+      expect(v?.file).toMatch(/\(db\[bad\]\)/)
+      // The good key appears among passed checks (no separate slot — but the
+      // trace on the violation proves which key expanded to the violation).
+    }
+  })
+
   it('AWS Config recorder settings (CIS §3.1/3.2)', async () => {
     // The good recorder has all_supported + include_global_resource_types = true
     // → passes both rules. The bad recorder has both = false → 2 violations.
@@ -220,6 +263,29 @@ describe('check (end-to-end)', () => {
       )
       expect(r.value.couldNotEvaluate).toHaveLength(0)
       expect(r.value.passed).toBe(1)
+    }
+  })
+
+  it('surfaces a remote (not-followed) module as could-not-evaluate (doc 08 DoD)', async () => {
+    // env/prd calls one local module (followed → compliant DB) and one remote
+    // module (git::… — cannot be fetched, not followed). doc 08's DoD says the
+    // remote skip must surface, not silently pass: it lands in
+    // couldNotEvaluate under the stable ruleId `dotzen.module-following`, with
+    // the caller file+line and the source that was not followed.
+    const r = await check(fixture('module-remote-skip'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      // The local module's compliant DB → 1 passed, 0 violations.
+      expect(r.value.violations).toHaveLength(0)
+      expect(r.value.passed).toBe(1)
+      // The remote module skip is the single could-not-evaluate entry.
+      expect(r.value.couldNotEvaluate).toHaveLength(1)
+      const skip = r.value.couldNotEvaluate[0]
+      expect(skip?.ruleId).toBe('dotzen.module-following')
+      expect(skip?.resource).toBe('module.remote')
+      expect(skip?.file).toMatch(/env[/\\]prd[/\\]main\.tf$/)
+      expect(skip?.reason).toMatch(/remote/)
+      expect(skip?.reason).toContain('git::https://example.com/rds.git')
     }
   })
 
