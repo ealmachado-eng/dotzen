@@ -6,10 +6,54 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.0.1
+
+### Added — composable framework presets + GDPR/LGPD data residency
+
+- **Composable framework preset packs** — five new `Rule[]` exports alongside
+  the per-cloud CIS starters, designed to be spread as `coreSecurity` + a
+  framework layer:
+  - `coreSecurity` (18 rules) — the 80% shared across all frameworks.
+  - `pciDss` (14 rules) — PCI DSS v4.0: encrypt ALL stores, S3 block flags,
+    backup ≥30d, encrypted state, no drift hiding, DynamoDB PITR.
+  - `soc2` (8 rules) — SOC 2 TSC: change mgmt, encrypted state, ECR scan,
+    CloudTrail log validation.
+  - `nist80053` (15 rules) — NIST 800-53: IAM password policy, additional
+    encryption, no drift hiding, version pinning, state encryption.
+  - `dataProtection` (12 rules) — GDPR/LGPD: encrypt ALL stores, S3 block,
+    RDS not-public, data-class tagging, encrypted state, no drift hiding.
+- **`denyNonApprovedRegion(...regions)` condition** — flags a resource whose
+  provider region is not in the approved list. Closes the GDPR/LGPD
+  data-residency gap. `providerRegions()` extracts `region` from `provider {}`
+  blocks; `NormalizedResource.providerRegion` resolves per-alias (incl. module
+  `providers` map remapping). Unknown region → could-not-evaluate (never a
+  false pass). The `dataProtection` preset includes commented-out examples
+  for both GDPR (EU) and LGPD (Brazil).
+- **`.region(...approved)` scoping** on `RuleBuilder` — fail-open filter
+  (mirror `.environment` / `.providerAlias`).
+
+### Changed — dependency security
+
+- **Upgraded eslint 9 → 10.** `brace-expansion` DoS
+  (GHSA-mh99-v99m-4gvg) had no patched 1.x version; the fix required
+  `minimatch@10+` → `eslint@10`. `eslint-plugin-security` is incompatible
+  with eslint 10 and only produced pre-existing warnings — dropped it.
+  `semgrep` + `gitleaks` (the real security gates) remain in CI.
+- **npm audit: 0 vulnerabilities.**
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
+presets + `denyNonApprovedRegion` are additive. To adopt:
+```ts
+import { coreSecurity, pciDss } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...pciDss]
+```
+
 ## 1.0.0
 
 The first stable release. The engine is feature-complete for static Terraform
-governance across AWS, Azure, and GCP, with 489 unit + 34 integration tests.
+governance across AWS, Azure, and GCP, with 492 unit + 34 integration tests.
 The JSON output schema is frozen (`schemaVersion: 1`); inline ignore
 directives suppress known-acceptable findings; curated CIS preset packs drop
 into any spec; and CI integration templates ship for GitHub Actions + GitLab CI.
