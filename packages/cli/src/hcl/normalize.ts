@@ -74,13 +74,20 @@ function toValue(raw: unknown): NormalizedValue {
   return { kind: 'unresolved', expr: JSON.stringify(raw) }
 }
 
-// A value that is *exactly* one `var.x` / `local.y` reference — the only
-// form we resolve. Compound interpolations (`"a-${var.x}"`) stay unresolved.
-const SOLE_REF = /^\$\{(var|local)\.([A-Za-z0-9_-]+)\}$/
+// A value that is *exactly* one `var.x` / `local.y` / `each.value` /
+// `each.key` reference — the only forms we resolve. Compound interpolations
+// (`"a-${var.x}"`) stay unresolved. `each.*` is set on the module scope by
+// `followModules` when expanding a module `for_each` (doc 08 tranche 5).
+const SOLE_REF =
+  /^\$\{(var|local)\.([A-Za-z0-9_-]+)\}$|^\$\{each\.([A-Za-z0-9_-]+)\}$/
+
+/** Build the scope key from a SOLE_REF match (`var.x`, `local.y`, `each.v`). */
+const soleRefKey = (m: RegExpMatchArray): string =>
+  m[1] ? `${m[1]}.${m[2]}` : `each.${m[3]}`
 
 /**
- * Resolve a raw value against the scope. A sole `var`/`local` reference is
- * followed (through local→var chains, depth-bounded) to its literal; a
+ * Resolve a raw value against the scope. A sole `var`/`local`/`each`
+ * reference is followed (through chains, depth-bounded) to its literal; a
  * reference with no known value, or any non-sole-reference expression,
  * stays unresolved — which correctly yields "could not evaluate".
  */
@@ -88,7 +95,7 @@ function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
   if (typeof raw === 'string') {
     const m = SOLE_REF.exec(raw)
     if (m) {
-      const key = `${m[1]}.${m[2]}`
+      const key = soleRefKey(m)
       if (depth > 0 && scope.has(key))
         return resolveValue(scope.get(key), scope, depth - 1)
       return { kind: 'unresolved', expr: raw }
@@ -150,7 +157,7 @@ function inlineBlocks(
   return Array.isArray(raw) ? raw.map((i) => mapIngressObj(i, scope)) : []
 }
 
-/** Follow a sole var/local reference to its raw resolved value (or undefined). */
+/** Follow a sole var/local/each reference to its raw resolved value. */
 export function resolveRaw(
   raw: unknown,
   scope: Scope,
@@ -159,7 +166,7 @@ export function resolveRaw(
   if (typeof raw === 'string') {
     const m = SOLE_REF.exec(raw)
     if (m) {
-      const key = `${m[1]}.${m[2]}`
+      const key = soleRefKey(m)
       if (depth > 0 && scope.has(key))
         return resolveRaw(scope.get(key), scope, depth - 1)
       return undefined
