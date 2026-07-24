@@ -45,6 +45,7 @@ whether re-reading their spec is warranted.
 
 Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
 presets + `denyNonApprovedRegion` are additive. To adopt:
+
 ```ts
 import { coreSecurity, pciDss } from '@dotzen/dotzen'
 export const spec = [...coreSecurity, ...pciDss]
