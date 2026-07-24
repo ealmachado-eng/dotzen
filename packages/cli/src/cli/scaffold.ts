@@ -27,8 +27,13 @@ function specTs(): string {
 //   import { cisAws } from '@dotzen/dotzen'   // 23 rules
 //   import { cisAzure } from '@dotzen/dotzen' // 17 rules
 //   import { cisGcp } from '@dotzen/dotzen'   // 21 rules
+// Composable framework packs (spread coreSecurity + a framework layer):
+//   import { coreSecurity, pciDss } from '@dotzen/dotzen'   // PCI DSS
+//   import { coreSecurity, soc2 } from '@dotzen/dotzen'     // SOC 2
+//   import { coreSecurity, nist80053 } from '@dotzen/dotzen' // NIST 800-53
+//   import { coreSecurity, dataProtection } from '@dotzen/dotzen' // GDPR/LGPD
 // Spread one into your spec and extend with custom rules:
-//   export const spec = [...cisAws, rule().resource(...).mustBeTrue(...)]
+//   export const spec = [...coreSecurity, ...pciDss, rule().resource(...).mustBeTrue(...)]
 
 export const spec = [
   rule()

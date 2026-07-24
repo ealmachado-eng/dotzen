@@ -41,25 +41,39 @@ Two modes, both supported:
 - `--format json` for machine-readable output (schema frozen at `schemaVersion: 1`).
 - Pin the version in `dotzen.json` (never `@latest` in CI).
 
-## Curated CIS presets
+## Curated presets
 
-Three starter rule packs covering CIS Foundations high-impact controls — spread into your spec and extend:
+Two kinds: **per-cloud CIS starters** (drop-in for one cloud) and **composable framework packs** (spread a shared base + a framework-specific layer).
+
+### Per-cloud CIS starters
 
 ```ts
 import { cisAws } from '@dotzen/dotzen'
 // or cisAzure, cisGcp
 
-export const spec = [
-  ...cisAws, // 24 rules: network, encryption, IAM, audit, tags, secrets
-  // ...your custom rules
-]
+export const spec = [...cisAws /* your rules */]
 ```
 
-- **`cisAws`** (23 rules) — no public SSH/RDP/DB ports, encryption at rest (RDS/EBS/EC2/Redshift/ElastiCache), KMS rotation, S3 public-access block, IAM `Action:*` / `Principal:*` denial, CloudTrail KMS + validation + multi-region, RDS backup retention + not-public, ECR scan-on-push, required tags, secrets hygiene, provisioner denial.
-- **`cisAzure`** (17 rules) — storage TLS 1.2 + no public nested + network default-deny + no public network, SQL TLS/SSL, Key Vault purge protection, AKS private cluster + local accounts disabled, App Service HTTPS-only, ACR admin disabled, RBAC Owner/Contributor denial, secrets hygiene.
-- **`cisGcp`** (21 rules) — storage public-access-prevention + UBLA + versioning, Cloud SQL SSL + no public IPv4 + no hardcoded root password, GKE private nodes + no legacy ABAC, KMS rotation, compute secure boot + no IP forwarding, IAM `allUsers`/primitive-roles denial, Cloud Run Functions ingress + service account, firewall SSH, secrets hygiene.
+- **`cisAws`** (23 rules) — network, encryption, IAM, audit, tags, secrets, provisioners.
+- **`cisAzure`** (17 rules) — storage TLS, SQL, Key Vault, AKS, App Service, ACR, RBAC, secrets.
+- **`cisGcp`** (21 rules) — storage, Cloud SQL, GKE, KMS, compute, IAM, Cloud Run Functions, firewall, secrets.
 
-Each rule carries `.rationale()` citing the CIS control. Proven end-to-end against real Terraform fixtures.
+### Composable framework packs
+
+```ts
+import { coreSecurity, pciDss } from '@dotzen/dotzen'
+// or soc2, nist80053, dataProtection
+
+export const spec = [...coreSecurity, ...pciDss /* your rules */]
+```
+
+- **`coreSecurity`** (18 rules) — the 80% shared across all frameworks: network exposure, encryption at rest (key resources), IAM least privilege, audit logging, no hardcoded secrets, required tags, provisioner denial, backup retention.
+- **`pciDss`** (14 rules) — PCI DSS v4.0 additions: encrypt ALL data stores, all four S3 public-access-block flags, backup retention ≥30 days, encrypted + non-local state, no drift hiding on security attrs, DynamoDB PITR.
+- **`soc2`** (8 rules) — SOC 2 TSC additions: change management (version pinning for TF/providers/modules), encrypted + non-local state, ECR scan-on-push, CloudTrail log validation.
+- **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5 additions: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
+- **`dataProtection`** (12 rules) — GDPR/LGPD additions: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data-residency is a documented gap (needs region awareness).
+
+Each rule carries `.rationale()` citing the framework control. Compose freely — `coreSecurity` + `pciDss` + `dataProtection` gives you a PCI + GDPR combined spec.
 
 ## Rule conditions
 

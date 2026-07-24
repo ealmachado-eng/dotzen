@@ -112,9 +112,9 @@ into any spec; and CI integration templates ship for GitHub Actions + GitLab CI.
   direct resources + 100 module calls = 1202 resources) completes in ~195ms.
   No parse cache needed.
 
-### Added — curated CIS preset packs
+### Added — curated preset packs
 
-Three `Rule[]` exports covering CIS Foundations starters for each cloud:
+**Per-cloud CIS starters** (`Rule[]` exports):
 
 - `cisAws` (23 rules) — network exposure, encryption at rest (RDS/EBS/EC2/
   Redshift/ElastiCache), KMS rotation, S3 public access, IAM least privilege,
@@ -130,14 +130,36 @@ Three `Rule[]` exports covering CIS Foundations starters for each cloud:
   roles, Cloud Run Functions ingress + service account, firewall SSH, secrets
   hygiene, provisioners.
 
-Each rule has `.message()` + `.rationale()` citing the CIS control. Usage:
+**Composable framework packs** — spread a shared base + a framework layer:
+
+- `coreSecurity` (18 rules) — the 80% shared across all frameworks: network
+  exposure, encryption at rest (key resources), IAM least privilege, audit
+  logging, no hardcoded secrets, required tags, provisioner denial, backup
+  retention.
+- `pciDss` (14 rules) — PCI DSS v4.0: encrypt ALL data stores, all four S3
+  public-access-block flags, backup retention ≥30 days, encrypted + non-local
+  state, no drift hiding, DynamoDB PITR.
+- `soc2` (8 rules) — SOC 2 TSC: change management (version pinning), encrypted
+  - non-local state, ECR scan-on-push, CloudTrail log validation.
+- `nist80053` (15 rules) — NIST SP 800-53: IAM password policy
+  (length/complexity/reuse/age), additional encryption, no drift hiding,
+  version pinning, state encryption.
+- `dataProtection` (12 rules) — GDPR/LGPD: encrypt ALL data stores, S3
+  public-access block, RDS not-public, data-classification tagging, encrypted
+  state, no drift hiding. Data-residency is a documented gap.
+
+Usage:
 
 ```ts
 import { cisAws } from '@dotzen/dotzen'
 export const spec = [...cisAws /* your custom rules */]
+
+// Or compose a framework spec:
+import { coreSecurity, pciDss } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...pciDss]
 ```
 
-All three presets are proven end-to-end against real Terraform fixtures
+All CIS presets are proven end-to-end against real Terraform fixtures
 (violations flagged, compliant resources pass).
 
 ### Added — CI integration templates

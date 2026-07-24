@@ -1,0 +1,172 @@
+/**
+ * Core security baseline — the 80% shared across CIS, PCI DSS, SOC 2, NIST
+ * 800-53, and GDPR/LGPD. A composable `Rule[]` meant to be spread alongside
+ * a framework-specific pack:
+ *
+ *   import { coreSecurity, pciDss } from '@dotzen/dotzen'
+ *   export const spec = [...coreSecurity, ...pciDss, /* your rules *\/]
+ *
+ * Covers: network exposure, encryption at rest (key resources), IAM least
+ * privilege, audit logging, no hardcoded secrets, required tags, and
+ * provisioner denial. Framework packs ADD stricter/broader controls on top.
+ *
+ * Cloud-neutral where possible (AWS-primary; Azure/GCP coverage comes from
+ * the per-cloud CIS presets). Each rule carries `.rationale()`.
+ */
+import { rule } from '../spec/rule'
+import {
+  AwsResource,
+  AwsAttribute,
+  Port,
+  Tag,
+  Acl,
+  Provisioner,
+} from '../vocabulary'
+
+export const coreSecurity = [
+  // ── Network exposure ───────────────────────────────────────────────────
+  rule()
+    .resource(AwsResource.SecurityGroup)
+    .denyIngress(Port.SSH, Port.RDP)
+    .message('SSH and RDP must not be open to the internet')
+    .rationale(
+      'Common control: no public SSH/RDP — CIS §5.2, PCI 1.2.1, NIST AC-17',
+    ),
+
+  rule()
+    .resource(AwsResource.SecurityGroup)
+    .denyIngress(Port.Postgres, Port.MySQL)
+    .message('Database ports must not be open to the internet')
+    .rationale('Common control: restrict DB ingress — PCI 1.2.1, NIST SC-7'),
+
+  // ── Encryption at rest (key resource types) ────────────────────────────
+  rule()
+    .resource(AwsResource.DbInstance)
+    .mustBeTrue(AwsAttribute.StorageEncrypted)
+    .message('RDS instances must encrypt storage at rest')
+    .rationale(
+      'Common control: encrypt data at rest — PCI 3.4, SOC CC6.1, NIST SC-28',
+    ),
+
+  rule()
+    .resource(AwsResource.EbsVolume)
+    .mustBeTrue(AwsAttribute.Encrypted)
+    .message('EBS volumes must be encrypted')
+    .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
+
+  rule()
+    .resource(AwsResource.Instance)
+    .mustBeTrue(AwsAttribute.RootBlockDeviceEncrypted)
+    .message('EC2 root volume must be encrypted')
+    .rationale('Common control: encrypt root EBS — NIST SC-28'),
+
+  rule()
+    .resource(AwsResource.KmsKey)
+    .mustBeTrue(AwsAttribute.EnableKeyRotation)
+    .message('KMS keys must have automatic rotation enabled')
+    .rationale('Common control: key rotation — PCI 3.6, NIST MA-2'),
+
+  // ── IAM least privilege ────────────────────────────────────────────────
+  rule()
+    .resource(AwsResource.IamPolicy)
+    .denyIamWildcard()
+    .message('IAM policies must not grant Action "*"')
+    .rationale(
+      'Common control: least privilege — PCI 7.2.1, SOC CC6.3, NIST AC-2(1)',
+    ),
+
+  rule()
+    .resource(AwsResource.IamPolicy)
+    .denyPublicPrincipal()
+    .message('IAM policies must not grant access to Principal "*"')
+    .rationale('Common control: no public access — NIST AC-3'),
+
+  // ── Audit logging ──────────────────────────────────────────────────────
+  rule()
+    .resource(AwsResource.Cloudtrail)
+    .mustBeSet(AwsAttribute.KmsKeyId)
+    .message('CloudTrail trails must use KMS encryption')
+    .rationale(
+      'Common control: protect audit logs — PCI 10.5, SOC CC7.2, NIST AU-9',
+    ),
+
+  rule()
+    .resource(AwsResource.Cloudtrail)
+    .mustBeTrue(AwsAttribute.IsMultiRegionTrail)
+    .message('CloudTrail must be a multi-region trail')
+    .rationale('Common control: global audit coverage — PCI 10.1, NIST AU-3'),
+
+  // ── S3 public access (baseline) ────────────────────────────────────────
+  rule()
+    .resource(AwsResource.S3Bucket)
+    .denyAcl(Acl.PublicRead, Acl.PublicReadWrite)
+    .message('S3 buckets must not have a public ACL')
+    .rationale(
+      'Common control: no public object storage — PCI 1.3.4, GDPR Art. 32',
+    ),
+
+  // ── No hardcoded secrets ───────────────────────────────────────────────
+  rule()
+    .allResources()
+    .denyInsensitiveVariable()
+    .message('Secret-looking variables must be marked sensitive')
+    .rationale(
+      'Common control: protect secrets — PCI 3.5, SOC CC6.1, GDPR Art. 32',
+    ),
+
+  rule()
+    .allResources()
+    .denyPlaintextLocalSecret()
+    .message('Locals must not hardcode secrets — use a reference')
+    .rationale('Common control: no plaintext secrets — PCI 3.5, NIST IA-5'),
+
+  rule()
+    .allResources()
+    .denyInsensitiveSecretOutput(
+      'aws_db_instance.master_password',
+      'aws_secretsmanager_secret_version.secret_string',
+    )
+    .message('Secret outputs must set sensitive = true')
+    .rationale('Common control: do not expose secrets — PCI 3.5, GDPR Art. 32'),
+
+  rule()
+    .allResources()
+    .denyPlaintextConnectionSecret()
+    .message('Connection blocks must not hardcode secrets — use a reference')
+    .rationale(
+      'Common control: no plaintext secrets in provisioner connections — PCI 3.5',
+    ),
+
+  // ── Provisioner denial ─────────────────────────────────────────────────
+  rule()
+    .allResources()
+    .denyProvisioner(
+      Provisioner.LocalExec,
+      Provisioner.RemoteExec,
+      Provisioner.File,
+    )
+    .message('Provisioners are forbidden — use user_data / a config manager')
+    .rationale(
+      'Common control: no arbitrary command execution — SOC CC7.4, NIST CM-7',
+    ),
+
+  // ── Required tags (baseline ownership) ─────────────────────────────────
+  rule()
+    .resource(
+      AwsResource.DbInstance,
+      AwsResource.S3Bucket,
+      AwsResource.SecurityGroup,
+    )
+    .mustHaveTags(Tag.Team, Tag.CostCenter, Tag.Environment)
+    .message('Required tags: team, cost_center, environment')
+    .rationale(
+      'Common control: ownership + cost allocation — SOC CC5.2, NIST AC-2',
+    ),
+
+  // ── RDS backup retention (baseline ≥7) ─────────────────────────────────
+  rule()
+    .resource(AwsResource.DbInstance)
+    .mustBeAtLeast(AwsAttribute.BackupRetentionPeriod, 7)
+    .message('RDS backup retention must be at least 7 days')
+    .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
+] as const

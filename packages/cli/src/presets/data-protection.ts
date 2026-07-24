@@ -1,0 +1,127 @@
+/**
+ * Data protection (GDPR / LGPD) — additions on top of `coreSecurity`.
+ *
+ * GDPR (EU) and LGPD (Brazil) share the same Terraform-relevant controls:
+ * encrypt ALL data stores at rest (Art. 32), prevent public exposure of
+ * personal data, tag resources with a data-classification label, and
+ * protect state (which may contain personal data). Data-residency (keep
+ * data in the EU/region) is NOT expressible in dotzen today — see the
+ * documented gap below.
+ *
+ * Usage:
+ *   import { coreSecurity, dataProtection } from '@dotzen/dotzen'
+ *   export const spec = [...coreSecurity, ...dataProtection]
+ *
+ * NOTE: the data-class tag key is org-defined. Replace 'data_classification'
+ * with your own enum to get compile-time safety:
+ *   enum DataClass { Classification = 'data_classification', Subject = 'data_subject' }
+ *   rule().resource(...).mustHaveTags(DataClass.Classification)
+ */
+import { rule } from '../spec/rule'
+import { AwsResource, AwsAttribute } from '../vocabulary'
+
+/** A data-classification tag key — org-defined (replace with your own enum). */
+const DataClassificationTag = 'data_classification'
+
+export const dataProtection = [
+  // ── Encrypt ALL data stores (GDPR Art. 32, LGPD Art. 46) ───────────────
+  rule()
+    .resource(AwsResource.RedshiftCluster)
+    .mustBeTrue(AwsAttribute.Encrypted)
+    .message(
+      'Redshift clusters must be encrypted (GDPR Art. 32 — data protection)',
+    )
+    .rationale('GDPR Art. 32 / LGPD Art. 46 — encrypt personal data at rest'),
+
+  rule()
+    .resource(AwsResource.EfsFileSystem)
+    .mustBeTrue(AwsAttribute.Encrypted)
+    .message('EFS file systems must be encrypted (GDPR Art. 32)')
+    .rationale('GDPR Art. 32 — encrypt personal data at rest'),
+
+  rule()
+    .resource(AwsResource.ElasticacheReplicationGroup)
+    .mustBeTrue(AwsAttribute.AtRestEncryptionEnabled)
+    .message('ElastiCache must encrypt at rest (GDPR Art. 32)')
+    .rationale('GDPR Art. 32 — encrypt personal data at rest'),
+
+  rule()
+    .resource(AwsResource.DynamodbTable)
+    .mustBeTrue(AwsAttribute.PointInTimeRecoveryEnabled)
+    .message(
+      'DynamoDB tables must enable point-in-time recovery (GDPR Art. 32 — availability)',
+    )
+    .rationale(
+      'GDPR Art. 32(1)(c) — ensure ongoing availability of personal data',
+    ),
+
+  // ── Prevent public exposure of personal data (GDPR Art. 5(1)(f)) ───────
+  rule()
+    .resource(AwsResource.S3BucketPublicAccessBlock)
+    .mustBeTrue(AwsAttribute.BlockPublicAcls)
+    .message(
+      'S3 buckets must block public ACLs (GDPR Art. 5(1)(f) — prevent unauthorized access)',
+    )
+    .rationale(
+      'GDPR Art. 5(1)(f) — prevent unlawful processing / public exposure',
+    ),
+
+  rule()
+    .resource(AwsResource.S3BucketPublicAccessBlock)
+    .mustBeTrue(AwsAttribute.BlockPublicPolicy)
+    .message('S3 buckets must block public policies (GDPR Art. 5(1)(f))')
+    .rationale('GDPR Art. 5(1)(f) — no public bucket policies'),
+
+  rule()
+    .resource(AwsResource.DbInstance)
+    .mustBeFalse(AwsAttribute.PubliclyAccessible)
+    .message('RDS must not be publicly accessible (GDPR Art. 5(1)(f))')
+    .rationale('GDPR Art. 5(1)(f) — restrict access to personal data'),
+
+  // ── Data-classification tagging (GDPR Art. 30 — records of processing) ─
+  rule()
+    .resource(
+      AwsResource.DbInstance,
+      AwsResource.S3Bucket,
+      AwsResource.DynamodbTable,
+      AwsResource.RedshiftCluster,
+    )
+    .mustHaveTags(DataClassificationTag)
+    .message('Data stores must carry a data_classification tag (GDPR Art. 30)')
+    .rationale(
+      'GDPR Art. 30 / LGPD Art. 37 — records of processing activities',
+    ),
+
+  // ── Protect state (GDPR Art. 32 — state may contain personal data) ─────
+  rule()
+    .allResources()
+    .requireEncryptedBackend()
+    .message(
+      'State backend must be encrypted (GDPR Art. 32 — state may contain personal data)',
+    )
+    .rationale('GDPR Art. 32 — state files may contain personal data'),
+
+  rule()
+    .allResources()
+    .denyLocalBackend()
+    .message(
+      'Local state is forbidden under GDPR/LGPD — use a remote encrypted backend',
+    )
+    .rationale(
+      'GDPR Art. 32 — centralized, encrypted state for data protection',
+    ),
+
+  // ── No drift hiding on data-protection attrs ───────────────────────────
+  rule()
+    .resource(AwsResource.S3Bucket)
+    .denyIgnoreChanges('tags', 'acl', 'server_side_encryption')
+    .message('Must not hide drift on data-protection attrs via ignore_changes')
+    .rationale('GDPR Art. 32 — security configurations must be auditable'),
+
+  // ── KNOWN GAP: Data residency ──────────────────────────────────────────
+  // "Personal data must not leave the EU" requires region awareness. dotzen
+  // has provider-alias scoping (#9) but NOT region extraction. A future
+  // `providerRegion` extraction + a `.region('eu-west-*')` scoping mechanism
+  // would enable residency rules. Until then, pair with a cloud-native
+  // config rule (AWS Config, GCP Org Policy) for residency enforcement.
+] as const

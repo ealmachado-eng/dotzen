@@ -44,3 +44,12 @@ export {
 export { cisAws } from './presets/cis-aws'
 export { cisAzure } from './presets/cis-azure'
 export { cisGcp } from './presets/cis-gcp'
+
+// Composable framework presets — spread coreSecurity + a framework pack:
+//   import { coreSecurity, pciDss } from '@dotzen/dotzen'
+//   export const spec = [...coreSecurity, ...pciDss, /* your rules *\/]
+export { coreSecurity } from './presets/core-security'
+export { pciDss } from './presets/pci-dss'
+export { soc2 } from './presets/soc2'
+export { nist80053 } from './presets/nist-800-53'
+export { dataProtection } from './presets/data-protection'
