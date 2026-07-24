@@ -118,11 +118,12 @@ export const dataProtection = [
     .message('Must not hide drift on data-protection attrs via ignore_changes')
     .rationale('GDPR Art. 32 — security configurations must be auditable'),
 
-  // ── Data residency: personal data must stay in EU regions (GDPR Art. 44) ─
-  // Flags any resource in a non-EU region. Replace the approved list with
-  // your org's approved regions. A resource whose region is unknown (no
-  // provider block) degrades to could-not-evaluate — never a false pass.
-  // NOTE: this is an EXAMPLE — uncomment and tailor the region list.
+  // ── Data residency (GDPR Art. 44 / LGPD Art. 11) ──────────────────────
+  // The `denyNonApprovedRegion` condition is region-agnostic — it flags any
+  // resource whose provider region is NOT in the approved list. Tailor the
+  // region list to your jurisdiction. Two examples (uncomment one or both):
+
+  // GDPR — personal data must stay in EU regions (AWS + GCP EU regions).
   // rule()
   //   .allResources()
   //   .denyNonApprovedRegion(
@@ -132,4 +133,12 @@ export const dataProtection = [
   //   )
   //   .message('Personal data must not leave EU regions (GDPR Art. 44)')
   //   .rationale('GDPR Art. 44 — prohibit transfers of personal data outside the EU'),
+
+  // LGPD — personal data of Brazilian data subjects must stay in Brazil
+  // (AWS sa-east-1 São Paulo, GCP southamerica-east1).
+  // rule()
+  //   .allResources()
+  //   .denyNonApprovedRegion('sa-east-1', 'southamerica-east1')
+  //   .message('Dados pessoais devem permanecer em regiões brasileiras (LGPD Art. 11)')
+  //   .rationale('LGPD Art. 11 — dados pessoais de titulares brasileiros devem ser processados no Brasil'),
 ] as const

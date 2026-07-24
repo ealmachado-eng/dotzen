@@ -73,7 +73,11 @@ export const spec = [...coreSecurity, ...pciDss /* your rules */]
 - **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5 additions: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
 - **`dataProtection`** (12 rules) — GDPR/LGPD additions: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data residency is now supported via `denyNonApprovedRegion` (see below).
 
-### Data residency (GDPR/LGPD)
+### Data residency (GDPR / LGPD)
+
+The `denyNonApprovedRegion` condition is region-agnostic — it flags any resource whose provider region is NOT in the approved list. Tailor the region list to your jurisdiction:
+
+**GDPR (EU):**
 
 ```ts
 rule()
@@ -81,6 +85,19 @@ rule()
   .denyNonApprovedRegion('eu-west-1', 'eu-central-1', 'europe-west1')
   .message('Personal data must not leave EU regions (GDPR Art. 44)')
 ```
+
+**LGPD (Brazil):**
+
+```ts
+rule()
+  .allResources()
+  .denyNonApprovedRegion('sa-east-1', 'southamerica-east1')
+  .message(
+    'Dados pessoais devem permanecer em regiões brasileiras (LGPD Art. 11)',
+  )
+```
+
+dotzen extracts the `region` from `provider {}` blocks and resolves each resource's region (respecting provider aliases). A resource in a non-approved region is flagged; a resource with an unknown region (no provider block) degrades to could-not-evaluate — never a false pass. The `dataProtection` preset includes commented-out examples for both jurisdictions.
 
 Each rule carries `.rationale()` citing the framework control. Compose freely — `coreSecurity` + `pciDss` + `dataProtection` gives you a PCI + GDPR combined spec.
 
