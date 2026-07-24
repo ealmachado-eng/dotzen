@@ -408,13 +408,17 @@ export const spec = [
     .mustEqual(AwsAttribute.TracingMode, XrayMode.Active)
     .onViolation(Effect.Warn)
     .message('Lambda functions should enable X-Ray active tracing')
-    .rationale('Tracing gives request-level observability across downstream calls'),
+    .rationale(
+      'Tracing gives request-level observability across downstream calls',
+    ),
 
   rule()
     .resource(AwsResource.LambdaFunction)
     .mustBeSet(AwsAttribute.LambdaKmsKeyArn)
     .onViolation(Effect.Warn)
-    .message('Lambda functions should encrypt environment variables with a customer KMS key')
+    .message(
+      'Lambda functions should encrypt environment variables with a customer KMS key',
+    )
     .rationale('Without a KMS key, env vars use AWS-managed encryption only'),
 
   rule()
@@ -537,7 +541,9 @@ export const spec = [
     )
     .mustEqual(AzureAttribute.SiteConfigMinTlsVersion, SqlTlsVersion.V12)
     .onViolation(Effect.Warn)
-    .message('Azure Functions should require TLS 1.2 (site_config.minimum_tls_version)'),
+    .message(
+      'Azure Functions should require TLS 1.2 (site_config.minimum_tls_version)',
+    ),
 
   rule()
     .resource(
@@ -557,7 +563,9 @@ export const spec = [
     )
     .mustHaveBlock(Block.Identity)
     .onViolation(Effect.Warn)
-    .message('Azure Functions should use a managed identity (identity {} block)')
+    .message(
+      'Azure Functions should use a managed identity (identity {} block)',
+    )
     .rationale('A managed identity replaces shared/local credentials with AAD'),
 
   rule()
@@ -750,7 +758,9 @@ export const spec = [
   rule()
     .resource(GcpResource.Cloudfunctions2Function)
     .denyValue(GcpAttribute.IngressSettings, IngressSetting.AllowAll)
-    .message('Cloud Run Functions must not allow unrestricted ingress (ALLOW_ALL)')
+    .message(
+      'Cloud Run Functions must not allow unrestricted ingress (ALLOW_ALL)',
+    )
     .rationale('ALLOW_ALL exposes the function to the public internet'),
 
   rule()
@@ -758,12 +768,16 @@ export const spec = [
     .mustBeSet(GcpAttribute.ServiceAccountEmail)
     .onViolation(Effect.Warn)
     .message('Cloud Run Functions should set a runtime service account email')
-    .rationale('The default compute service account is over-broad; scope a dedicated SA'),
+    .rationale(
+      'The default compute service account is over-broad; scope a dedicated SA',
+    ),
 
   rule()
     .resource(GcpResource.Cloudfunctions2Function)
     .denyPlaintextEnvSecrets()
-    .message('Cloud Run Functions environment variables must not contain plaintext secrets')
+    .message(
+      'Cloud Run Functions environment variables must not contain plaintext secrets',
+    )
     .rationale('Use Secret Manager references, not hardcoded values'),
 
   // GCP CIS L1: GKE hardening + instance hardening + KMS rotation.

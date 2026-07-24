@@ -26,7 +26,9 @@ describe('normalize — serverless env-var map extraction', () => {
         },
       },
     }
-    const f = normalize(parsed, 'main.tf', lambdaRaw).find((r) => r.name === 'f')
+    const f = normalize(parsed, 'main.tf', lambdaRaw).find(
+      (r) => r.name === 'f',
+    )
     expect(f?.envVars?.kind).toBe('parsed')
     if (f?.envVars?.kind === 'parsed') {
       const byName = new Map(f.envVars.vars.map((v) => [v.name, v]))
@@ -94,7 +96,9 @@ describe('normalize — serverless env-var map extraction', () => {
     const parsed = {
       resource: { aws_lambda_function: { f: [{ runtime: 'nodejs20.x' }] } },
     }
-    const f = normalize(parsed, 'main.tf', lambdaRaw).find((r) => r.name === 'f')
+    const f = normalize(parsed, 'main.tf', lambdaRaw).find(
+      (r) => r.name === 'f',
+    )
     expect(f?.envVars).toBeUndefined()
   })
 
@@ -116,9 +120,11 @@ describe('normalize — serverless env-var map extraction', () => {
         aws_db_instance: { d: [{ storage_encrypted: true }] },
       },
     }
-    const d = normalize(parsed, 'main.tf', `resource "aws_db_instance" "d" {}`).find(
-      (r) => r.name === 'd',
-    )
+    const d = normalize(
+      parsed,
+      'main.tf',
+      `resource "aws_db_instance" "d" {}`,
+    ).find((r) => r.name === 'd')
     expect(d?.envVars).toBeUndefined()
   })
 })

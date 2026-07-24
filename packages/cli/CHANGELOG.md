@@ -46,7 +46,7 @@ whether re-reading their spec is warranted.
   ECS `container_definitions`. The extractor (`envVarsOf` in `normalize.ts`)
   reads `aws_lambda_function.environment.variables`, Azure Functions
   `app_settings`, and `google_cloudfunctions2_function.service_config.
-  environment_variables`. A whole-map reference (`= var.x`) degrades to
+environment_variables`. A whole-map reference (`= var.x`) degrades to
   could-not-evaluate; a mixed literal/reference map yields definite verdicts
   for the literal secrets (same lenient-parse behavior as ECS). The
   `EnvVarsInfo` type (`hcl/model.ts`) mirrors `ContainerInfo`.
@@ -64,15 +64,18 @@ additive. To use the serverless rules, import the new enums and reference the
 new resource types:
 
 ```ts
-rule().resource(AwsResource.LambdaFunction)
+rule()
+  .resource(AwsResource.LambdaFunction)
   .mustEqual(AwsAttribute.TracingMode, XrayMode.Active)
   .message('Lambda functions must enable X-Ray active tracing')
 
-rule().resource(AzureResource.LinuxFunctionApp)
+rule()
+  .resource(AzureResource.LinuxFunctionApp)
   .mustHaveBlock(Block.Identity)
   .message('Azure Functions must use a managed identity')
 
-rule().resource(GcpResource.Cloudfunctions2Function)
+rule()
+  .resource(GcpResource.Cloudfunctions2Function)
   .denyValue(GcpAttribute.IngressSettings, IngressSetting.AllowAll)
   .message('Cloud Run Functions must not allow unrestricted ingress')
 ```

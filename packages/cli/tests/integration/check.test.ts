@@ -245,9 +245,9 @@ describe('check (end-to-end)', () => {
       expect(r.value.violations).toHaveLength(15)
       expect(r.value.couldNotEvaluate).toHaveLength(0)
       // The three good functions never appear in a violation.
-      expect(
-        r.value.violations.every((v) => !/\.good$/.test(v.resource)),
-      ).toBe(true)
+      expect(r.value.violations.every((v) => !/\.good$/.test(v.resource))).toBe(
+        true,
+      )
     }
   })
 })

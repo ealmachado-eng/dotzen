@@ -1061,7 +1061,9 @@ function envVarsOf(
     // counts as a literal (matches ECS container env-var resolution).
     const resolved = resolveValue(raw, scope)
     const value =
-      resolved.kind === 'literal' ? String(resolved.value) : raw?.toString() ?? ''
+      resolved.kind === 'literal'
+        ? String(resolved.value)
+        : (raw?.toString() ?? '')
     vars.push({ name, value, isLiteral: isLit })
   }
   return { kind: 'parsed', vars }

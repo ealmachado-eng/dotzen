@@ -203,7 +203,11 @@ describe('evaluate (serverless) — AWS Lambda', () => {
   })
 
   it('flags Lambda with no kms_key_arn (mustBeSet)', () => {
-    const resources = normalize(lambda(), 'main.tf', rawFor('aws_lambda_function'))
+    const resources = normalize(
+      lambda(),
+      'main.tf',
+      rawFor('aws_lambda_function'),
+    )
     const r = evaluate([lambdaKms], resources)
     expect(r.violations).toHaveLength(1)
   })
@@ -354,7 +358,9 @@ describe('evaluate (serverless) — GCP Cloud Run Functions', () => {
 
   it('flags a missing service_account_email (mustBeSet)', () => {
     const resources = normalize(
-      gcpFn({ service_config: [{ ingress_settings: 'ALLOW_INTERNAL_AND_GCLB' }] }),
+      gcpFn({
+        service_config: [{ ingress_settings: 'ALLOW_INTERNAL_AND_GCLB' }],
+      }),
       'main.tf',
       rawFor('google_cloudfunctions2_function'),
     )
