@@ -1,3 +1,3 @@
-import { cisAzure } from '../../../../../src/presets/cis-azure'
+import { coreSecurity, cisAzure } from '../../../../../src/index'
 
-export const spec = [...cisAzure]
+export const spec = [...coreSecurity, ...cisAzure]

@@ -1,12 +1,15 @@
 /**
- * CIS Google Cloud Platform Foundations Benchmark — curated starter preset
- * (#24). High-impact GCP controls: storage public access prevention, Cloud SQL
- * SSL/IP exposure, GKE private nodes + legacy ABAC, KMS rotation, compute
- * shielded VMs, IAM public-principal + primitive-role denial. A STARTER.
+ * CIS Google Cloud Platform Foundations — GCP-specific additions on top of
+ * `coreSecurity`.
+ *
+ * The shared controls (no hardcoded secrets, provisioner denial, required
+ * tags) live in `coreSecurity`. This pack adds only the GCP-specific CIS
+ * controls. Like `cisAzure`, this pack is larger than `cisAws` because
+ * `coreSecurity` is AWS-primary and most GCP CIS controls are cloud-specific.
  *
  * Usage:
- *   import { cisGcp } from '@dotzen/dotzen'
- *   export const spec = [...cisGcp, /* your custom rules *\/]
+ *   import { coreSecurity, cisGcp } from '@dotzen/dotzen'
+ *   export const spec = [...coreSecurity, ...cisGcp]
  */
 import { rule } from '../spec/rule'
 import {
@@ -18,7 +21,6 @@ import {
   SqlSslMode,
   IngressSetting,
   Port,
-  Provisioner,
 } from '../vocabulary'
 
 export const cisGcp = [
@@ -146,23 +148,4 @@ export const cisGcp = [
     .denyIngress(Port.SSH)
     .message('Firewall rules must not open SSH to the internet')
     .rationale('CIS GCP §4.6 — no public SSH'),
-
-  // ── Cross-cutting ──────────────────────────────────────────────────────
-  rule()
-    .allResources()
-    .denyInsensitiveVariable()
-    .message('Secret-looking variables must be marked sensitive')
-    .rationale('CIS — secrets leak in plans/logs without sensitive flag'),
-
-  rule()
-    .allResources()
-    .denyPlaintextLocalSecret()
-    .message('Locals must not hardcode secrets — use a reference')
-    .rationale('CIS — no plaintext secrets in source control'),
-
-  rule()
-    .allResources()
-    .denyProvisioner(Provisioner.LocalExec, Provisioner.RemoteExec)
-    .message('Provisioners are forbidden — use a config manager')
-    .rationale('CIS — no arbitrary command execution on apply'),
 ] as const

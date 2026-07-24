@@ -1,3 +1,3 @@
-import { cisGcp } from '../../../../../src/presets/cis-gcp'
+import { coreSecurity, cisGcp } from '../../../../../src/index'
 
-export const spec = [...cisGcp]
+export const spec = [...coreSecurity, ...cisGcp]

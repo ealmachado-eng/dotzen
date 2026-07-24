@@ -43,35 +43,40 @@ Two modes, both supported:
 
 ## Curated presets
 
-Two kinds: **per-cloud CIS starters** (drop-in for one cloud) and **composable framework packs** (spread a shared base + a framework-specific layer).
-
-### Per-cloud CIS starters
+All preset packs are **composable on top of `coreSecurity`** — spread the shared base + one or more framework/cloud layers. No duplicate violations when composing.
 
 ```ts
-import { cisAws } from '@dotzen/dotzen'
-// or cisAzure, cisGcp
-
-export const spec = [...cisAws /* your rules */]
+import { coreSecurity, cisAws, pciDss } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...cisAws, ...pciDss /* your rules */]
 ```
 
-- **`cisAws`** (23 rules) — network, encryption, IAM, audit, tags, secrets, provisioners.
-- **`cisAzure`** (17 rules) — storage TLS, SQL, Key Vault, AKS, App Service, ACR, RBAC, secrets.
-- **`cisGcp`** (21 rules) — storage, Cloud SQL, GKE, KMS, compute, IAM, Cloud Run Functions, firewall, secrets.
+### Shared base
 
-### Composable framework packs
+- **`coreSecurity`** (18 rules) — the 80% shared across all frameworks: network exposure (SSH/RDP/DB ports), encryption at rest (RDS/EBS/EC2/KMS), IAM least privilege (`Action:*` / `Principal:*`), audit logging (CloudTrail KMS + multi-region), no hardcoded secrets (variables/locals/outputs/connections), required tags, provisioner denial, backup retention ≥7.
+
+### Cloud-specific CIS additions
+
+```ts
+import { coreSecurity, cisAws } from '@dotzen/dotzen'
+export const spec = [...coreSecurity, ...cisAws]
+```
+
+- **`cisAws`** (6 rules) — CloudTrail log validation, Redshift/ElastiCache encryption, S3 block_public_acls, RDS not-public, ECR scan-on-push.
+- **`cisAzure`** (15 rules) — storage TLS/public-access/network-deny, SQL TLS/SSL, Key Vault purge protection, AKS private cluster + local accounts, App Service HTTPS, ACR admin, RBAC Owner/Contributor.
+- **`cisGcp`** (18 rules) — storage prevention/UBLA/versioning, Cloud SQL SSL/IPv4/root-password, GKE private nodes + legacy ABAC, KMS rotation, compute secure boot + IP forwarding, IAM allUsers/primitive-roles, Cloud Run Functions ingress + service account, firewall SSH.
+
+### Framework packs
 
 ```ts
 import { coreSecurity, pciDss } from '@dotzen/dotzen'
 // or soc2, nist80053, dataProtection
-
-export const spec = [...coreSecurity, ...pciDss /* your rules */]
+export const spec = [...coreSecurity, ...pciDss]
 ```
 
-- **`coreSecurity`** (18 rules) — the 80% shared across all frameworks: network exposure, encryption at rest (key resources), IAM least privilege, audit logging, no hardcoded secrets, required tags, provisioner denial, backup retention.
-- **`pciDss`** (14 rules) — PCI DSS v4.0 additions: encrypt ALL data stores, all four S3 public-access-block flags, backup retention ≥30 days, encrypted + non-local state, no drift hiding on security attrs, DynamoDB PITR.
-- **`soc2`** (8 rules) — SOC 2 TSC additions: change management (version pinning for TF/providers/modules), encrypted + non-local state, ECR scan-on-push, CloudTrail log validation.
-- **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5 additions: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
-- **`dataProtection`** (12 rules) — GDPR/LGPD additions: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data residency is now supported via `denyNonApprovedRegion` (see below).
+- **`pciDss`** (14 rules) — PCI DSS v4.0: encrypt ALL data stores, all four S3 public-access-block flags, backup retention ≥30 days, encrypted + non-local state, no drift hiding, DynamoDB PITR.
+- **`soc2`** (8 rules) — SOC 2 TSC: change management (version pinning for TF/providers/modules), encrypted + non-local state, ECR scan-on-push, CloudTrail log validation.
+- **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
+- **`dataProtection`** (12 rules) — GDPR/LGPD: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data residency is now supported via `denyNonApprovedRegion` (see below).
 
 ### Data residency (GDPR / LGPD)
 

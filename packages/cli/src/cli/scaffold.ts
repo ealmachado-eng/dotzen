@@ -23,17 +23,16 @@ function specTs(): string {
 // Prose as Code: each rule reads like a policy statement. Autocomplete
 // guides every choice, and a typo is a compile error, not a silent gap.
 //
-// Curated CIS preset packs are available for all three clouds:
-//   import { cisAws } from '@dotzen/dotzen'   // 23 rules
-//   import { cisAzure } from '@dotzen/dotzen' // 17 rules
-//   import { cisGcp } from '@dotzen/dotzen'   // 21 rules
-// Composable framework packs (spread coreSecurity + a framework layer):
-//   import { coreSecurity, pciDss } from '@dotzen/dotzen'   // PCI DSS
-//   import { coreSecurity, soc2 } from '@dotzen/dotzen'     // SOC 2
-//   import { coreSecurity, nist80053 } from '@dotzen/dotzen' // NIST 800-53
+// Curated preset packs — all composable on top of coreSecurity:
+//   import { coreSecurity, cisAws } from '@dotzen/dotzen'     // CIS AWS
+//   import { coreSecurity, cisAzure } from '@dotzen/dotzen'   // CIS Azure
+//   import { coreSecurity, cisGcp } from '@dotzen/dotzen'     // CIS GCP
+//   import { coreSecurity, pciDss } from '@dotzen/dotzen'     // PCI DSS
+//   import { coreSecurity, soc2 } from '@dotzen/dotzen'       // SOC 2
+//   import { coreSecurity, nist80053 } from '@dotzen/dotzen'  // NIST 800-53
 //   import { coreSecurity, dataProtection } from '@dotzen/dotzen' // GDPR/LGPD
-// Spread one into your spec and extend with custom rules:
-//   export const spec = [...coreSecurity, ...pciDss, rule().resource(...).mustBeTrue(...)]
+// Compose multiple framework packs (no duplicate violations):
+//   export const spec = [...coreSecurity, ...cisAws, ...pciDss]
 
 export const spec = [
   rule()

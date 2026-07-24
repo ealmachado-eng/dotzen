@@ -30,25 +30,25 @@ const validateAll = (
 }
 
 describe('CIS presets — validation (#24)', () => {
-  it('cis-aws: every rule validates, >= 20 rules', () => {
+  it('cis-aws: every rule validates, >= 5 rules (additions to coreSecurity)', () => {
     const { rules, errors } = validateAll(cisAws)
     expect(errors).toEqual([])
-    expect(rules).toBeGreaterThanOrEqual(20)
-    expect(cisAws.length).toBeGreaterThanOrEqual(20)
+    expect(rules).toBeGreaterThanOrEqual(5)
+    expect(cisAws.length).toBeGreaterThanOrEqual(5)
   })
 
-  it('cis-azure: every rule validates, >= 12 rules', () => {
+  it('cis-azure: every rule validates, >= 10 rules (additions to coreSecurity)', () => {
     const { rules, errors } = validateAll(cisAzure)
     expect(errors).toEqual([])
-    expect(rules).toBeGreaterThanOrEqual(12)
-    expect(cisAzure.length).toBeGreaterThanOrEqual(12)
+    expect(rules).toBeGreaterThanOrEqual(10)
+    expect(cisAzure.length).toBeGreaterThanOrEqual(10)
   })
 
-  it('cis-gcp: every rule validates, >= 10 rules', () => {
+  it('cis-gcp: every rule validates, >= 15 rules (additions to coreSecurity)', () => {
     const { rules, errors } = validateAll(cisGcp)
     expect(errors).toEqual([])
-    expect(rules).toBeGreaterThanOrEqual(10)
-    expect(cisGcp.length).toBeGreaterThanOrEqual(10)
+    expect(rules).toBeGreaterThanOrEqual(15)
+    expect(cisGcp.length).toBeGreaterThanOrEqual(15)
   })
 
   it('every rule has a message + rationale (auditability)', () => {
@@ -141,5 +141,30 @@ describe('Composable framework presets — validation', () => {
     expect(errors).toEqual([])
     expect(rules).toBeGreaterThan(coreSecurity.length)
     expect(rules).toBeGreaterThan(pciDss.length)
+  })
+
+  it('no duplicate messages between coreSecurity and CIS packs (no double-violation)', () => {
+    // The refactor ensures CIS packs contain ONLY cloud-specific additions —
+    // no rule in cisAws/cisAzure/cisGcp should share a message with
+    // coreSecurity (which would produce a duplicate violation on the same
+    // resource under different ruleIds when composed).
+    const coreMsgs = new Set(
+      coreSecurity.map((b) => {
+        const r = b.validate(0)
+        return r.ok ? r.value.message : ''
+      }),
+    )
+    for (const [, pack] of [
+      ['cisAws', cisAws],
+      ['cisAzure', cisAzure],
+      ['cisGcp', cisGcp],
+    ] as const) {
+      for (const builder of pack) {
+        const r = builder.validate(0)
+        if (r.ok) {
+          expect(coreMsgs.has(r.value.message)).toBe(false)
+        }
+      }
+    }
   })
 })

@@ -1,13 +1,16 @@
 /**
- * CIS Microsoft Azure Foundations Benchmark — curated starter preset (#24).
+ * CIS Microsoft Azure Foundations — Azure-specific additions on top of
+ * `coreSecurity`.
  *
- * High-impact Azure controls: storage security, SQL TLS, Key Vault purge
- * protection, AKS private cluster, App Service HTTPS, ACR admin, and RBAC
- * least privilege. A STARTER — users extend. Each rule cites the control.
+ * The shared controls (no hardcoded secrets, provisioner denial, required
+ * tags) live in `coreSecurity`. This pack adds only the Azure-specific CIS
+ * controls. Note: `coreSecurity` is AWS-primary (CloudTrail, IAM policy,
+ * S3) — Azure's CIS controls are almost entirely cloud-specific, so this
+ * pack is larger than `cisAws`.
  *
  * Usage:
- *   import { cisAzure } from '@dotzen/dotzen'
- *   export const spec = [...cisAzure, /* your custom rules *\/]
+ *   import { coreSecurity, cisAzure } from '@dotzen/dotzen'
+ *   export const spec = [...coreSecurity, ...cisAzure]
  */
 import { rule } from '../spec/rule'
 import {
@@ -17,7 +20,6 @@ import {
   SqlTlsVersion,
   NetworkDefaultAction,
   BuiltInRole,
-  Provisioner,
 } from '../vocabulary'
 
 export const cisAzure = [
@@ -119,23 +121,4 @@ export const cisAzure = [
     .denyValue(AzureAttribute.RoleDefinitionName, BuiltInRole.Contributor)
     .message('Role assignments must not grant Contributor')
     .rationale('CIS Azure — least privilege'),
-
-  // ── Cross-cutting secrets hygiene ──────────────────────────────────────
-  rule()
-    .allResources()
-    .denyInsensitiveVariable()
-    .message('Secret-looking variables must be marked sensitive')
-    .rationale('CIS — secrets leak in plans/logs without sensitive flag'),
-
-  rule()
-    .allResources()
-    .denyPlaintextLocalSecret()
-    .message('Locals must not hardcode secrets — use a reference')
-    .rationale('CIS — no plaintext secrets in source control'),
-
-  rule()
-    .allResources()
-    .denyProvisioner(Provisioner.LocalExec, Provisioner.RemoteExec)
-    .message('Provisioners are forbidden — use a config manager')
-    .rationale('CIS — no arbitrary command execution on apply'),
 ] as const
