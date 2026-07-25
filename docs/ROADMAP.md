@@ -449,3 +449,63 @@ could-not-evaluate rather than a false violation.
 **The engine is feature-complete for static Terraform governance across
 AWS, Azure, and GCP.** 492 unit + 34 integration tests. Build, typecheck,
 lint, format all green.
+
+### Vocabulary breadth — NEXT (Monday)
+
+Running dotzen against a **realistic RDS fixture** (variables, locals,
+ternaries, supporting resources) revealed that 50% of a real deployment's
+resources are NOT in the vocabulary — `aws_iam_role`,
+`aws_iam_role_policy_attachment`, `aws_cloudwatch_metric_alarm`,
+`aws_db_subnet_group`, `aws_db_parameter_group`, `aws_ssm_parameter`. The
+ungoverned telemetry surfaces these correctly, but the coverage gap is
+real. The first batch (7 types) was added and cut ungoverned from 8 → 1
+on the fixture.
+
+**TODO (Monday):**
+
+1. **Add the full AWS supporting-resource vocabulary** — the ~200 AWS
+   resource types not yet in `AwsResource`. Each is a one-line enum
+   member; no engine code needed. Prioritize by real-world frequency:
+   - VPC/network: `aws_vpc`, `aws_subnet`, `aws_internet_gateway`,
+     `aws_nat_gateway`, `aws_route_table`, `aws_route`,
+     `aws_route_table_association`
+   - IAM: `aws_iam_user`, `aws_iam_group`, `aws_iam_instance_profile`,
+     `aws_iam_access_key`
+   - Storage: `aws_s3_bucket_object`, `aws_s3_bucket_versioning`,
+     `aws_s3_bucket_lifecycle_configuration`
+   - Compute: `aws_launch_template`, `aws_autoscaling_group`,
+     `aws_key_pair`
+   - Monitoring: `aws_cloudwatch_log_group`, `aws_cloudwatch_dashboard`
+   - Networking: `aws_route53_record`, `aws_route53_zone`,
+     `aws_acm_certificate`
+   - EKS/ECS: `aws_eks_node_group`, `aws_ecs_cluster`,
+     `aws_ecs_task_definition` (already), `aws_iam_role` (added)
+
+2. **Add Azure + GCP supporting resources** — same pattern. Prioritize
+   by CIS-relevance + real-world frequency.
+
+3. **Add the comparison-in-local eval pattern** — the realistic fixture
+   showed `local.is_production = var.environment == "prd"` → ternary on
+   the local is a CANNOT-EVALUATE. This is an extremely common pattern.
+   The fix: extend the conservative ternary evaluator to resolve a
+   comparison expression stored in a `local`/`var` chain (resolve the
+   ref, then eval the `==`/`!=` comparison against a literal, then use
+   the boolean result in the ternary).
+
+4. **Add `random_password` / `random_string` / `random_id`** to a
+   `TerraformUtilityResource` enum (or just add to `AwsResource` as
+   recognized-but-not-governed). These are Terraform built-in provider
+   resources — not security-relevant but showing them as ungoverned is
+   noise. Consider a `UTILITY_TYPES` set that is silently skipped
+   (neither governed nor ungoverned-surfaced).
+
+5. **Realistic fixture as a permanent integration test** — the
+   `realistic-rds/` fixture is already in the repo but not wired into
+   `check.test.ts`. Add it as a test that asserts the expected
+   violation/passed/ungoverned counts.
+
+6. **Dogfood on a real production repo** — the #1 priority from the
+   honest assessment. Run `npx @dotzen/dotzen@latest check` against a
+   real Terraform repo (terraform-aws-modules or an internal codebase).
+   Measure: (a) could-not-evaluate rate, (b) ungoverned rate,
+   (c) false positives. This data determines the eval-gap work priority.

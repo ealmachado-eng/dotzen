@@ -62,6 +62,13 @@ export enum AwsResource {
   // AWS Lambda (serverless). `tracing_config.mode` carries X-Ray tracing;
   // `kms_key_arn` encrypts environment variables at rest.
   LambdaFunction = 'aws_lambda_function',
+  // ── Supporting resources (from real-world RDS/VPC deployments) ───────
+  IamRole = 'aws_iam_role',
+  IamRolePolicyAttachment = 'aws_iam_role_policy_attachment',
+  CloudwatchMetricAlarm = 'aws_cloudwatch_metric_alarm',
+  DbSubnetGroup = 'aws_db_subnet_group',
+  DbParameterGroup = 'aws_db_parameter_group',
+  SsmParameter = 'aws_ssm_parameter',
 }
 
 // Nested block names/paths, for `mustHaveBlock` / `denyBlockPresence`.
@@ -250,6 +257,14 @@ export enum AwsAttribute {
   // ElastiCache replication group
   AtRestEncryptionEnabled = 'at_rest_encryption_enabled',
   TransitEncryptionEnabled = 'transit_encryption_enabled',
+  // SSM parameter — a `String` (not `SecureString`) parameter with a
+  // secret-shaped name is a plaintext secret leak. Govern with denyValue.
+  SsmParameterType = 'type',
+  // IAM role — the assume_role_policy JSON (govern with denyIamWildcard /
+  // denyPublicPrincipal, same as aws_iam_policy).
+  IamRoleAssumeRolePolicy = 'assume_role_policy',
+  // IAM role policy attachment — which managed policy is attached.
+  IamRolePolicyAttachmentPolicyArn = 'policy_arn',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.
