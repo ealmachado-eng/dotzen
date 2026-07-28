@@ -330,6 +330,37 @@ export type Condition =
   | { kind: 'mustBeTrue';    attrs: AwsAttribute[] }   // require attr = true
   | { kind: 'denyWhenTrue';  attrs: AwsAttribute[] }   // deny attr = true (02's split)
   | { kind: 'denyAcl';       acls: Acl[] }
+  // ── v1.0+ additions (implemented, not just design) ──
+  | { kind: 'mustBeFalse';     attrs: AnyAttribute[] }        // deny attr = false (absent = violation)
+  | { kind: 'mustBeSet';       attr: AnyAttribute }           // attr must be present (non-null)
+  | { kind: 'mustEqual';       attr: AnyAttribute; value: string | number }
+  | { kind: 'mustBeAtLeast';   attr: AnyAttribute; min: number }
+  | { kind: 'mustBeAtMost';    attr: AnyAttribute; max: number }
+  | { kind: 'mustBeOneOf';     attr: AnyAttribute; values: (string | number)[] }
+  | { kind: 'denyValue';       attr: AnyAttribute; values: (string | number)[] }
+  | { kind: 'denyLiteral';     attr: AnyAttribute }           // literal = violation, ref = pass
+  | { kind: 'denyIamWildcard' }
+  | { kind: 'denyPublicPrincipal' }
+  | { kind: 'requireSslOnlyPolicy' }
+  | { kind: 'denyPlaintextEnvSecrets' }
+  | { kind: 'denyProvisioner'; names: Provisioner[] }
+  | { kind: 'denyIgnoreChanges'; attrs: AnyAttribute[] }
+  | { kind: 'denyBlockPresence'; block: Block }
+  | { kind: 'mustHaveBlock';    block: Block }
+  | { kind: 'mustHaveAssociated';  childType: AnyResource; via: AnyAttribute }
+  | { kind: 'denyIfAssociated';    childType: AnyResource; via: AnyAttribute }  // v1.6 — inverse of mustHaveAssociated
+  | { kind: 'denyInsensitiveVariable' }
+  | { kind: 'denyPlaintextLocalSecret' }
+  | { kind: 'denyInsensitiveSecretOutput'; secretAttrs: string[] }
+  | { kind: 'denyPlaintextConnectionSecret' }
+  | { kind: 'requireEncryptedBackend' }
+  | { kind: 'requireExactTerraformVersion' }
+  | { kind: 'denyFloatingProviderVersion'; names: string[] }
+  | { kind: 'denyFloatingModuleVersion' }
+  | { kind: 'denyLocalBackend' }
+  | { kind: 'denyNonApprovedRegion'; regions: string[] }
+  | { kind: 'listContains';     attr: AnyAttribute; values: (string | number)[] }
+  | { kind: 'listMustInclude';  attr: AnyAttribute; values: (string | number)[] }
 
 export interface Rule {
   readonly id:           string        // stable name for reporting/exceptions
@@ -378,13 +409,19 @@ export interface IngressRule {
 }
 
 export interface NormalizedResource {
-  readonly type:       AwsResource
+  readonly type:       AnyResource               // AwsResource | AzureResource | GcpResource | DataResource
   readonly name:       string          // address is `${type}.${name}`
   readonly file:       string
   readonly line:       number
   readonly attributes: Record<string, NormalizedValue>
   readonly ingress:    IngressRule[]
-  readonly tags:       Record<string, NormalizedValue>
+  readonly tags:       TagsInfo                   // resolved/partial/unresolved tag set
+  readonly lists:      Record<string, NormalizedValue[]>  // list-valued attrs (flattened)
+  readonly blocks:     string[]                   // nested block paths present
+  readonly instanceKey?: string                  // for_each key (e.g. "prd")
+  readonly providerAlias?: string                // provider = aws.X
+  readonly providerRegion?: string               // region from provider block
+  readonly environment?: string                  // from root folder or tag
 }
 
 export interface RawHclFile { readonly path: string; readonly ast: unknown }  // parser-specific, never leaves hcl/
@@ -412,11 +449,17 @@ export interface Unevaluable {
   readonly reason:   string     // "ingress cidr is an unresolved var reference"
 }
 
-// The success-track payload. THREE outcomes (Rule 2), never on the Err track.
+// The success-track payload. FOUR outcomes (Rule 2), never on the Err track.
+// `ungoverned` was added in v1.2 — resources whose type is NOT in the
+// closed vocabulary (KNOWN_TYPES). Surfaced as informational telemetry
+// (not violations, not could-not-evaluate) so users see coverage gaps.
+// UTILITY_TYPES (random_*, null_resource, time_sleep, tls_*) are silently
+// skipped — neither governed nor ungoverned.
 export interface CheckReport {
   readonly violations:       Violation[]
   readonly passed:           number
   readonly couldNotEvaluate: Unevaluable[]
+  readonly ungoverned:       { type: string; name: string; file: string; line: number }[]
 }
 
 // Per-condition, three-way — folded up into CheckReport

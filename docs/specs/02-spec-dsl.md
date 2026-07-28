@@ -492,6 +492,69 @@ builds the engine:
 > (`toset(...)`), `each.*`, and module-input resolution — all of which
 > correctly remain "could not evaluate" when they would affect a result.
 
+> **v1.4–v1.6 — conservative ternary evaluator.** The engine resolves the
+> common AI-generated pattern `local.is_prod = var.env == "prd"` followed
+> by `${local.is_prod ? true : false}`. Three forms are handled:
+> (1) inline compare `${ref (==|!=) scalar ? scalar : scalar}` (the
+> original #16 path); (2) bare-ref condition `${local.is_prod ? a : b}`
+> where the local stores a comparison interpolation (resolved via
+> `tryEvalComparison`); (3) ref branches — the chosen branch may be a
+> sole `var`/`local` ref, resolved through scope via `resolveValue`.
+> Compound branches (arithmetic, function calls) stay unresolved. Ref
+> chains (var→local→literal) resolve through depth-bounded recursion.
+> Non-boolean literals as ternary conditions (strings/numbers) are
+> refused — Terraform forbids them.
+
+> **v1.4–v1.6 — `denyIfAssociated` condition.** The inverse of
+> `mustHaveAssociated`. Flags a resource if a separate `childType`
+> resource references it via the `via` attribute. Uses the same
+> association index as `mustHaveAssociated` (zero additional cost).
+> Example: an IAM user with an inline `aws_iam_user_policy` — managed
+> policies are the preferred pattern.
+> ```typescript
+> rule()
+>   .resource(AwsResource.IamUser)
+>   .denyIfAssociated(AwsResource.IamUserPolicy, AwsAttribute.User)
+>   .onViolation(Effect.Warn)
+>   .message('IAM users must not have inline policies')
+> ```
+
+> **v1.4–v1.6 — `UTILITY_TYPES` silently-skipped set.** Terraform
+> built-in utility resources (`random_password`, `random_string`,
+> `random_id`, `random_uuid`, `random_shuffle`, `random_pet`,
+> `random_integer`, `random_bytes`, `terraform_data`, `null_resource`,
+> `time_sleep`, `tls_private_key`, `tls_self_signed_cert`,
+> `tls_locally_signed_cert`) are silently skipped in
+> `collectUngoverned` — neither governed nor surfaced as a coverage
+> gap. These resources have no security surface; reporting them as
+> ungoverned was noise on real module repos.
+
+> **v1.4–v1.6 — vocabulary expansion + verification.** The closed
+> vocabulary grew from 83 to 1003 resource types across AWS (484),
+> Azure (302), and GCP (201), plus 22 data source types. All values
+> verified against the actual HashiCorp Terraform provider documentation
+> (AWS 100%, GCP 100%, Azure 84% — 52 deprecated-but-real types kept
+> based on Go source verification). AWS enums extracted to
+> `vocabulary/aws.ts` (mirrors the `azure.ts`/`gcp.ts`/`data.ts` pattern);
+> `index.ts` halved from 325 → 166 lines, keeping only cross-cloud
+> enums. Adding a provider is one new sibling module + one arm per
+> union.
+
+> **v1.5 — `denyInsensitiveVariable` config-flag skip.** Variables
+> whose name contains a secret-like word (PASSWORD, SECRET, KEY, TOKEN)
+> but ends with a config-flag suffix (`_enabled`, `_disabled`,
+> `_interval`, `_timeout`, `_count`, `_mode`, `_provider`, `_addon`,
+> `_via_dns`, `_max_length`, `_min_length`) are skipped — these are
+> feature flags, not secrets (e.g. `secret_rotation_enabled`). Only
+> `denyInsensitiveVariable` is affected; `denyPlaintextLocalSecret`
+> still flags a local named `secret_rotation_enabled = "hunter2"`.
+
+> **v1.6 — `denyIamWildcard` + `denyPublicPrincipal` broadened.** These
+> conditions now target `aws_iam_policy`, `aws_iam_role_policy`, AND
+> `aws_iam_user_policy` (was only `aws_iam_policy`). Wildcard inline
+> policies (`Action: "*"` on an `aws_iam_role_policy`) no longer escape
+> the check.
+
 ## Deferred (documented for continuity, not v1 work)
 
 - `ts-pattern` exhaustive matching in the **engine** (Layer 4) — do this
