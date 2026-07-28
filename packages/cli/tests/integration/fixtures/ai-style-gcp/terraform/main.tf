@@ -74,9 +74,9 @@ resource "google_storage_bucket" "uploads" {
   location = var.region
 
   labels = {
-    Team        = "web"           # capitalized — inconsistent
+    Team        = "web"
     cost_center = "cc-2002"
-    Environment = "production"   # capitalized — inconsistent
+    Environment = "production"
   }
 }
 
