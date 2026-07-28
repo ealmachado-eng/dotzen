@@ -134,7 +134,9 @@ export function scaffoldFiles(
 }
 
 const ignored = (rel: string): boolean =>
-  rel.split(/[\\/]/).some((p) => p.startsWith('.') || p === 'node_modules')
+  rel
+    .split(/[\\/]/)
+    .some((p) => p.startsWith('.') || p === 'node_modules' || p === 'modules')
 
 /**
  * Every directory (relative to `dir`) that contains `.tf` files *directly* —

@@ -105,4 +105,20 @@ describe('initProject', () => {
     // no spurious terraform/ dir
     expect(fs.existsSync(path.join(dir, 'terraform'))).toBe(false)
   })
+
+  it('does NOT detect modules/ subdirectories as separate roots', () => {
+    const dir = mk()
+    // Root .tf file
+    fs.writeFileSync(path.join(dir, 'main.tf'), 'resource "x" "y" {}')
+    // Module .tf file inside modules/ — should NOT be a separate root
+    fs.mkdirSync(path.join(dir, 'modules', 'vpc'), { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'modules', 'vpc', 'main.tf'),
+      'resource "x" "y" {}',
+    )
+    const res = initProject(dir, '0.0.1')
+    expect(res.detected).toBe(true)
+    expect(res.terraform).toBe('.')
+    expect(terraformOf(dir)).toBe('.')
+  })
 })
