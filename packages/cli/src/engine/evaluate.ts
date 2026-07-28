@@ -84,6 +84,7 @@ type DenyPlaintextEnvSecrets = Extract<
 >
 type DenyLiteral = Extract<Condition, { kind: 'denyLiteral' }>
 type MustHaveAssociated = Extract<Condition, { kind: 'mustHaveAssociated' }>
+type DenyIfAssociated = Extract<Condition, { kind: 'denyIfAssociated' }>
 type MustHaveBlock = Extract<Condition, { kind: 'mustHaveBlock' }>
 type DenyBlockPresence = Extract<Condition, { kind: 'denyBlockPresence' }>
 type DenyIgnoreChanges = Extract<Condition, { kind: 'denyIgnoreChanges' }>
@@ -913,6 +914,32 @@ function evalMustHaveAssociated(
   }
 }
 
+/** Cross-resource: flag iff a `childType` resource references this one via
+ *  `via` (inverse of mustHaveAssociated). E.g. an IAM user with an inline
+ *  `aws_iam_user_policy` — managed policies are the preferred pattern.
+ *  Degrades to could-not-evaluate when the association is unresolvable
+ *  (a var/local ref in the `via` attribute). */
+function evalDenyIfAssociated(
+  c: DenyIfAssociated,
+  r: NormalizedResource,
+  ctx: EvalContext,
+): ConditionOutcome {
+  const key = `${c.childType}|${c.via}`
+  if (ctx.associations.get(address(r))?.has(key)) {
+    return {
+      kind: 'violation',
+      detail: `has an associated ${c.childType} (referencing this via ${c.via}) — use a managed policy instead`,
+    }
+  }
+  if (ctx.unresolvableCandidates.get(key)) {
+    return {
+      kind: 'cannotEvaluate',
+      reason: `association via ${c.via} is an unresolvable var/local reference — cannot determine the parent`,
+    }
+  }
+  return { kind: 'pass' }
+}
+
 /**
  * Whether a resource declares a given nested block. Prefers the recorded
  * block paths (which capture even empty blocks); falls back to the flattened
@@ -1380,6 +1407,8 @@ function evalCondition(
       return evalDenyLiteral(c, r)
     case 'mustHaveAssociated':
       return evalMustHaveAssociated(c, r, ctx)
+    case 'denyIfAssociated':
+      return evalDenyIfAssociated(c, r, ctx)
     case 'mustHaveBlock':
       return evalMustHaveBlock(c, r)
     case 'denyBlockPresence':

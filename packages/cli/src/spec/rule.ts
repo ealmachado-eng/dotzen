@@ -102,6 +102,14 @@ export type Condition =
       readonly childType: AnyResource
       readonly via: AnyAttribute
     }
+  // Cross-resource: flag this resource if a separate `childType` resource
+  // references it via `via` (e.g. an IAM user with an inline
+  // aws_iam_user_policy — managed policies are the safe pattern).
+  | {
+      readonly kind: 'denyIfAssociated'
+      readonly childType: AnyResource
+      readonly via: AnyAttribute
+    }
   // Same-resource: this resource must declare a given nested block.
   | { readonly kind: 'mustHaveBlock'; readonly block: Block }
   // Same-resource: this resource must NOT declare a given nested block
@@ -433,6 +441,15 @@ export class RuleBuilder {
    *  (e.g. an S3 bucket must have a matching server-side-encryption config). */
   mustHaveAssociated(childType: AnyResource, via: AnyAttribute): this {
     this._conditions.push({ kind: 'mustHaveAssociated', childType, via })
+    return this
+  }
+
+  /** Flag this resource if a separate `childType` resource references it via
+   *  `via` (e.g. an IAM user with an inline `aws_iam_user_policy` — managed
+   *  policies are the preferred pattern). The inverse of
+   *  `mustHaveAssociated`. */
+  denyIfAssociated(childType: AnyResource, via: AnyAttribute): this {
+    this._conditions.push({ kind: 'denyIfAssociated', childType, via })
     return this
   }
 

@@ -6,6 +6,56 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.6.0
+
+### Added — `denyIfAssociated` condition (new engine capability)
+
+New cross-resource condition: `denyIfAssociated(childType, via)` — the
+inverse of `mustHaveAssociated`. Flags a resource if a separate
+`childType` resource references it via the `via` attribute.
+
+```ts
+rule()
+  .resource(AwsResource.IamUser)
+  .denyIfAssociated(AwsResource.IamUserPolicy, AwsAttribute.User)
+  .onViolation(Effect.Warn)
+  .message('IAM users must not have inline policies')
+```
+
+Reuses the existing association index built by `buildAssociations` — zero
+performance cost. Degrades to `couldNotEvaluate` when the `via` attribute
+is an unresolvable var/local ref (same honest-degrade behavior as
+`mustHaveAssociated`).
+
+### Added — IAM inline policy rules (coreSecurity)
+
+2 new `coreSecurity` rules using `denyIfAssociated`:
+
+- **IAM user no inline policies** — `aws_iam_user` must not have an
+  associated `aws_iam_user_policy` (warn). Managed policies are the
+  preferred pattern — they're auditable, reusable, and version-controlled.
+- **IAM role no inline policies** — `aws_iam_role` must not have an
+  associated `aws_iam_role_policy` (warn). Same rationale.
+
+### Added — vocabulary
+
+- `AwsResource.EcrLifecyclePolicy` (`aws_ecr_lifecycle_policy` — from v1.5.3)
+- `AwsAttribute.Repository` (`repository` — ECR lifecycle policy links to
+  the repository by name)
+- `AwsAttribute.User` (`user` — IAM user policy links to the user by name)
+- `AwsAttribute.Role` (`role` — IAM role policy links to the role by name)
+- `AwsAttribute.Group` (`group` — IAM group policy links to the group by
+  name, reserved for future use)
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes.
+`denyIfAssociated` is a new condition type, additive to the DSL. Users
+composing `[...coreSecurity, ...cisAws]` will see new `warn`-effect
+findings on IAM users and roles with inline policies. Review the findings
+— inline policies are a legitimate but discouraged pattern; migrate to
+managed policies where possible.
+
 ## 1.5.3
 
 ### Added — batch 3 rules for expanded vocabulary (ROADMAP #6)

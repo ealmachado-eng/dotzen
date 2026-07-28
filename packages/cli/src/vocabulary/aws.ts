@@ -644,6 +644,12 @@ export enum AwsAttribute {
   EksNodeGroupRemoteAccessSshKey = 'remote_access.ec2_ssh_key',
   // ECR lifecycle policy — links to the repository by name.
   Repository = 'repository',
+  // IAM user policy — links to the user by name.
+  User = 'user',
+  // IAM role policy — links to the role by name.
+  Role = 'role',
+  // IAM group policy — links to the group by name.
+  Group = 'group',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

@@ -82,6 +82,27 @@ export const coreSecurity = [
     .message('IAM policies must not grant access to Principal "*"')
     .rationale('Common control: no public access — NIST AC-3'),
 
+  // ── No inline IAM policies (use managed policies instead) ─────────────
+  rule()
+    .id('iam-user-no-inline-policy')
+    .resource(AwsResource.IamUser)
+    .denyIfAssociated(AwsResource.IamUserPolicy, AwsAttribute.User)
+    .onViolation(Effect.Warn)
+    .message('IAM users must not have inline policies — use managed policies')
+    .rationale(
+      'Common control: centralized policy management — PCI 7.2.1, NIST AC-2(1)',
+    ),
+
+  rule()
+    .id('iam-role-no-inline-policy')
+    .resource(AwsResource.IamRole)
+    .denyIfAssociated(AwsResource.IamRolePolicy, AwsAttribute.Role)
+    .onViolation(Effect.Warn)
+    .message('IAM roles must not have inline policies — use managed policies')
+    .rationale(
+      'Common control: centralized policy management — PCI 7.2.1, NIST AC-2(1)',
+    ),
+
   // ── Audit logging ──────────────────────────────────────────────────────
   rule()
     .resource(AwsResource.Cloudtrail)

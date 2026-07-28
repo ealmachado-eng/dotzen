@@ -156,3 +156,55 @@ describe('evaluate — mustHaveBlock (same-resource block presence)', () => {
     expect(evaluate([rule], [cluster]).violations).toHaveLength(1)
   })
 })
+
+describe('evaluate — denyIfAssociated (cross-resource absence)', () => {
+  const noInlineRule: Rule = {
+    id: 'iam-user-no-inline',
+    target: { kind: 'resource', types: [AwsResource.IamUser] },
+    conditions: [
+      {
+        kind: 'denyIfAssociated',
+        childType: AwsResource.IamUserPolicy,
+        via: AwsAttribute.User,
+      },
+    ],
+    effect: Effect.Warn,
+    message: 'IAM user must not have an inline policy',
+  }
+
+  it('passes a user with no inline policy', () => {
+    const user = base(AwsResource.IamUser, 'app')
+    expect(evaluate([noInlineRule], [user]).violations).toHaveLength(0)
+  })
+
+  it('flags a user that an inline policy references', () => {
+    const user = base(AwsResource.IamUser, 'app')
+    const policy = base(AwsResource.IamUserPolicy, 'app', {
+      user: ref('${aws_iam_user.app.name}'),
+    })
+    const r = evaluate([noInlineRule], [user, policy])
+    expect(r.violations).toHaveLength(1)
+    expect(r.violations[0]?.resource).toBe('aws_iam_user.app')
+  })
+
+  it('passes a user whose inline policy references a DIFFERENT user', () => {
+    const user1 = base(AwsResource.IamUser, 'app')
+    const user2 = base(AwsResource.IamUser, 'other')
+    const policy = base(AwsResource.IamUserPolicy, 'other', {
+      user: ref('${aws_iam_user.other.name}'),
+    })
+    const r = evaluate([noInlineRule], [user1, user2, policy])
+    expect(r.violations).toHaveLength(1)
+    expect(r.violations[0]?.resource).toBe('aws_iam_user.other')
+  })
+
+  it('degrades to could-not-evaluate when the via attr is unresolvable', () => {
+    const user = base(AwsResource.IamUser, 'app')
+    const policy = base(AwsResource.IamUserPolicy, 'app', {
+      user: ref('${var.user_name}'),
+    })
+    const r = evaluate([noInlineRule], [user, policy])
+    expect(r.violations).toHaveLength(0)
+    expect(r.couldNotEvaluate).toHaveLength(1)
+  })
+})
