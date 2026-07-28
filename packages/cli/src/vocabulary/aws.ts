@@ -659,6 +659,10 @@ export enum AwsAttribute {
   Group = 'group',
   // WAFv2 web ACL association — links to the protected resource via ARN.
   ResourceArn = 'resource_arn',
+  // ECS cluster — the `setting` block with `name = "containerInsights"` and
+  // `value = "enabled"`. Flattened to `setting.name` and `setting.value`.
+  EcsSettingName = 'setting.name',
+  EcsSettingValue = 'setting.value',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

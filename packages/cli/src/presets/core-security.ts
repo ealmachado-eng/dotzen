@@ -280,4 +280,15 @@ export const coreSecurity = [
     .requireEncryptedBackend()
     .message('State backend must be encrypted')
     .rationale('Common control: protect state secrets — PCI 10.5, SOC CC7.2'),
+
+  // ── ECS cluster container insights ──────────────────────────────────
+  rule()
+    .id('ecs-container-insights')
+    .resource(AwsResource.EcsCluster)
+    .mustEqual(AwsAttribute.EcsSettingValue, 'enabled')
+    .onViolation(Effect.Warn)
+    .message('ECS clusters must enable container insights')
+    .rationale(
+      'CIS AWS — monitoring and observability for container workloads',
+    ),
 ] as const

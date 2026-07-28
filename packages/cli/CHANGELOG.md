@@ -6,6 +6,36 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.6.3
+
+### Added — ECS container insights + tfRootDirs fix
+
+**`coreSecurity` (1 new rule):**
+
+- **ECS cluster container insights** — `aws_ecs_cluster` must have
+  `setting { value = "enabled" }` for containerInsights (warn). Uses the
+  existing `mustEqual` condition on the flattened `setting.value`
+  attribute — no new engine condition needed.
+
+**Fixed — `tfRootDirs` in `scaffold.ts`:**
+
+- `dotzen init` no longer detects `modules/` subdirectories as separate
+  Terraform roots. Same class of bug as the `findTfFiles` recursive scan
+  fixed in v1.4.0. The `ignored()` filter now skips `modules` path
+  segments. `env/` subdirectories still detected correctly.
+
+### Added — vocabulary
+
+- `AwsAttribute.EcsSettingName` (`setting.name`)
+- `AwsAttribute.EcsSettingValue` (`setting.value`)
+
+### Migration notes
+
+Backward-compatible. Users composing `[...coreSecurity, ...cisAws]` will
+see new `warn`-effect findings on ECS clusters without container insights
+enabled. `dotzen init` on projects with `modules/` subdirectories no
+longer creates spurious root entries in `dotzen.json`.
+
 ## 1.6.2
 
 ### Added — remaining ungoverned VPC types + WAFv2 on ALB (ROADMAP #5)
