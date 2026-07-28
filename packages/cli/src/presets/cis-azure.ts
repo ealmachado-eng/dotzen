@@ -65,7 +65,7 @@ export const cisAzure = [
     .rationale('CIS Azure §4.4 — enforce SSL'),
 
   rule()
-    .resource(AzureResource.MysqlServer)
+    .resource(AzureResource.MysqlFlexibleServer)
     .mustBeTrue(AzureAttribute.SslEnforcementEnabled)
     .message('MySQL servers must enforce SSL connections')
     .rationale('CIS Azure §4.4 — enforce SSL'),

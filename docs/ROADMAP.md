@@ -593,10 +593,19 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    expansion, data source vocabulary, azapi_update_resource. Noise floor:
    2.6% (was ~50% pre-vocabulary expansion).
 
-4. **Azure deprecated-resource verification** — the 52 "deprecated but
-   real" Azure types were kept based on knowledge, not source verification.
-   An `azurerm` provider upgrade could silently drop some. Verify against
-   the provider's Go `ResourcesMap`.
+4. ✅ **DONE — Azure deprecated-resource verification** — cloned the
+   azurerm provider Go source and grep'd the `ResourcesMap` registration
+   files for all 52 "orphan" type strings. Results: 16 exact match (kept),
+   10 renamed (generic type replaced with specific subtypes — `azurerm_metric_alert`
+   → `azurerm_monitor_metric_alert`, `azurerm_traffic_manager_endpoint` →
+   `azurerm_traffic_manager_external_endpoint` + 3 others, `azurerm_policy_exemption`
+   → 4 scoped variants, `azurerm_automation_variable` → 5 typed variants),
+   26 completely removed from the provider (dead enum values that match
+   no real HCL). Removed 36 dead values, added 20 verified subtypes.
+   Azure enum: 318 → 302 (303 actual after format). 1 preset fix:
+   `cis-azure.ts` MysqlServer → MysqlFlexibleServer (the deprecated
+   single-server was removed from the provider; flexible server is the
+   current resource). All 4 gates green: 577 tests, typecheck, lint, format.
 
 ---
 

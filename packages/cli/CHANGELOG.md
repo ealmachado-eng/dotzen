@@ -6,6 +6,48 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.5.2
+
+### Fixed — Azure deprecated-resource verification against Go source
+
+Verified all 52 "deprecated but real" Azure enum values against the actual
+azurerm provider Go `ResourcesMap` registration files:
+
+- **16 exact match** — confirmed real, kept as-is.
+- **10 renamed** — generic type replaced by specific subtypes. Removed the
+  generic entry and added the real subtypes:
+  - `azurerm_metric_alert` → `azurerm_monitor_metric_alert`
+  - `azurerm_policy_assignment` → 4 scoped variants
+  - `azurerm_policy_exemption` → 4 scoped variants
+  - `azurerm_automation_variable` → `azurerm_automation_variable_string` +
+    `azurerm_automation_variable_int` + `azurerm_automation_variable_bool`
+  - `azurerm_traffic_manager_endpoint` → 4 endpoint types
+  - `azurerm_sentinel_data_connector` → 2 specific data connector types
+  - `azurerm_stream_analytics_function` → kept as specific subtypes exist
+  - `azurerm_stream_analytics_output` → kept as specific subtypes exist
+  - `azurerm_data_factory_*` → kept as specific subtypes exist
+- **26 completely removed from provider** — dead enum values that can
+  never match real HCL. Removed: `azurerm_mariadb_*` (Azure retired MariaDB),
+  `azurerm_mysql_server` (deprecated single-server, replaced by
+  `azurerm_mysql_flexible_server`), `azurerm_monitor_log_profile` (API
+  changed), `azurerm_key_vault_managed_hsm` + roles (removed from
+  provider), `azurerm_hdinsight_ml_services/rserver/storm` (unmaintained
+  HDInsight variants), and others.
+
+Net: Azure enum 318 → 302 members, 100% verified against Go source.
+
+**Preset fix:** `cis-azure.ts` `MysqlServer` → `MysqlFlexibleServer`
+(the deprecated `azurerm_mysql_server` was removed from the provider;
+`azurerm_mysql_flexible_server` is the current resource).
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. If a spec
+referenced `AzureResource.MysqlServer`, it would have been a compile error
+(the enum member was removed). The preset packs have been updated to
+reference `MysqlFlexibleServer` instead. Users who had custom rules on
+`azurerm_mysql_server` should update to `azurerm_mysql_flexible_server`.
+
 ## 1.5.1
 
 ### Added — batch 2 rules for expanded vocabulary (ROADMAP #6)
