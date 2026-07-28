@@ -450,7 +450,7 @@ could-not-evaluate rather than a false violation.
 AWS, Azure, and GCP.** 492 unit + 34 integration tests. Build, typecheck,
 lint, format all green.
 
-### Vocabulary breadth — NEXT (Monday)
+### Vocabulary breadth — DONE
 
 Running dotzen against a **realistic RDS fixture** (variables, locals,
 ternaries, supporting resources) revealed that 50% of a real deployment's
@@ -461,51 +461,118 @@ ungoverned telemetry surfaces these correctly, but the coverage gap is
 real. The first batch (7 types) was added and cut ungoverned from 8 → 1
 on the fixture.
 
-**TODO (Monday):**
+**DONE:**
 
-1. **Add the full AWS supporting-resource vocabulary** — the ~200 AWS
-   resource types not yet in `AwsResource`. Each is a one-line enum
-   member; no engine code needed. Prioritize by real-world frequency:
-   - VPC/network: `aws_vpc`, `aws_subnet`, `aws_internet_gateway`,
-     `aws_nat_gateway`, `aws_route_table`, `aws_route`,
-     `aws_route_table_association`
-   - IAM: `aws_iam_user`, `aws_iam_group`, `aws_iam_instance_profile`,
-     `aws_iam_access_key`
-   - Storage: `aws_s3_bucket_object`, `aws_s3_bucket_versioning`,
-     `aws_s3_bucket_lifecycle_configuration`
-   - Compute: `aws_launch_template`, `aws_autoscaling_group`,
-     `aws_key_pair`
-   - Monitoring: `aws_cloudwatch_log_group`, `aws_cloudwatch_dashboard`
-   - Networking: `aws_route53_record`, `aws_route53_zone`,
-     `aws_acm_certificate`
-   - EKS/ECS: `aws_eks_node_group`, `aws_ecs_cluster`,
-     `aws_ecs_task_definition` (already), `aws_iam_role` (added)
+1. ✅ **DONE — Add the full AWS supporting-resource vocabulary** —
+   `AwsResource` grew from 57 → 521 members across VPC/network, IAM,
+   storage, compute, monitoring, Route53/ACM, EKS/ECS, RDS variants,
+   EFS/FSx, KMS/Secrets/SSM, CloudTrail/Config, SQS/SNS/Kinesis,
+   EventBridge, ALB/NLB, Lambda, Elastic Beanstalk/AppRunner/Lightsail,
+   Glue/Athena/EMR/Step Functions, CloudFront/WAF/Shield/GAX, DynamoDB/
+   ElastiCache/MQ/MSK, VPC Lattice/Verified Access/Network Firewall,
+   SES/Pinpoint/Connect, Backup/DR, RAM/Macie/GuardDuty/Detective/
+   SecurityHub/Inspector, Organizations/SSO/Transfer, AppConfig/Amplify,
+   and more. Also: AWS enums extracted to `src/vocabulary/aws.ts` (mirrors
+   azure.ts/gcp.ts/data.ts pattern), halving `index.ts` from 325 → 166
+   lines.
 
-2. **Add Azure + GCP supporting resources** — same pattern. Prioritize
-   by CIS-relevance + real-world frequency.
+2. ✅ **DONE — Add Azure + GCP supporting resources** —
+   `AzureResource` grew from 19 → 318, `GcpResource` from 7 → 227.
+   Azure covers networking (VNet/subnet/NIC/LB/DNS/Frontdoor/CDN),
+   compute (VM/VMSS), storage, databases (MSSQL/PostgreSQL-flexible/
+   MySQL-flexible/CosmosDB/DataFactory/Databricks/Synapse), containers
+   (AKS/container-app/service-fabric), IAM, key vault, security (sentinel/
+   security-center), backup/recovery, event-grid/service-bus/event-hub/
+   IoT/SignalR, API management, app service, resource groups/policy.
+   GCP covers compute (disk/image/snapshot/instance-group/autoscaler/
+   target-pool/proxy/url-map/backend-service/forwarding-rule/health-check/
+   ssl-cert/security-policy/router/vpn), networking (VPC/shared-VPC/DNS),
+   storage (bucket-object/acl/IAM/filestore), IAM (project/org/folder/
+   service-account/workload-identity), SQL, GKE, KMS, cloud-run,
+   pub-sub/eventarc/tasks, bigquery/dataflow/dataproc/composer,
+   spanner/firestore/memorystore, cloudbuild/clouddeploy, secret-manager,
+   network-security, VPC-SC, apigateway/apigee, logging/monitoring,
+   cloud-trace, identity-platform, billing, vertex-AI, binary-authorization/
+   artifact-registry.
 
-3. **Add the comparison-in-local eval pattern** — the realistic fixture
-   showed `local.is_production = var.environment == "prd"` → ternary on
-   the local is a CANNOT-EVALUATE. This is an extremely common pattern.
-   The fix: extend the conservative ternary evaluator to resolve a
-   comparison expression stored in a `local`/`var` chain (resolve the
-   ref, then eval the `==`/`!=` comparison against a literal, then use
-   the boolean result in the ternary).
+3. ✅ **DONE — Add the comparison-in-local eval pattern** — new
+   `tryEvalComparison()` helper in `normalize.ts` evaluates
+   `${ref (==|!=) scalar}` (no ternary). `tryEvalTernary()` extended to
+   accept bare-ref conditions `${local.is_prod ? a : b}` where
+   `local.is_prod` resolves to a boolean (directly or via a comparison
+   stored in a local). Non-boolean literals (strings/numbers) stay
+   unresolved — Terraform forbids them as conditions, so we refuse to
+   guess. 5 new unit tests + 3 integration tests pin the behavior.
 
-4. **Add `random_password` / `random_string` / `random_id`** to a
-   `TerraformUtilityResource` enum (or just add to `AwsResource` as
-   recognized-but-not-governed). These are Terraform built-in provider
-   resources — not security-relevant but showing them as ungoverned is
-   noise. Consider a `UTILITY_TYPES` set that is silently skipped
-   (neither governed nor ungoverned-surfaced).
+4. ✅ **DONE — `UTILITY_TYPES` silently-skipped set** — new
+   `UTILITY_TYPES` set in `normalize.ts` covering `random_password`,
+   `random_string`, `random_id`, `random_uuid`, `random_shuffle`,
+   `random_pet`, `random_integer`, `random_bytes`, `terraform_data`.
+   Silently skipped in `collectUngoverned` — neither governed nor
+   surfaced as a coverage gap. 3 unit tests prove: real gaps still
+   surface, utilities don't, `data.random_*` also skipped.
 
-5. **Realistic fixture as a permanent integration test** — the
-   `realistic-rds/` fixture is already in the repo but not wired into
-   `check.test.ts`. Add it as a test that asserts the expected
-   violation/passed/ungoverned counts.
+5. ✅ **DONE — Realistic fixture as a permanent integration test** —
+   `realistic-rds/` wired into `check.test.ts` with pinned assertions:
+   3 violations, 1 couldNotEvaluate, 0 ungoverned (random_password
+   silently skipped), 32 passed.
 
-6. **Dogfood on a real production repo** — the #1 priority from the
-   honest assessment. Run `npx @dotzen/dotzen@latest check` against a
-   real Terraform repo (terraform-aws-modules or an internal codebase).
-   Measure: (a) could-not-evaluate rate, (b) ungoverned rate,
-   (c) false positives. This data determines the eval-gap work priority.
+6. ✅ **DONE — Dogfood via AI-style fixtures × 3 clouds** — three
+   comprehensive AI-generated Terraform fixtures created
+   (`realistic-aws/`, `realistic-azure/`, `realistic-gcp/`), each ~25-40
+   resources with variables, locals, ternaries, `random_*` utilities,
+   local module calls, deliberately ungoverned resource types, and
+   couldNotEvaluate cases. Pinned integration tests assert v/p/cne/
+   ungoverned counts per cloud. Results:
+   - AWS: 1 violation, 55 passed, 1 CNE, 1 ungoverned.
+   - Azure: 4 violations, 13 passed, 1 CNE, 1 ungoverned.
+   - GCP: 4 violations, 9 passed, 1 CNE, 1 ungoverned.
+   Total recognized types: 1003 (was 83). Ungoverned noise on real
+   module repos should drop from ~50% to <5%.
+
+**Bug fix:** `findTfFiles` in `parse.ts` was using `fs.readdirSync(dir,
+{ recursive: true })` — recursive scan discovered `.tf` files in
+`modules/` subdirectories directly AND `followModules` re-normalized
+them via `module {}` calls → duplicate violations on governed resources
+inside local modules. Fixed: non-recursive scan (top-level `.tf` files
+only), matching Terraform's own root-module loading behavior.
+
+**Vocabulary verification:** All 1003 enum values verified against the
+actual HashiCorp Terraform provider documentation (AWS 1678 resources,
+Azure 1103, GCP 1465 with IAM expansion). Results: AWS 484/484 (100%),
+GCP 201/201 (100%), Azure 266/318 (84% — the 52 unverified are
+deprecated-but-real resources like `azurerm_app_service`,
+`azurerm_function_app`, `azurerm_mariadb_*`, `azurerm_mysql_server`,
+`azurerm_postgresql_server` that are still in the provider but not in
+current docs; kept intentionally). 63 fabricated/wrong-named values
+removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
+`ec2_transit_gateway` (correct Terraform resource type includes the
+`ec2_` prefix).
+
+---
+
+## Next steps (post-verification)
+
+1. **Rules for the new vocabulary** — the ~920 new recognized types are
+   not-yet-governed. They're recognized (not ungoverned) but no rule
+   targets them. Prioritize by security impact: CloudWatch log retention,
+   S3 bucket logging, IAM user policies, EKS node group security, GKE
+   workload identity, etc.
+
+2. **Ref-branch ternary resolution** — the #1 `couldNotEvaluate` source
+   across all 3 cloud fixtures: `${local.is_prod ? scalar : var.ref}`
+   where the false branch is a reference, not a scalar. The conservative
+   ternary refuses non-scalar branches. Fix: if the chosen branch is a
+   sole `var`/`local` ref, resolve it through scope (same as `resolveValue`
+   does for bare refs). One ~20-line change in `tryEvalTernary`.
+
+3. **Real-world dogfood** — run `npx @dotzen/dotzen@latest check` against
+   `terraform-aws-modules` or actual AI-generated code. The self-validated
+   fixtures prove no regression but not real-world readiness. Patterns to
+   watch for: complex `dynamic` blocks, `templatefile()`,
+   `terraform_remote_state`, provider `for_each`, deeply nested `for`.
+
+4. **Azure deprecated-resource verification** — the 52 "deprecated but
+   real" Azure types were kept based on knowledge, not source verification.
+   An `azurerm` provider upgrade could silently drop some. Verify against
+   the provider's Go `ResourcesMap`.

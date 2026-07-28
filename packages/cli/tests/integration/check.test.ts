@@ -631,4 +631,155 @@ describe('check (end-to-end)', () => {
       expect(flagged.has('variable.safe_secret')).toBe(false)
     }
   })
+
+  it('realistic RDS fixture — exercises local.is_production ternary, tags, and ungoverned random_password (ROADMAP #5)', async () => {
+    // The realistic-rds fixture (variables, locals, ternaries on
+    // `local.is_production = var.environment == "prd"`, supporting resources
+    // including a `random_password` not in the vocabulary) is the
+    // representative shape of a real module repo. This test pins the
+    // expected v/p/cne/ungoverned counts so a regression in the conservative
+    // ternary eval (#16 / ROADMAP #3), tag resolution, or ungoverned
+    // surfacing fails the gate. Update counts only when behavior changes
+    // deliberately.
+    const r = await check(fixture('realistic-rds'), '1.3.0')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    // Three violations:
+    //   - required-ownership-tags on the RDS instance (tags use 'Team' capital
+    //     key; spec requires Tag.Team = 'team' lowercase — case-sensitive key
+    //     match, real semantic mismatch).
+    //   - required-ownership-tags on the SG (same tag-shape issue).
+    //   - encrypted-state on the synthetic `terraform` resource (no
+    //     `terraform {}` block → local default backend).
+    expect(r.value.violations).toHaveLength(3)
+    const rdsTagViol = r.value.violations.find(
+      (v) =>
+        v.ruleId === 'required-ownership-tags' &&
+        v.resource === 'aws_db_instance.this',
+    )
+    expect(rdsTagViol).toBeDefined()
+    expect(rdsTagViol?.line).toBe(172)
+    const sgTagViol = r.value.violations.find(
+      (v) =>
+        v.ruleId === 'required-ownership-tags' &&
+        v.resource === 'aws_security_group.db',
+    )
+    expect(sgTagViol).toBeDefined()
+    expect(sgTagViol?.line).toBe(145)
+    const stateViol = r.value.violations.find(
+      (v) => v.ruleId === 'encrypted-state',
+    )
+    expect(stateViol?.resource).toBe('terraform')
+    expect(stateViol?.line).toBe(1)
+    // Passed counts: rules × resources that evaluated cleanly. The exact
+    // number shifts with vocabulary; assert a sane floor plus that it stays
+    // >= current (regression guard).
+    expect(r.value.passed).toBeGreaterThanOrEqual(30)
+    // One could-not-evaluate: rds-backup-retention — the fixture's
+    // `backup_retention_period = local.is_production ? 30 : var.db_backup_retention_days`
+    // has a REFERENCE false-branch. The conservative ternary evaluator
+    // (#16) only resolves scalar branches; a ref branch stays unresolved —
+    // honest degrade, not a false verdict. This is the OPEN follow-on to
+    // ROADMAP #3 (bare-ref COND resolved the boolean; ref BRANCH still
+    // needs scope-following).
+    expect(r.value.couldNotEvaluate).toHaveLength(1)
+    const cne = r.value.couldNotEvaluate[0]
+    expect(cne?.ruleId).toBe('rds-backup-retention')
+    expect(cne?.resource).toBe('aws_db_instance.this')
+    expect(cne?.reason).toMatch(/unresolved reference/i)
+    // Zero ungoverned: the fixture contains a `random_password.db_password`
+    // (ROADMAP #4 — Terraform built-in utility resource with no security
+    // surface). UTILITY_TYPES silently skips it: neither governed nor
+    // surfaced as a coverage gap. Real coverage gaps (anything NOT in
+    // KNOWN_TYPES ∪ UTILITY_TYPES) still surface.
+    expect(r.value.ungoverned).toHaveLength(0)
+  })
+
+  it('realistic AWS fixture — comprehensive AI-style module with expanded vocabulary (ROADMAP #1/#6)', async () => {
+    const r = await check(fixture('realistic-aws'), '1.3.0')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.violations).toHaveLength(1)
+    const stateViol = r.value.violations.find(
+      (v) => v.ruleId === 'encrypted-state',
+    )
+    expect(stateViol?.resource).toBe('terraform')
+    expect(stateViol?.line).toBe(1)
+    expect(r.value.passed).toBeGreaterThanOrEqual(50)
+    expect(r.value.couldNotEvaluate).toHaveLength(1)
+    const cne = r.value.couldNotEvaluate[0]
+    expect(cne?.ruleId).toBe('rds-backup-retention')
+    expect(cne?.resource).toBe('aws_db_instance.this')
+    expect(cne?.reason).toMatch(/unresolved reference/i)
+    expect(r.value.ungoverned).toHaveLength(1)
+    expect(r.value.ungoverned[0]?.type).toBe('aws_prometheus_workspace')
+  })
+
+  it('realistic Azure fixture — comprehensive AI-style module with expanded vocabulary (ROADMAP #2/#6)', async () => {
+    const r = await check(fixture('realistic-azure'), '1.3.0')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.violations).toHaveLength(4)
+    const nsgViol = r.value.violations.find(
+      (v) => v.ruleId === 'nsg-no-public-ssh',
+    )
+    expect(nsgViol?.resource).toBe('azurerm_network_security_group.db')
+    expect(nsgViol?.line).toBe(93)
+    const storageViol = r.value.violations.find(
+      (v) => v.ruleId === 'storage-https-only',
+    )
+    expect(storageViol?.resource).toBe('azurerm_storage_account.data')
+    expect(storageViol?.line).toBe(129)
+    const rbacViol = r.value.violations.find(
+      (v) => v.ruleId === 'rbac-no-contributor',
+    )
+    expect(rbacViol?.resource).toBe('azurerm_role_assignment.contributor')
+    expect(rbacViol?.line).toBe(328)
+    const stateViol = r.value.violations.find(
+      (v) => v.ruleId === 'encrypted-state',
+    )
+    expect(stateViol?.resource).toBe('terraform')
+    expect(stateViol?.line).toBe(1)
+    expect(r.value.passed).toBeGreaterThanOrEqual(12)
+    expect(r.value.couldNotEvaluate).toHaveLength(1)
+    const cne = r.value.couldNotEvaluate[0]
+    expect(cne?.ruleId).toBe('sql-min-tls')
+    expect(cne?.resource).toBe('azurerm_mssql_server.main')
+    expect(cne?.reason).toMatch(/unresolved/i)
+    expect(r.value.ungoverned).toHaveLength(1)
+    expect(r.value.ungoverned[0]?.type).toBe('azurerm_iot_security_solution')
+  })
+
+  it('realistic GCP fixture — comprehensive AI-style module with expanded vocabulary (ROADMAP #2/#6)', async () => {
+    const r = await check(fixture('realistic-gcp'), '1.3.0')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.violations).toHaveLength(4)
+    const sshViol = r.value.violations.find((v) => v.ruleId === 'no-public-ssh')
+    expect(sshViol?.resource).toBe('google_compute_firewall.ssh')
+    expect(sshViol?.line).toBe(85)
+    const iamViol = r.value.violations.find(
+      (v) => v.ruleId === 'no-public-iam-members',
+    )
+    expect(iamViol?.resource).toBe('google_storage_bucket_iam_member.public')
+    expect(iamViol?.line).toBe(116)
+    const ipViol = r.value.violations.find(
+      (v) => v.ruleId === 'instance-no-public-ip',
+    )
+    expect(ipViol?.resource).toBe('google_compute_instance.bastion')
+    expect(ipViol?.line).toBe(206)
+    const stateViol = r.value.violations.find(
+      (v) => v.ruleId === 'encrypted-state',
+    )
+    expect(stateViol?.resource).toBe('terraform')
+    expect(stateViol?.line).toBe(1)
+    expect(r.value.passed).toBeGreaterThanOrEqual(8)
+    expect(r.value.couldNotEvaluate).toHaveLength(1)
+    const cne = r.value.couldNotEvaluate[0]
+    expect(cne?.ruleId).toBe('gke-no-legacy-abac')
+    expect(cne?.resource).toBe('google_container_cluster.main')
+    expect(cne?.reason).toMatch(/unresolved/i)
+    expect(r.value.ungoverned).toHaveLength(1)
+    expect(r.value.ungoverned[0]?.type).toBe('google_workflows_workflow')
+  })
 })

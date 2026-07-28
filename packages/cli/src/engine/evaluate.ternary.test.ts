@@ -208,4 +208,125 @@ describe('evaluate — conservative ternary eval (#16)', () => {
       value: true,
     })
   })
+
+  it('resolves a bare-ref condition whose local is a boolean literal', () => {
+    // local.is_prod = true; ternary on the bare ref.
+    const parsed = {
+      locals: [{ is_prod: true }],
+      resource: {
+        aws_db_instance: {
+          x: [{ storage_encrypted: '${local.is_prod ? true : false}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.storage_encrypted).toEqual({
+      kind: 'literal',
+      value: true,
+    })
+    const r = evaluate([encRule], res)
+    expect(r.violations).toHaveLength(0)
+    expect(r.couldNotEvaluate).toHaveLength(0)
+  })
+
+  it('resolves a bare-ref condition whose local is a comparison interpolation (ROADMAP #3)', () => {
+    // local.is_prod = "${var.env == \"prd\"}" — the canonical realistic-fixture
+    // pattern. The ternary condition is a bare ref; the local's scope entry
+    // is itself a conservative comparison interpolation.
+    const parsed = {
+      variable: { env: [{ default: 'prd' }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [{ storage_encrypted: '${local.is_prod ? true : false}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.storage_encrypted).toEqual({
+      kind: 'literal',
+      value: true,
+    })
+    const r = evaluate([encRule], res)
+    expect(r.violations).toHaveLength(0)
+    expect(r.couldNotEvaluate).toHaveLength(0)
+  })
+
+  it('resolves a bare-ref condition through a comparison local when the comparison is false', () => {
+    const parsed = {
+      variable: { env: [{ default: 'dev' }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [{ storage_encrypted: '${local.is_prod ? true : false}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.storage_encrypted).toEqual({
+      kind: 'literal',
+      value: false,
+    })
+    const r = evaluate([encRule], res)
+    expect(r.violations).toHaveLength(1)
+    expect(r.couldNotEvaluate).toHaveLength(0)
+  })
+
+  it('stays unresolved when a bare-ref condition resolves to a non-boolean literal (string) — no guess', () => {
+    // Terraform forbids non-boolean conditions; a string local is a type
+    // mismatch, not a truthy value. Refuse rather than guess.
+    const parsed = {
+      locals: [{ name: 'prod' }],
+      resource: {
+        aws_db_instance: {
+          x: [{ storage_encrypted: '${local.name ? true : false}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.storage_encrypted?.kind).toBe('unresolved')
+    const r = evaluate([encRule], res)
+    expect(r.couldNotEvaluate).toHaveLength(1)
+  })
+
+  it("stays unresolved when a bare-ref condition's comparison local is unresolvable — no guess", () => {
+    // local.is_prod = var.env == "prd" but var.env has no default.
+    const parsed = {
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [{ storage_encrypted: '${local.is_prod ? true : false}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.storage_encrypted?.kind).toBe('unresolved')
+    const r = evaluate([encRule], res)
+    expect(r.couldNotEvaluate).toHaveLength(1)
+  })
 })

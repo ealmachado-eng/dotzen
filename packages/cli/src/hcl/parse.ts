@@ -31,7 +31,7 @@ import {
 } from './normalize'
 
 function findTfFiles(dir: string): string[] {
-  const entries = fs.readdirSync(dir, { recursive: true }) as string[]
+  const entries = fs.readdirSync(dir) as string[]
   return entries.filter((e) => e.endsWith('.tf')).map((e) => path.join(dir, e))
 }
 

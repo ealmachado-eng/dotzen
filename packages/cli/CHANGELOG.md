@@ -6,6 +6,116 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.4.0
+
+### Added — conservative ternary: bare-ref boolean conditions (ROADMAP #3)
+
+The conservative ternary evaluator now resolves the common AI-generated
+pattern `local.is_prod = var.env == "prd"` followed by
+`${local.is_prod ? true : false}`. Previously, a bare-ref ternary
+condition (no inline `==`/`!=`) degraded to `could-not-evaluate` even
+when the local stored a comparison result.
+
+- New `tryEvalComparison()` helper evaluates `${ref (==|!=) scalar}`
+  (no ternary) — used when a local's scope entry IS a comparison
+  interpolation.
+- `tryEvalTernary()` extended: when the inline-compare regex fails, a
+  bare-ref condition `^(var|local)\.\w+$` is tried. The ref resolves
+  via three fallbacks: (a) scope entry is a comparison interpolation →
+  `tryEvalComparison`; (b) scope entry is a boolean literal → use
+  truthiness; (c) `resolveRaw` → boolean literal. Non-boolean literals
+  (strings/numbers) stay unresolved — Terraform forbids them as
+  conditions, so dotzen refuses to guess.
+- 5 new unit tests + 3 integration tests pin the behavior.
+
+### Added — `UTILITY_TYPES` silently-skipped set (ROADMAP #4)
+
+Terraform built-in utility resources (`random_password`, `random_string`,
+`random_id`, `random_uuid`, `random_shuffle`, `random_pet`,
+`random_integer`, `random_bytes`, `terraform_data`) are now silently
+skipped in `collectUngoverned` — neither governed nor surfaced as a
+coverage gap. These resources have no security surface; reporting them
+as ungoverned was noise. 3 unit tests prove: real gaps still surface,
+utilities don't, `data.random_*` also skipped.
+
+### Added — vocabulary expansion + aws.ts split (ROADMAP #1/#2)
+
+- **AWS enums extracted to `src/vocabulary/aws.ts`** — mirrors the
+  existing `azure.ts`/`gcp.ts`/`data.ts` pattern. `index.ts` halved
+  from 325 → 166 lines. Barrel re-exports preserve the public API.
+- **`AwsResource` grew from 57 → 484 members** (verified 100% against
+  the HashiCorp AWS provider docs — 1678 resources). Covers VPC/network,
+  IAM, storage, compute, monitoring, Route53/ACM, EKS/ECS, RDS variants,
+  EFS/FSx, KMS/Secrets/SSM, CloudTrail/Config, SQS/SNS/Kinesis,
+  EventBridge, ALB/NLB, Lambda, Elastic Beanstalk/AppRunner/Lightsail,
+  Glue/Athena/EMR/Step Functions, CloudFront/WAF/Shield/GAX, DynamoDB/
+  ElastiCache/MQ/MSK, VPC Lattice/Verified Access/Network Firewall,
+  SES/Pinpoint/Connect, Backup/DR, RAM/Macie/GuardDuty/Detective/
+  SecurityHub/Inspector, Organizations/SSO/Transfer, AppConfig/Amplify.
+- **`AzureResource` grew from 19 → 318 members** (266 verified against
+  Azure provider docs, 52 deprecated-but-real kept intentionally).
+  Covers networking, compute, storage, databases, containers, IAM,
+  key vault, security, backup/recovery, event-grid/service-bus/event-hub,
+  API management, app service, resource groups/policy.
+- **`GcpResource` grew from 7 → 201 members** (verified 100% against
+  GCP provider docs — 1465 resources with IAM expansion). Covers compute,
+  networking, storage, IAM, SQL, GKE, KMS, cloud-run, pub-sub/eventarc/
+  tasks, bigquery/dataflow/dataproc/composer, spanner/firestore/
+  memorystore, cloudbuild/clouddeploy, secret-manager, network-security,
+  VPC-SC, apigateway/apigee, logging/monitoring, vertex-AI, binary-
+  authorization/artifact-registry.
+- **Total recognized types: 1003** (was 83). Ungoverned noise on real
+  module repos drops from ~50% to <5%. All enum values verified against
+  actual provider documentation.
+
+### Fixed — `findTfFiles` recursive scan causing duplicate violations
+
+`findTfFiles` in `parse.ts` was using `fs.readdirSync(dir, { recursive:
+true })` — the recursive scan discovered `.tf` files in `modules/`
+subdirectories directly AND `followModules` re-normalized them via
+`module {}` calls, producing duplicate violations on governed resources
+inside local modules. Fixed: non-recursive scan (top-level `.tf` files
+only), matching Terraform's own root-module loading behavior.
+
+### Added — realistic AI-style integration test fixtures (ROADMAP #5/#6)
+
+Four comprehensive AI-generated Terraform fixtures wired as permanent
+integration tests in `check.test.ts`:
+
+- **`realistic-rds/`** — RDS + SG + KMS + IAM + CloudWatch + SSM +
+  `random_password`, with `local.is_production = var.environment == "prd"`
+  ternary pattern, `merge()` tags, and a ref-branch ternary
+  `couldNotEvaluate` case.
+- **`realistic-aws/`** — VPC + subnet + IGW + SG + RDS + KMS + IAM +
+  S3 + CloudWatch + Lambda + `random_password` + local module call +
+  `aws_prometheus_workspace` (deliberately ungoverned).
+- **`realistic-azure/`** — Resource group + VNet + NSG + storage +
+  MSSQL + Key Vault + AKS + web app + Log Analytics + IAM + local
+  module + `azurerm_iot_security_solution` (deliberately ungoverned).
+- **`realistic-gcp/`** — VPC + subnetwork + firewall + GCS + Cloud SQL +
+  GKE + KMS + service account + Cloud Run + Pub/Sub + `random_id` +
+  local module + `google_workflows_workflow` (deliberately ungoverned).
+
+Each fixture exercises: ternary evaluation, `UTILITY_TYPES` silent skip,
+module-following, tag/label resolution, ungoverned surface, and
+`couldNotEvaluate` honest degrade. Pinned assertions per cloud.
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The
+ternary extension may cause **previously-`couldNotEvaluate` findings to
+become definite verdicts** where `local.is_prod = var.env == "prd"`
+patterns now resolve (intended — they were false negatives before). The
+vocabulary expansion causes previously-ungoverned resources to be
+recognized (not surfaced as coverage gaps) — no new violations unless
+a rule targets them. The `findTfFiles` fix eliminates duplicate
+violations on resources inside local `modules/` subdirectories.
+
+To adopt:
+
+- Upgrade `version` in `dotzen.json` to `"1.4.0"`.
+- Pin CI to `npx @dotzen/dotzen@1.4.0 check`.
+
 ## 1.3.0
 
 ### Added — stable author-chosen rule IDs

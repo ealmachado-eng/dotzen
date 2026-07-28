@@ -84,6 +84,28 @@ const KNOWN_TYPES = new Set<string>([
   ...Object.values(DataResource),
 ])
 
+/**
+ * Terraform built-in / utility provider resources with no security surface
+ * (ROADMAP item 4). `random_password` / `random_string` / `random_id` /
+ * `random_uuid` / `random_shuffle` / `random_pet` / `random_integer` /
+ * `random_bytes` — the `random` provider's primitives. Also `terraform_data`
+ * (the built-in resource-as-data wrapper). These are silently skipped: NOT
+ * governed (no rules apply) and NOT surfaced as ungoverned (no coverage gap
+ * to report — they're plumbing, not infrastructure). Adding any future
+ * utility resource is a one-line append here.
+ */
+const UTILITY_TYPES = new Set<string>([
+  'random_password',
+  'random_string',
+  'random_id',
+  'random_uuid',
+  'random_shuffle',
+  'random_pet',
+  'random_integer',
+  'random_bytes',
+  'terraform_data',
+])
+
 const isInterpolated = (s: string): boolean => s.includes('${')
 
 const asObject = (o: unknown): Record<string, unknown> =>
@@ -182,13 +204,49 @@ function topLevelIndex(s: string, ch: string): number {
 }
 
 /**
+ * CONSERVATIVE comparison evaluator — the no-ternary form
+ * `${<var|local>.x (==|!=) <scalar>}`. Returns the boolean result, or
+ * undefined for anything else (compound conditions, non-scalar operands,
+ * unresolvable refs, ternaries). Used by `tryEvalTernary` to resolve a
+ * bare-ref condition whose scope entry IS a comparison interpolation
+ * (`local.is_prod = var.env == "prd"`), the pattern ROADMAP item 3 calls out.
+ */
+function tryEvalComparison(
+  raw: string,
+  scope: Scope,
+  depth: number,
+): boolean | undefined {
+  if (!isInterpolated(raw) || depth <= 0) return undefined
+  let s = raw.trim()
+  if (s.startsWith('${') && s.endsWith('}')) s = s.slice(2, -1).trim()
+  // A ternary is not a comparison — let tryEvalTernary handle it.
+  if (topLevelIndex(s, '?') !== -1) return undefined
+  const cm = /^(var|local)\.([A-Za-z0-9_-]+)\s*(==|!=)\s*(.+)$/.exec(s)
+  if (!cm) return undefined
+  const refKey = `${cm[1]}.${cm[2]}`
+  const condScalar = parseHclScalar(cm[4]!)
+  if (condScalar === undefined) return undefined
+  const refRaw = resolveRaw(`\${${refKey}}`, scope, depth - 1)
+  if (refRaw === undefined) return undefined
+  const refLit = toValue(refRaw)
+  if (refLit.kind !== 'literal') return undefined
+  return cm[3] === '=='
+    ? refLit.value === condScalar
+    : refLit.value !== condScalar
+}
+
+/**
  * CONSERVATIVE ternary evaluator (#16). Evaluates ONLY the safe form
  * `${<var|local>.x (==|!=) <scalar> ? <scalar> : <scalar>}` — a strict-equality
  * ternary whose ref resolves (via scope) to a literal and whose branches are
- * both scalar literals. Returns the chosen literal NormalizedValue, or
- * undefined for ANYTHING else (compound conditions, nested ternaries, non-
- * scalar branches, unresolvable refs, non-ternary exprs) so the caller falls
- * through to the honest unresolved path — never a guess, never a false verdict.
+ * both scalar literals — OR the bare-ref form `${<ref> ? <scalar> : <scalar>}`
+ * where <ref> resolves to a boolean literal (directly, or through a local
+ * whose value is itself a conservative comparison interpolation — ROADMAP #3:
+ * `local.is_prod = var.env == "prd"`). Returns the chosen literal
+ * NormalizedValue, or undefined for ANYTHING else (compound conditions, nested
+ * ternaries, non-scalar branches, unresolvable refs, non-boolean bare-ref
+ * conditions, non-ternary exprs) so the caller falls through to the honest
+ * unresolved path — never a guess, never a false verdict.
  */
 function tryEvalTernary(
   raw: string,
@@ -206,18 +264,44 @@ function tryEvalTernary(
   if (cIdx === -1) return undefined
   const trueB = rest.slice(0, cIdx).trim()
   const falseB = rest.slice(cIdx + 1).trim()
-  // Condition: <ref> (==|!=) <scalar>  (ref-first only — the common form).
+  // Condition form 1: <ref> (==|!=) <scalar>  (inline compare — the original #16 path).
   const cm = /^(var|local)\.([A-Za-z0-9_-]+)\s*(==|!=)\s*(.+)$/.exec(cond)
-  if (!cm) return undefined
-  const refKey = `${cm[1]}.${cm[2]}`
-  const condScalar = parseHclScalar(cm[4]!)
-  if (condScalar === undefined) return undefined
-  const refRaw = resolveRaw(`\${${refKey}}`, scope, depth - 1)
-  if (refRaw === undefined) return undefined
-  const refLit = toValue(refRaw)
-  if (refLit.kind !== 'literal') return undefined
-  const eq = refLit.value === condScalar
-  const chosen = (cm[3] === '==' ? eq : !eq) ? trueB : falseB
+  let chosen: string | undefined
+  if (cm) {
+    const refKey = `${cm[1]}.${cm[2]}`
+    const condScalar = parseHclScalar(cm[4]!)
+    if (condScalar === undefined) return undefined
+    const refRaw = resolveRaw(`\${${refKey}}`, scope, depth - 1)
+    if (refRaw === undefined) return undefined
+    const refLit = toValue(refRaw)
+    if (refLit.kind !== 'literal') return undefined
+    const eq = refLit.value === condScalar
+    chosen = (cm[3] === '==' ? eq : !eq) ? trueB : falseB
+  } else {
+    // Condition form 2: bare <ref> — must resolve to a boolean (directly or
+    // via a comparison stored in a local; ROADMAP item 3). Non-boolean literals
+    // (strings/numbers) are NOT truthy in Terraform — refuse to guess.
+    const bm = /^(var|local)\.([A-Za-z0-9_-]+)$/.exec(cond)
+    if (!bm) return undefined
+    const refKey = `${bm[1]}.${bm[2]}`
+    let bool: boolean | undefined
+    // (a) scope entry is a raw interpolation string → try evaluating it as a
+    //     comparison (local.is_prod = "${var.env == \"prd\"}").
+    const scopeRaw = scope.get(refKey)
+    if (typeof scopeRaw === 'string' && isInterpolated(scopeRaw)) {
+      bool = tryEvalComparison(scopeRaw, scope, depth - 1)
+    }
+    // (b) fall back to resolveRaw → boolean literal (local.is_prod = true).
+    if (bool === undefined) {
+      const refRaw = resolveRaw(`\${${refKey}}`, scope, depth - 1)
+      if (refRaw === undefined) return undefined
+      const refLit = toValue(refRaw)
+      if (refLit.kind !== 'literal' || typeof refLit.value !== 'boolean')
+        return undefined
+      bool = refLit.value
+    }
+    chosen = bool ? trueB : falseB
+  }
   const chosenScalar = parseHclScalar(chosen)
   if (chosenScalar === undefined) return undefined
   return { kind: 'literal', value: chosenScalar }
@@ -1861,6 +1945,10 @@ export function collectUngoverned(
   const out: { type: string; name: string; file: string; line: number }[] = []
   for (const [type, byName] of Object.entries(parsed.resource ?? {})) {
     if (KNOWN_TYPES.has(type)) continue
+    // Utility types (random_*, terraform_data) have no security surface —
+    // NOT a coverage gap to surface, just plumbing. Silently skipped per
+    // ROADMAP #4 (a visible tag-noise report would be worse than silent).
+    if (UTILITY_TYPES.has(type)) continue
     for (const name of Object.keys(byName)) {
       out.push({ type, name, file, line: findLine(rawText, type, name) })
     }
@@ -1868,6 +1956,7 @@ export function collectUngoverned(
   for (const [type, byName] of Object.entries(parsed.data ?? {})) {
     const dataType = `data.${type}`
     if (KNOWN_TYPES.has(dataType)) continue
+    if (UTILITY_TYPES.has(type)) continue
     for (const name of Object.keys(byName)) {
       out.push({
         type: dataType,
