@@ -18,7 +18,16 @@ function dotzenJson(
 }
 
 function specTs(): string {
-  return `import { rule, AwsResource, Port, Tag, AwsAttribute, Acl, Provisioner } from '@dotzen/dotzen'
+  return `import {
+  rule,
+  AwsResource,
+  AwsAttribute,
+  Port,
+  Tag,
+  Acl,
+  Provisioner,
+  Effect,
+} from '@dotzen/dotzen'
 
 // Prose as Code: each rule reads like a policy statement. Autocomplete
 // guides every choice, and a typo is a compile error, not a silent gap.
@@ -62,6 +71,24 @@ export const spec = [
     .denyAcl(Acl.PublicRead, Acl.PublicReadWrite)
     .message('S3 buckets must not have a public ACL'),
 
+  // No hardcoded secrets — denyLiteral catches plaintext passwords on
+  // governed attributes (e.g. RDS password). References are the safe pattern.
+  rule()
+    .resource(AwsResource.DbInstance)
+    .denyLiteral(AwsAttribute.Password)
+    .message('RDS passwords must be a reference, not a literal')
+    .rationale('No plaintext secrets — use Secrets Manager / SSM'),
+
+  // No inline IAM policies — managed policies are auditable and reusable.
+  // denyIfAssociated flags a resource if a child resource references it.
+  rule()
+    .id('iam-role-no-inline-policy')
+    .resource(AwsResource.IamRole)
+    .denyIfAssociated(AwsResource.IamRolePolicy, AwsAttribute.Role)
+    .onViolation(Effect.Warn)
+    .message('IAM roles must not have inline policies — use managed policies')
+    .rationale('Centralized policy management — PCI 7.2.1, NIST AC-2(1)'),
+
   // Supply-chain: no arbitrary command execution on apply/destroy.
   rule()
     .allResources()
@@ -89,6 +116,8 @@ export const spec = [
   // Suppress a known-acceptable finding with an inline comment:
   //   # dotzen:ignore: <reason>
   //   resource "aws_security_group" "bastion" { ... }
+  // Or suppress a single rule:
+  //   # dotzen:ignore no-public-ssh-rdp: bastion host — SSH is intentional
 ]
 `
 }
