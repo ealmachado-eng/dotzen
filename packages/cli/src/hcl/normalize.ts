@@ -104,6 +104,11 @@ const UTILITY_TYPES = new Set<string>([
   'random_integer',
   'random_bytes',
   'terraform_data',
+  'null_resource',
+  'time_sleep',
+  'tls_private_key',
+  'tls_self_signed_cert',
+  'tls_locally_signed_cert',
 ])
 
 const isInterpolated = (s: string): boolean => s.includes('${')

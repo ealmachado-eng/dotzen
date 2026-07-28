@@ -1090,10 +1090,22 @@ function evalInsensitiveSecretOutput(
 }
 
 /**
+ * Config-flag suffixes that cause false positives when the variable name
+ * also contains a secret-like word. e.g. `secret_rotation_enabled` contains
+ * "secret" but is a boolean feature flag, not a secret value. These are
+ * skipped by `evalInsensitiveVariable` (not by `evalPlaintextLocalSecret` —
+ * a local named `secret_rotation_enabled = "my-password"` IS suspicious).
+ */
+const CONFIG_FLAG_SUFFIX =
+  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length)$/i
+
+/**
  * Binding-surface: a `variable` whose name looks like a secret must be marked
  * `sensitive = true` (else its value leaks in plans / CI logs). Passes a
  * non-secret-named variable and a sensitive one; degrades to
  * could-not-evaluate when the `sensitive` flag is itself an unresolvable var.
+ * Skips config-flag variables (e.g. `secret_rotation_enabled`) whose name
+ * contains a secret word but is a boolean/numeric feature flag, not a secret.
  */
 function evalInsensitiveVariable(
   _c: DenyInsensitiveVariable,
@@ -1101,6 +1113,7 @@ function evalInsensitiveVariable(
 ): ConditionOutcome {
   if (b.kind !== 'variable') return { kind: 'pass' }
   if (!SECRET_NAME_PATTERN.test(b.name)) return { kind: 'pass' }
+  if (CONFIG_FLAG_SUFFIX.test(b.name)) return { kind: 'pass' }
   if (b.sensitive === true) return { kind: 'pass' }
   if (b.sensitive === 'unresolved')
     return {

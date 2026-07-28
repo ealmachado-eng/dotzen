@@ -6,6 +6,87 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.5.0
+
+### Fixed — dogfood-driven improvements from real-world Terraform modules
+
+Ran dotzen v1.4.3 against three popular HashiCorp/community Terraform
+modules (terraform-aws-vpc, Azure/terraform-azurerm-aks,
+terraform-google-kubernetes-engine). Findings drove four fixes:
+
+**False positives eliminated — config-flag variables (breaking for
+`denyInsensitiveVariable`):**
+
+Variables whose name contains a secret-like word (PASSWORD, SECRET, KEY,
+TOKEN) but ends with a config-flag suffix (`_enabled`, `_disabled`,
+`_interval`, `_timeout`, `_count`, `_mode`, `_provider`, `_addon`,
+`_via_dns`, `_max_length`, `_min_length`) are now skipped by
+`denyInsensitiveVariable`. These are feature flags, not secrets — e.g.
+`secret_rotation_enabled`, `enable_secret_manager_addon`,
+`dns_enable_k8s_tokens_via_dns`. This eliminates 6 false-positive
+violations across the Azure AKS and GCP GKE modules.
+
+`denyPlaintextLocalSecret` is NOT affected — a local named
+`secret_rotation_enabled = "my-password"` is still suspicious.
+
+**`UTILITY_TYPES` expanded — `null_resource`, `time_sleep`, `tls_*`:**
+
+Added `null_resource`, `time_sleep`, `tls_private_key`,
+`tls_self_signed_cert`, `tls_locally_signed_cert` to `UTILITY_TYPES`.
+These are Terraform utility/provider resources with no security surface.
+Previously surfaced as ungoverned noise (7 entries on the Azure AKS
+module alone). Now silently skipped.
+
+**Data source vocabulary expanded:**
+
+Added 18 new `DataResource` enum members for commonly-used data sources
+that previously surfaced as ungoverned:
+
+- AWS: `aws_caller_identity`, `aws_partition`, `aws_region`,
+  `aws_availability_zones`, `aws_iam_policy_document`, `aws_eks_cluster`,
+  `aws_ssm_parameter`, `aws_sns_topic`, `aws_subnet`, `aws_vpc`,
+  `aws_security_group`.
+- Azure: `azurerm_client_config`, `azurerm_resource_group`,
+  `azurerm_virtual_network`, `azurerm_subnet`,
+  `azurerm_log_analytics_workspace`, `azurerm_user_assigned_identity`.
+- GCP: `google_compute_zones`, `google_container_engine_versions`,
+  `google_compute_subnetwork`, `google_client_config`,
+  `google_client_openid_userinfo`.
+
+**Azure vocabulary — `azapi_update_resource`:**
+
+Added `azapi_update_resource` to `AzureResource`. This is a real Azure
+provider resource used by AKS modules for imperative post-create API
+updates (node pool version, DNS config, proxy config). Previously
+surfaced as ungoverned (5 instances on the Azure AKS module).
+
+### Dogfood results (before → after)
+
+| Module    | Violations | CNE         | Ungoverned  |
+| --------- | ---------- | ----------- | ----------- |
+| AWS VPC   | 0 → 0      | 2 → 2       | 13 → 8      |
+| Azure AKS | 5 → 2      | 1 → 1       | 25 → 2      |
+| GCP GKE   | 4 → 2      | 14 → 14     | 8 → 4       |
+| **Total** | **9 → 4**  | **17 → 17** | **46 → 14** |
+
+- 5 false-positive violations eliminated (config-flag variables).
+- 32 ungoverned entries eliminated (utility types + data sources + azapi).
+- Remaining CNE: 2 AWS (data-source-based IAM policies — legitimately
+  unresolvable), 1 Azure (compound ternary), 14 GCP (interpolated IAM
+  members + complex firewall expressions — future improvement).
+- Remaining ungoverned: 8 AWS (VPC-specific types like
+  `aws_vpc_dhcp_options`, `aws_vpn_gateway_route_propagation`), 2 Azure
+  (`azurerm_monitor_data_collection_rule`), 4 GCP (`kubernetes_config_map`
+  — Kubernetes provider, not cloud provider).
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The
+config-flag suffix skip in `denyInsensitiveVariable` may cause
+previously-flagged violations on variables like `secret_rotation_enabled`
+to disappear. These were false positives — review to confirm the variable
+is indeed a config flag, not a secret value.
+
 ## 1.4.3
 
 ### Fixed — CHANGELOG formatting

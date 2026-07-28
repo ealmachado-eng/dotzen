@@ -359,6 +359,10 @@ export enum AzureResource {
   // HSM extras
   KeyVaultManagedHsmRoleAssignment = 'azurerm_key_vault_managed_hsm_role_assignment',
   KeyVaultManagedHsmRoleDefinition = 'azurerm_key_vault_managed_hsm_role_definition',
+  // AzAPI — imperative resource updates on Azure API resources not yet
+  // covered by the native azurerm provider. Real-world AKS modules use this
+  // for post-create cluster config (node pool version, DNS, proxy).
+  AzapiUpdateResource = 'azapi_update_resource',
 }
 
 export enum AzureAttribute {

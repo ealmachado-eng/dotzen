@@ -100,7 +100,7 @@ describe('evaluate — data sources governed as resources (type data.<t>)', () =
 
   it('skips data source types not in the vocabulary', () => {
     const parsed = {
-      data: { aws_caller_identity: { current: [{}] } },
+      data: { aws_workspaces: { current: [{}] } },
     }
     const res = normalize(
       parsed as never,
@@ -108,7 +108,7 @@ describe('evaluate — data sources governed as resources (type data.<t>)', () =
       '',
       buildScope([parsed as never]),
     )
-    // aws_caller_identity is not DataResource.AwsAmi → not normalized.
+    // aws_workspaces is not in DataResource → not normalized.
     expect(res).toHaveLength(0)
   })
 
