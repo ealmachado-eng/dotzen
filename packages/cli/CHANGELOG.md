@@ -16,6 +16,7 @@ where the false branch is a reference (not a scalar literal) degraded to
 `couldNotEvaluate` — even when `var.retention` had a default value.
 
 The chosen branch is now resolved via `resolveValue`, which handles:
+
 - Sole `var.*` / `local.*` refs → follows through scope chains
 - Nested ternaries → evaluates them
 - Comparison locals → resolves via `tryEvalComparison`
