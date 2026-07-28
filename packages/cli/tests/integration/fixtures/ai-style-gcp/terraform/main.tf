@@ -133,7 +133,7 @@ resource "google_container_cluster" "main" {
   remove_default_node_pool = true
   initial_node_count       = 1
 
-  labels = {
+  resource_labels = {
     team        = "platform"
     cost_center = "cc-2002"
     environment = "production"

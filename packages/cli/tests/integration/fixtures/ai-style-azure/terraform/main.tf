@@ -231,7 +231,7 @@ resource "azurerm_monitor_data_collection_rule" "main" {
   destinations {
     log_analytics {
       workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/${var.project_name}-rg/providers/Microsoft.OperationalInsights/workspaces/${var.project_name}-law"
-      workspace_name        = "${var.project_name}-law"
+      name                  = "${var.project_name}-law"
     }
   }
 
