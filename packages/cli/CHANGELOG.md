@@ -6,6 +6,39 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.4.2
+
+### Fixed — ref-branch ternary resolution (ROADMAP next-steps #2)
+
+The conservative ternary evaluator now resolves sole-ref branches through
+scope. Previously, a ternary like `${local.is_prod ? 30 : var.retention}`
+where the false branch is a reference (not a scalar literal) degraded to
+`couldNotEvaluate` — even when `var.retention` had a default value.
+
+The chosen branch is now resolved via `resolveValue`, which handles:
+- Sole `var.*` / `local.*` refs → follows through scope chains
+- Nested ternaries → evaluates them
+- Comparison locals → resolves via `tryEvalComparison`
+
+Compound branch expressions (`var.x * 2`, `coalesce(...)`, function calls)
+stay unresolved — conservative, never a guess.
+
+This eliminates the #1 `couldNotEvaluate` source across all 3 cloud
+fixtures. The realistic-rds and realistic-aws fixtures now report
+`couldNotEvaluate: 0` (was 1 each).
+
+5 new unit tests pin the behavior: ref branch with default, ref branch
+true-path, local chain (var→local→literal), no-default (still unresolved),
+compound expression (still unresolved).
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. Configs
+that previously produced `couldNotEvaluate` on ternary-with-ref-branch
+patterns will now produce **definite verdicts** (passes or violations)
+where the ref resolves to a literal. Review newly-surfaced violations —
+they reflect values that were always there but previously unresolvable.
+
 ## 1.4.1
 
 ### Added — first batch of rules for the expanded vocabulary (ROADMAP #1)

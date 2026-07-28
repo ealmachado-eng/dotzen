@@ -675,18 +675,11 @@ describe('check (end-to-end)', () => {
     // number shifts with vocabulary; assert a sane floor plus that it stays
     // >= current (regression guard).
     expect(r.value.passed).toBeGreaterThanOrEqual(30)
-    // One could-not-evaluate: rds-backup-retention — the fixture's
+    // Zero could-not-evaluate: the ternary
     // `backup_retention_period = local.is_production ? 30 : var.db_backup_retention_days`
-    // has a REFERENCE false-branch. The conservative ternary evaluator
-    // (#16) only resolves scalar branches; a ref branch stays unresolved —
-    // honest degrade, not a false verdict. This is the OPEN follow-on to
-    // ROADMAP #3 (bare-ref COND resolved the boolean; ref BRANCH still
-    // needs scope-following).
-    expect(r.value.couldNotEvaluate).toHaveLength(1)
-    const cne = r.value.couldNotEvaluate[0]
-    expect(cne?.ruleId).toBe('rds-backup-retention')
-    expect(cne?.resource).toBe('aws_db_instance.this')
-    expect(cne?.reason).toMatch(/unresolved reference/i)
+    // now resolves — the false branch (var.db_backup_retention_days, default 7)
+    // is a sole ref resolved through scope (ref-branch ternary resolution).
+    expect(r.value.couldNotEvaluate).toHaveLength(0)
     // Zero ungoverned: the fixture contains a `random_password.db_password`
     // (ROADMAP #4 — Terraform built-in utility resource with no security
     // surface). UTILITY_TYPES silently skips it: neither governed nor
@@ -706,11 +699,11 @@ describe('check (end-to-end)', () => {
     expect(stateViol?.resource).toBe('terraform')
     expect(stateViol?.line).toBe(1)
     expect(r.value.passed).toBeGreaterThanOrEqual(50)
-    expect(r.value.couldNotEvaluate).toHaveLength(1)
-    const cne = r.value.couldNotEvaluate[0]
-    expect(cne?.ruleId).toBe('rds-backup-retention')
-    expect(cne?.resource).toBe('aws_db_instance.this')
-    expect(cne?.reason).toMatch(/unresolved reference/i)
+    // Zero could-not-evaluate: the ternary
+    // `backup_retention_period = local.is_production ? 30 : var.db_backup_retention_days`
+    // now resolves — the false branch (var.db_backup_retention_days, default 7)
+    // is a sole ref resolved through scope (ref-branch ternary resolution).
+    expect(r.value.couldNotEvaluate).toHaveLength(0)
     expect(r.value.ungoverned).toHaveLength(1)
     expect(r.value.ungoverned[0]?.type).toBe('aws_prometheus_workspace')
   })

@@ -140,7 +140,9 @@ describe('evaluate — conservative ternary eval (#16)', () => {
     expect(res[0]?.attributes.storage_encrypted?.kind).toBe('unresolved')
   })
 
-  it('stays unresolved when a branch is a ref (not a scalar) — no guess', () => {
+  it('resolves a ref branch through scope (inline-compare condition)', () => {
+    // var.env == "prod" is true → picks var.a → var.a has default true.
+    // The ref branch resolves through scope (ref-branch resolution).
     const parsed = {
       variable: { env: [{ default: 'prod' }], a: [{ default: true }] },
       resource: {
@@ -155,7 +157,10 @@ describe('evaluate — conservative ternary eval (#16)', () => {
       '',
       buildScope([parsed as never]),
     )
-    expect(res[0]?.attributes.storage_encrypted?.kind).toBe('unresolved')
+    expect(res[0]?.attributes.storage_encrypted).toEqual({
+      kind: 'literal',
+      value: true,
+    })
   })
 
   it('stays unresolved for a nested ternary in a branch — no guess', () => {
@@ -328,5 +333,139 @@ describe('evaluate — conservative ternary eval (#16)', () => {
     expect(res[0]?.attributes.storage_encrypted?.kind).toBe('unresolved')
     const r = evaluate([encRule], res)
     expect(r.couldNotEvaluate).toHaveLength(1)
+  })
+
+  it('resolves a ref branch through scope (local.is_prod ? 30 : var.retention)', () => {
+    // The false branch is a var ref with a default — should resolve to
+    // the default value (7), not degrade to could-not-evaluate.
+    const parsed = {
+      variable: { env: [{ default: 'dev' }], retention: [{ default: 7 }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [
+            {
+              backup_retention_period: '${local.is_prod ? 30 : var.retention}',
+            },
+          ],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.backup_retention_period).toEqual({
+      kind: 'literal',
+      value: 7,
+    })
+  })
+
+  it('resolves a ref branch through scope when the true branch is chosen', () => {
+    // env=prd → is_prod=true → picks the true branch (30, a scalar).
+    // The false branch (var.retention) is NOT evaluated.
+    const parsed = {
+      variable: { env: [{ default: 'prd' }], retention: [{ default: 7 }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [
+            {
+              backup_retention_period: '${local.is_prod ? 30 : var.retention}',
+            },
+          ],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.backup_retention_period).toEqual({
+      kind: 'literal',
+      value: 30,
+    })
+  })
+
+  it('resolves a ref branch through a local chain (var → local → literal)', () => {
+    // false branch is local.retention which resolves to var.retention
+    // which resolves to 7 — two hops through scope.
+    const parsed = {
+      variable: { env: [{ default: 'dev' }], retention: [{ default: 7 }] },
+      locals: [
+        { is_prod: '${var.env == "prd"}' },
+        { retention: '${var.retention}' },
+      ],
+      resource: {
+        aws_db_instance: {
+          x: [
+            {
+              backup_retention_period:
+                '${local.is_prod ? 30 : local.retention}',
+            },
+          ],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.backup_retention_period).toEqual({
+      kind: 'literal',
+      value: 7,
+    })
+  })
+
+  it('stays unresolved when the ref branch has no default — no guess', () => {
+    // var.retention has NO default → resolveRaw returns undefined →
+    // toValue returns unresolved → could-not-evaluate (honest degrade).
+    const parsed = {
+      variable: { env: [{ default: 'dev' }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [
+            {
+              backup_retention_period: '${local.is_prod ? 30 : var.retention}',
+            },
+          ],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.backup_retention_period?.kind).toBe('unresolved')
+  })
+
+  it('stays unresolved for a compound branch expression (var.x * 2) — no guess', () => {
+    // The false branch is an arithmetic expression, not a sole ref.
+    // resolveValue won't follow it → unresolved.
+    const parsed = {
+      variable: { env: [{ default: 'dev' }], x: [{ default: 5 }] },
+      locals: [{ is_prod: '${var.env == "prd"}' }],
+      resource: {
+        aws_db_instance: {
+          x: [{ backup_retention_period: '${local.is_prod ? 30 : var.x * 2}' }],
+        },
+      },
+    }
+    const res = normalize(
+      parsed as never,
+      'main.tf',
+      '',
+      buildScope([parsed as never]),
+    )
+    expect(res[0]?.attributes.backup_retention_period?.kind).toBe('unresolved')
   })
 })

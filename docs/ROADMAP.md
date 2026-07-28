@@ -570,12 +570,15 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    security impact (S3 access logging, IAM user inline policies, ECS
    container insights, Route53 DNSSEC, etc.).
 
-2. **Ref-branch ternary resolution** — the #1 `couldNotEvaluate` source
-   across all 3 cloud fixtures: `${local.is_prod ? scalar : var.ref}`
-   where the false branch is a reference, not a scalar. The conservative
-   ternary refuses non-scalar branches. Fix: if the chosen branch is a
-   sole `var`/`local` ref, resolve it through scope (same as `resolveValue`
-   does for bare refs). One ~20-line change in `tryEvalTernary`.
+2. ✅ **DONE — Ref-branch ternary resolution** — `tryEvalTernary` now
+   resolves sole-ref branches through scope. The pattern
+   `${local.is_prod ? 30 : var.retention}` where `var.retention` has a
+   default now resolves to the default value instead of degrading to
+   could-not-evaluate. The chosen branch is resolved via `resolveValue`,
+   so ref chains (var→local→literal), nested ternaries, and comparison
+   locals all resolve. Compound branch expressions (arithmetic, function
+   calls) stay unresolved (conservative). 5 new unit tests; realistic-rds
+   and realistic-aws fixtures updated (CNE 1→0).
 
 3. **Real-world dogfood** — run `npx @dotzen/dotzen@latest check` against
    `terraform-aws-modules` or actual AI-generated code. The self-validated

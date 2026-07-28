@@ -242,11 +242,15 @@ function tryEvalComparison(
  * both scalar literals — OR the bare-ref form `${<ref> ? <scalar> : <scalar>}`
  * where <ref> resolves to a boolean literal (directly, or through a local
  * whose value is itself a conservative comparison interpolation — ROADMAP #3:
- * `local.is_prod = var.env == "prd"`). Returns the chosen literal
- * NormalizedValue, or undefined for ANYTHING else (compound conditions, nested
- * ternaries, non-scalar branches, unresolvable refs, non-boolean bare-ref
- * conditions, non-ternary exprs) so the caller falls through to the honest
- * unresolved path — never a guess, never a false verdict.
+ * `local.is_prod = var.env == "prd"`). Branches may also be sole refs that
+ * resolve through scope (`${local.is_prod ? 30 : var.retention}` where
+ * `var.retention` has a default) — the chosen branch is resolved via
+ * `resolveValue`, so ref chains, nested ternaries, and comparison locals
+ * all resolve. Compound branch expressions (function calls, arithmetic)
+ * stay unresolved. Returns the chosen NormalizedValue, or undefined for
+ * ANYTHING else (compound conditions, non-ternary exprs, unresolvable
+ * refs) so the caller falls through to the honest unresolved path — never
+ * a guess, never a false verdict.
  */
 function tryEvalTernary(
   raw: string,
@@ -303,8 +307,16 @@ function tryEvalTernary(
     chosen = bool ? trueB : falseB
   }
   const chosenScalar = parseHclScalar(chosen)
-  if (chosenScalar === undefined) return undefined
-  return { kind: 'literal', value: chosenScalar }
+  if (chosenScalar !== undefined) {
+    return { kind: 'literal', value: chosenScalar }
+  }
+  // Branch is a sole ref (var.x / local.y / each.z), not a scalar.
+  // Resolve it through scope — the same path resolveValue uses for bare
+  // refs. Compound expressions (var.x * 2, function calls) stay
+  // unresolved (conservative — never a guess).
+  const branchValue = resolveValue(`\${${chosen}}`, scope, depth - 1)
+  if (branchValue.kind === 'literal') return branchValue
+  return undefined
 }
 
 function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
