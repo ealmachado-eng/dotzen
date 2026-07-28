@@ -36,6 +36,12 @@ export enum Block {
   // Azure managed-identity block (function app / web app). Present = the
   // resource uses a managed identity rather than a shared/local credential.
   Identity = 'identity',
+  // AWS EKS node group `remote_access {}` block — direct SSH to nodes.
+  // Presence means SSH is enabled; SSM Session Manager is preferred.
+  RemoteAccess = 'remote_access',
+  // GKE `workload_identity_config {}` block — enables Workload Identity
+  // (pods authenticate as a KSA-mapped GSA instead of the node SA).
+  WorkloadIdentityConfig = 'workload_identity_config',
 }
 
 /**

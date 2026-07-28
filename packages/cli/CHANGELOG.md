@@ -6,6 +6,52 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.4.1
+
+### Added — first batch of rules for the expanded vocabulary (ROADMAP #1)
+
+7 new preset rules governing previously-ungoverned resource types:
+
+**`coreSecurity` (4 new rules):**
+
+- **CloudWatch log retention** — `aws_cloudwatch_log_group` must set
+  `retention_in_days` (warn). AI-generated configs often omit retention,
+  leaving logs to accumulate forever.
+- **SQS queue KMS encryption** — `aws_sqs_queue` must set
+  `kms_master_key_id` (warn). Queue messages should be encrypted at rest.
+- **SNS topic KMS encryption** — `aws_sns_topic` must set
+  `kms_master_key_id` (warn). Topic messages should be encrypted at rest.
+- **EFS encryption** — `aws_efs_file_system` must have `encrypted = true`
+  (block). Aligns with the existing EBS/EC2 encryption controls.
+
+**`cisAws` (1 new rule):**
+
+- **EKS node group no direct SSH** — `aws_eks_node_group` must not have a
+  `remote_access {}` block (block). SSM Session Manager provides audited
+  access without opening SSH to nodes.
+
+**`cisGcp` (1 new rule):**
+
+- **GKE Workload Identity** — `google_container_cluster` must have a
+  `workload_identity_config {}` block (block). Pods authenticate as
+  their own identity, not the node service account.
+
+### Added — vocabulary
+
+- `AwsAttribute.RetentionInDays` (`retention_in_days`)
+- `AwsAttribute.KmsMasterKeyId` (`kms_master_key_id`)
+- `Block.RemoteAccess` (`remote_access` — EKS node group SSH block)
+- `Block.WorkloadIdentityConfig` (`workload_identity_config` — GKE)
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
+rules are additive to the preset packs. Users composing
+`[...coreSecurity, ...cisAws]` will see new `warn`-effect findings on
+CloudWatch/SQS/SNS resources without retention/encryption, and `block`
+findings on EKS node groups with SSH or GKE clusters without Workload
+Identity. Review the new findings — they were silent passes before.
+
 ## 1.4.0
 
 ### Added — conservative ternary: bare-ref boolean conditions (ROADMAP #3)

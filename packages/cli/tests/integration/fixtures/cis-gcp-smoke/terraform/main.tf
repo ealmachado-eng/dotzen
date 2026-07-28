@@ -122,6 +122,10 @@ resource "google_container_cluster" "good_gke" {
     enable_private_nodes = true
   }
 
+  workload_identity_config {
+    workload_pool = "my-project.svc.id.goog"
+  }
+
   node_config {
     machine_type = "e2-medium"
   }

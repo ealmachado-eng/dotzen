@@ -553,11 +553,22 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
 
 ## Next steps (post-verification)
 
-1. **Rules for the new vocabulary** — the ~920 new recognized types are
-   not-yet-governed. They're recognized (not ungoverned) but no rule
-   targets them. Prioritize by security impact: CloudWatch log retention,
-   S3 bucket logging, IAM user policies, EKS node group security, GKE
-   workload identity, etc.
+1. ✅ **DONE — Rules for the new vocabulary (first batch)** — added 7
+   new preset rules governing previously-ungoverned resource types:
+   - `coreSecurity`: CloudWatch log group retention (`mustBeSet`,
+     warn), SQS queue KMS encryption (`mustBeSet`, warn), SNS topic KMS
+     encryption (`mustBeSet`, warn), EFS file system encryption
+     (`mustBeTrue`).
+   - `cisAws`: EKS node group no direct SSH (`denyBlockPresence` on
+     `remote_access` block — use SSM Session Manager instead).
+   - `cisGcp`: GKE Workload Identity (`mustHaveBlock` on
+     `workload_identity_config`).
+   New vocabulary: `AwsAttribute.RetentionInDays`, `KmsMasterKeyId`;
+   `Block.RemoteAccess`, `Block.WorkloadIdentityConfig`. CIS GCP smoke
+   fixture updated (good_gke cluster now has `workload_identity_config`).
+   Remaining: ~910 types still ungoverned-by-rule — future batches by
+   security impact (S3 access logging, IAM user inline policies, ECS
+   container insights, Route53 DNSSEC, etc.).
 
 2. **Ref-branch ternary resolution** — the #1 `couldNotEvaluate` source
    across all 3 cloud fixtures: `${local.is_prod ? scalar : var.ref}`

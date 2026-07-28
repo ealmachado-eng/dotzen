@@ -16,7 +16,7 @@
  *   export const spec = [...coreSecurity, ...cisAws, ...pciDss]
  */
 import { rule } from '../spec/rule'
-import { AwsResource, AwsAttribute } from '../vocabulary'
+import { AwsResource, AwsAttribute, Block } from '../vocabulary'
 
 export const cisAws = [
   // ── CloudTrail log file validation (CIS §3.4 — not in core) ────────────
@@ -59,4 +59,14 @@ export const cisAws = [
     .mustBeTrue(AwsAttribute.ImageScanOnPush)
     .message('ECR repositories must scan images on push')
     .rationale('CIS — supply-chain: scan on push'),
+
+  // ── EKS node group: no direct SSH (use SSM Session Manager) ───────────
+  rule()
+    .id('eks-nodegroup-no-ssh')
+    .resource(AwsResource.EksNodeGroup)
+    .denyBlockPresence(Block.RemoteAccess)
+    .message(
+      'EKS node groups must not enable remote_access (use SSM Session Manager)',
+    )
+    .rationale('CIS AWS — no direct SSH to nodes; SSM provides audited access'),
 ] as const

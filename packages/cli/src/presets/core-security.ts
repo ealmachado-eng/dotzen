@@ -21,6 +21,7 @@ import {
   Tag,
   Acl,
   Provisioner,
+  Effect,
 } from '../vocabulary'
 
 export const coreSecurity = [
@@ -169,4 +170,45 @@ export const coreSecurity = [
     .mustBeAtLeast(AwsAttribute.BackupRetentionPeriod, 7)
     .message('RDS backup retention must be at least 7 days')
     .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
+
+  // ── EFS encryption at rest ─────────────────────────────────────────────
+  rule()
+    .resource(AwsResource.EfsFileSystem)
+    .mustBeTrue(AwsAttribute.Encrypted)
+    .message('EFS file systems must be encrypted at rest')
+    .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
+
+  // ── CloudWatch log retention (warn — best practice, not a hard block) ──
+  rule()
+    .id('cloudwatch-log-retention')
+    .resource(AwsResource.CloudwatchLogGroup)
+    .mustBeSet(AwsAttribute.RetentionInDays)
+    .onViolation(Effect.Warn)
+    .message('CloudWatch log groups must set retention_in_days')
+    .rationale(
+      'Common control: log lifecycle — SOC CC7.2, NIST AU-11. ' +
+        'AI-generated configs often omit retention, leaving logs forever.',
+    ),
+
+  // ── SQS queue KMS encryption (warn — data-in-transit-at-rest) ──────────
+  rule()
+    .id('sqs-kms-encryption')
+    .resource(AwsResource.SqsQueue)
+    .mustBeSet(AwsAttribute.KmsMasterKeyId)
+    .onViolation(Effect.Warn)
+    .message('SQS queues must set kms_master_key_id for encryption at rest')
+    .rationale(
+      'Common control: encrypt queue messages — SOC CC6.1, GDPR Art. 32',
+    ),
+
+  // ── SNS topic KMS encryption (warn — data-in-transit-at-rest) ──────────
+  rule()
+    .id('sns-kms-encryption')
+    .resource(AwsResource.SnsTopic)
+    .mustBeSet(AwsAttribute.KmsMasterKeyId)
+    .onViolation(Effect.Warn)
+    .message('SNS topics must set kms_master_key_id for encryption at rest')
+    .rationale(
+      'Common control: encrypt topic messages — SOC CC6.1, GDPR Art. 32',
+    ),
 ] as const

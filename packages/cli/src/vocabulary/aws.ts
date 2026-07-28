@@ -631,6 +631,14 @@ export enum AwsAttribute {
   IamRoleAssumeRolePolicy = 'assume_role_policy',
   // IAM role policy attachment — which managed policy is attached.
   IamRolePolicyAttachmentPolicyArn = 'policy_arn',
+  // CloudWatch log group — retention must be set (not never-expire / 0).
+  RetentionInDays = 'retention_in_days',
+  // SQS queue / SNS topic — KMS encryption at rest for messages.
+  KmsMasterKeyId = 'kms_master_key_id',
+  // EKS node group — the `remote_access` block (SSH key + SG). Its presence
+  // means direct SSH access to nodes is enabled; SSM Session Manager is the
+  // safer alternative. Govern with `denyBlockPresence(Block.RemoteAccess)`.
+  EksNodeGroupRemoteAccessSshKey = 'remote_access.ec2_ssh_key',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

@@ -21,6 +21,7 @@ import {
   SqlSslMode,
   IngressSetting,
   Port,
+  Block,
 } from '../vocabulary'
 
 export const cisGcp = [
@@ -83,6 +84,16 @@ export const cisGcp = [
     .mustBeFalse(GcpAttribute.EnableLegacyAbac)
     .message('GKE clusters must disable legacy ABAC')
     .rationale('CIS GCP §7.3 — use RBAC only'),
+
+  // ── GKE Workload Identity (CIS GCP §7.4) ──────────────────────────────
+  rule()
+    .id('gke-workload-identity')
+    .resource(GcpResource.ContainerCluster)
+    .mustHaveBlock(Block.WorkloadIdentityConfig)
+    .message('GKE clusters must enable Workload Identity')
+    .rationale(
+      'CIS GCP §7.4 — pods authenticate as their own identity, not the node SA',
+    ),
 
   // ── KMS (CIS GCP §3) ───────────────────────────────────────────────────
   rule()
