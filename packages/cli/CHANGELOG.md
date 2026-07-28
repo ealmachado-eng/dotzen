@@ -6,6 +6,13 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.4.3
+
+### Fixed — CHANGELOG formatting
+
+Prettier compliance fix for `CHANGELOG.md` (missing blank line after
+list-intro paragraph in the 1.4.2 entry). No code changes.
+
 ## 1.4.2
 
 ### Fixed — ref-branch ternary resolution (ROADMAP next-steps #2)
