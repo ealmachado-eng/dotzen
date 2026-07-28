@@ -87,4 +87,24 @@ export const cisAws = [
     .onViolation(Effect.Warn)
     .message('Load balancers must enable access logs')
     .rationale('CIS AWS — log all load balancer traffic for audit'),
+
+  // ── S3 bucket versioning (CIS — not in core) ─────────────────────────
+  rule()
+    .id('s3-versioning')
+    .resource(AwsResource.S3Bucket)
+    .mustHaveAssociated(AwsResource.S3BucketVersioning, AwsAttribute.Bucket)
+    .onViolation(Effect.Warn)
+    .message('S3 buckets must have versioning enabled')
+    .rationale('CIS AWS — data durability and ransomware recovery'),
+
+  // ── ECR lifecycle policy (CIS — not in core) ─────────────────────────
+  rule()
+    .id('ecr-lifecycle-policy')
+    .resource(AwsResource.EcrRepository)
+    .mustHaveAssociated(AwsResource.EcrLifecyclePolicy, AwsAttribute.Repository)
+    .onViolation(Effect.Warn)
+    .message('ECR repositories must have a lifecycle policy')
+    .rationale(
+      'CIS AWS — image retention/cleanup prevents stale vulnerable images',
+    ),
 ] as const

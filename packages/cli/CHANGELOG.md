@@ -6,6 +6,46 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.5.3
+
+### Added — batch 3 rules for expanded vocabulary (ROADMAP #6)
+
+3 new preset rules:
+
+**`coreSecurity` (1 new rule):**
+
+- **RDS cluster encryption** — `aws_rds_cluster` must have
+  `storage_encrypted = true` (block). Complements the existing RDS
+  instance encryption rule — Aurora clusters use `aws_rds_cluster`, not
+  `aws_db_instance`.
+
+**`cisAws` (2 new rules):**
+
+- **S3 bucket versioning** — `aws_s3_bucket` must have an associated
+  `aws_s3_bucket_versioning` resource (warn). Protects against accidental
+  deletes and ransomware.
+- **ECR lifecycle policy** — `aws_ecr_repository` must have an associated
+  `aws_ecr_lifecycle_policy` resource (warn). Prevents stale vulnerable
+  images from accumulating.
+
+### Added — vocabulary
+
+- `AwsResource.EcrLifecyclePolicy` (`aws_ecr_lifecycle_policy`)
+- `AwsAttribute.Repository` (`repository` — ECR lifecycle policy links to
+  the repository by name)
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
+rules are additive to the preset packs. Users composing
+`[...coreSecurity, ...cisAws]` will see new `warn`-effect findings on S3
+buckets without versioning and ECR repos without lifecycle policies, plus
+`block` findings on unencrypted RDS clusters.
+
+**Item 6 status:** all feasible rules shipped. Remaining items (IAM user
+no inline policies, WAFv2 Web ACL on ALB, ECS container insights) need
+new engine condition types — future work.
+
 ## 1.5.2
 
 ### Fixed — Azure deprecated-resource verification against Go source

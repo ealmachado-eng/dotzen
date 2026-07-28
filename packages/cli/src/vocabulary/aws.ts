@@ -29,6 +29,9 @@ export enum AwsResource {
   Instance = 'aws_instance',
   DynamodbTable = 'aws_dynamodb_table',
   EcrRepository = 'aws_ecr_repository',
+  // ECR lifecycle policy — governs image retention/cleanup. Associated to a
+  // repository via the `repository` attribute.
+  EcrLifecyclePolicy = 'aws_ecr_lifecycle_policy',
   IamPolicy = 'aws_iam_policy',
   IamRolePolicy = 'aws_iam_role_policy',
   EcsService = 'aws_ecs_service',
@@ -639,6 +642,8 @@ export enum AwsAttribute {
   // means direct SSH access to nodes is enabled; SSM Session Manager is the
   // safer alternative. Govern with `denyBlockPresence(Block.RemoteAccess)`.
   EksNodeGroupRemoteAccessSshKey = 'remote_access.ec2_ssh_key',
+  // ECR lifecycle policy — links to the repository by name.
+  Repository = 'repository',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

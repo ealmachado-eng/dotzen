@@ -227,4 +227,12 @@ export const coreSecurity = [
     .onViolation(Effect.Warn)
     .message('DynamoDB tables must enable point-in-time recovery')
     .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
+
+  // ── RDS cluster encryption at rest ─────────────────────────────────────
+  rule()
+    .id('rds-cluster-encryption')
+    .resource(AwsResource.RdsCluster)
+    .mustBeTrue(AwsAttribute.StorageEncrypted)
+    .message('RDS clusters must encrypt storage at rest')
+    .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
 ] as const

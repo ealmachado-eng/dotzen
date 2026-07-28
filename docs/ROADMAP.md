@@ -618,7 +618,14 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    only resolve when the ref resolves to a literal and the prefix is a
    bare string (no nested interpolations).
 
-6. **More rules for the governed surface** — batch 2 by security impact:
-   S3 access logging (`mustHaveAssociated`), ECR lifecycle policy,
-   ECS container insights, IAM user no inline policies, DynamoDB
-   encryption, WAFv2 Web ACL on ALB.
+6. ✅ **DONE — More rules for the governed surface (batches 2+3)** —
+   batch 2 (v1.5.1): DynamoDB encryption + PITR, S3 access logging, ALB
+   access logging. Batch 3 (v1.5.3): RDS cluster encryption, S3 bucket
+   versioning (`mustHaveAssociated`), ECR lifecycle policy
+   (`mustHaveAssociated`). Total rules added across all batches: 14.
+   Remaining items not feasible with existing conditions: IAM user no
+   inline policies (needs "deny if associated" — inverse of
+   `mustHaveAssociated`), WAFv2 Web ACL on ALB (needs ARN-based
+   association matching — engine only does address-based), ECS container
+   insights (complex `setting` block with name/value pair — needs new
+   condition type). These are future engine enhancements.
