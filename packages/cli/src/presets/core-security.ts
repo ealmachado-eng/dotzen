@@ -69,7 +69,11 @@ export const coreSecurity = [
 
   // ── IAM least privilege ────────────────────────────────────────────────
   rule()
-    .resource(AwsResource.IamPolicy)
+    .resource(
+      AwsResource.IamPolicy,
+      AwsResource.IamRolePolicy,
+      AwsResource.IamUserPolicy,
+    )
     .denyIamWildcard()
     .message('IAM policies must not grant Action "*"')
     .rationale(
@@ -77,7 +81,11 @@ export const coreSecurity = [
     ),
 
   rule()
-    .resource(AwsResource.IamPolicy)
+    .resource(
+      AwsResource.IamPolicy,
+      AwsResource.IamRolePolicy,
+      AwsResource.IamUserPolicy,
+    )
     .denyPublicPrincipal()
     .message('IAM policies must not grant access to Principal "*"')
     .rationale('Common control: no public access — NIST AC-3'),
@@ -256,4 +264,20 @@ export const coreSecurity = [
     .mustBeTrue(AwsAttribute.StorageEncrypted)
     .message('RDS clusters must encrypt storage at rest')
     .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
+
+  // ── No hardcoded secrets on resource attributes ───────────────────────
+  rule()
+    .id('no-hardcoded-db-password')
+    .resource(AwsResource.DbInstance)
+    .denyLiteral(AwsAttribute.Password)
+    .message('RDS passwords must be a reference, not a literal')
+    .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
+
+  // ── State backend must be encrypted ───────────────────────────────────
+  rule()
+    .id('encrypted-state')
+    .allResources()
+    .requireEncryptedBackend()
+    .message('State backend must be encrypted')
+    .rationale('Common control: protect state secrets — PCI 10.5, SOC CC7.2'),
 ] as const

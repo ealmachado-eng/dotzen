@@ -23,8 +23,15 @@ import {
   Port,
   Block,
 } from '../vocabulary'
-
 export const cisGcp = [
+  // ── Compute: no public IP (CIS GCP §4.1) ──────────────────────────────
+  rule()
+    .id('instance-no-public-ip')
+    .resource(GcpResource.ComputeInstance)
+    .denyBlockPresence(Block.NetworkInterfaceAccessConfig)
+    .message('Compute instances must not have public IPs')
+    .rationale('CIS GCP §4.1 — no public exposure'),
+
   // ── Storage (CIS GCP §3) ───────────────────────────────────────────────
   rule()
     .resource(GcpResource.StorageBucket)

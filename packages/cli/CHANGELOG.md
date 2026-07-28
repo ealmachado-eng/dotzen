@@ -6,6 +6,54 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.6.1
+
+### Fixed — blind spots found in AI-generated code testing
+
+Tested dotzen against 3 AI-style Terraform fixtures (deliberately including
+common AI mistakes: missing encryption, hardcoded secrets, public resources,
+inline IAM policies, missing tags, absent state encryption). Found and fixed
+7 blind spots:
+
+**`coreSecurity` (3 new rules + 2 broadened):**
+
+- **`requireEncryptedBackend`** now in `coreSecurity` (was only in
+  framework packs). Catches AI configs with no `terraform {}` block.
+- **`denyLiteral` on RDS password** — `aws_db_instance.password` must be a
+  reference, not a literal. Catches `password = "SuperSecret123!"`.
+- **`denyIamWildcard` + `denyPublicPrincipal`** broadened to also target
+  `aws_iam_role_policy` and `aws_iam_user_policy` (was only on
+  `aws_iam_policy`). Catches wildcard inline policies that previously
+  escaped the `denyIamWildcard` rule.
+
+**`cisAzure` (1 new rule):**
+
+- **NSG `denyIngress`** on `azurerm_network_security_group` — Azure NSG
+  public SSH/RDP now caught by `cisAzure` (was only in `coreSecurity`
+  for AWS `SecurityGroup`).
+
+**`cisGcp` (1 new rule):**
+
+- **Compute instance `denyBlockPresence`** on `access_config` — GCP
+  compute instances with public IPs now caught by `cisGcp` (was only in
+  the realistic-gcp fixture's local spec).
+
+### AI-style test fixtures
+
+3 new integration test fixtures created:
+
+- `tests/integration/fixtures/ai-style-aws/` — 15 deliberate AI mistakes
+- `tests/integration/fixtures/ai-style-azure/` — 15 deliberate AI mistakes
+- `tests/integration/fixtures/ai-style-gcp/` — 15 deliberate AI mistakes
+
+### Migration notes
+
+Backward-compatible. Users composing `[...coreSecurity, ...cisAws/Azure/Gcp]`
+will now see **new violations** on configs that previously passed silently:
+unencrypted state backends, hardcoded RDS passwords, wildcard inline IAM
+policies, Azure NSGs with public SSH, and GCP compute instances with public
+IPs. Review these — they were real blind spots.
+
 ## 1.6.0
 
 ### Added — `denyIfAssociated` condition (new engine capability)

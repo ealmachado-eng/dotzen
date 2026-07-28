@@ -20,9 +20,18 @@ import {
   SqlTlsVersion,
   NetworkDefaultAction,
   BuiltInRole,
+  Port,
 } from '../vocabulary'
 
 export const cisAzure = [
+  // ── Network: no public SSH/RDP (CIS Azure §6.1-6.2) ──────────────────
+  rule()
+    .id('nsg-no-public-ssh')
+    .resource(AzureResource.NetworkSecurityGroup)
+    .denyIngress(Port.SSH, Port.RDP)
+    .message('SSH/RDP must not be open to the internet')
+    .rationale('CIS Azure §6.1-6.2'),
+
   // ── Storage account (CIS Azure §3) ─────────────────────────────────────
   rule()
     .resource(AzureResource.StorageAccount)

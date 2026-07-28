@@ -1,0 +1,5 @@
+{
+  "spec": ".zen/spec.ts",
+  "terraform": "./terraform",
+  "version": "1.6.0"
+}
