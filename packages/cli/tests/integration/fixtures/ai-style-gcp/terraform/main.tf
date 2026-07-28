@@ -102,12 +102,12 @@ resource "google_sql_database_instance" "primary" {
       ipv4_enabled = true
       # ssl_mode absent — defaults to ALLOW_UNENCRYPTED_AND_ENCRYPTED
     }
-  }
 
-  labels = {
-    team        = "web"
-    cost_center = "cc-2002"
-    environment = "production"
+    user_labels = {
+      team        = "web"
+      cost_center = "cc-2002"
+      environment = "production"
+    }
   }
 }
 

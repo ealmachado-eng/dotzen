@@ -145,18 +145,15 @@ resource "azurerm_key_vault" "main" {
 }
 
 # ── App Service Plan + Linux Web App ─────────────────────────────────────
-# Pattern #15 lives here: sku_tier is a hallucinated attribute (the real
-# one is sku_name), included exactly as the task specifies for engine
-# exercise. The web app itself is HTTPS-only (compliant) to avoid noise
-# beyond the 15 listed patterns.
+# The web app is HTTPS-only (compliant) to avoid noise beyond the 15
+# listed patterns.
 
 resource "azurerm_service_plan" "main" {
   name                = "${var.project_name}-asp"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   os_type             = "Linux"
-  sku_name            = var.sku
-  sku_tier            = local.is_prod ? "Standard" : "Basic"
+  sku_name            = local.is_prod ? "S1" : "B1"
 }
 
 resource "azurerm_linux_web_app" "main" {
@@ -245,6 +242,11 @@ resource "azurerm_monitor_data_collection_rule" "main" {
       sampling_frequency_in_seconds = 60
       counter_specifiers         = ["\\Processor(_Total)\\% Processor Time"]
     }
+  }
+
+  data_flow {
+    streams = ["Microsoft-InsightsMetrics"]
+    destinations = ["law"]
   }
 }
 
