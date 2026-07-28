@@ -580,13 +580,36 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    calls) stay unresolved (conservative). 5 new unit tests; realistic-rds
    and realistic-aws fixtures updated (CNE 1→0).
 
-3. **Real-world dogfood** — run `npx @dotzen/dotzen@latest check` against
-   `terraform-aws-modules` or actual AI-generated code. The self-validated
-   fixtures prove no regression but not real-world readiness. Patterns to
-   watch for: complex `dynamic` blocks, `templatefile()`,
-   `terraform_remote_state`, provider `for_each`, deeply nested `for`.
+3. ✅ **DONE — Real-world dogfood (3 clouds)** — ran v1.4.3 against
+   `terraform-aws-modules/terraform-aws-vpc` (5 .tf files),
+   `Azure/terraform-azurerm-aks` (8 .tf files), and
+   `terraform-google-modules/terraform-google-kubernetes-engine` (12 .tf
+   files). Results: 1192 checks, 4 real violations (AKS private endpoint,
+   Contributor role, GKE private nodes, GKE legacy ABAC), 17 CNE
+   (legitimately unresolvable: data-source IAM policies, interpolated IAM
+   members, compound firewall expressions), 46 ungoverned → 14 after
+   fixes. Zero false positives after the config-flag suffix skip. Drove
+   4 fixes (landed in v1.5.0): false-positive elimination, UTILITY_TYPES
+   expansion, data source vocabulary, azapi_update_resource. Noise floor:
+   2.6% (was ~50% pre-vocabulary expansion).
 
 4. **Azure deprecated-resource verification** — the 52 "deprecated but
    real" Azure types were kept based on knowledge, not source verification.
    An `azurerm` provider upgrade could silently drop some. Verify against
    the provider's Go `ResourcesMap`.
+
+---
+
+## Post-dogfood improvements
+
+5. **GCP interpolated IAM member resolution** — 12 of 14 remaining CNE
+   on the GKE module are `member = "serviceAccount:${google_service_account.default.email}"`
+   — a string-concat-with-ref pattern. Extending the interpolation resolver
+   to handle `prefix:${sole_ref}` would eliminate these. Conservative:
+   only resolve when the ref resolves to a literal and the prefix is a
+   bare string (no nested interpolations).
+
+6. **More rules for the governed surface** — batch 2 by security impact:
+   S3 access logging (`mustHaveAssociated`), ECR lifecycle policy,
+   ECS container insights, IAM user no inline policies, DynamoDB
+   encryption, WAFv2 Web ACL on ALB.

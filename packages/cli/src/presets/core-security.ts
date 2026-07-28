@@ -211,4 +211,20 @@ export const coreSecurity = [
     .rationale(
       'Common control: encrypt topic messages — SOC CC6.1, GDPR Art. 32',
     ),
+
+  // ── DynamoDB encryption at rest + PITR ──────────────────────────────────
+  rule()
+    .id('dynamodb-encryption')
+    .resource(AwsResource.DynamodbTable)
+    .mustBeTrue(AwsAttribute.ServerSideEncryptionEnabled)
+    .message('DynamoDB tables must encrypt data at rest')
+    .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
+
+  rule()
+    .id('dynamodb-pitr')
+    .resource(AwsResource.DynamodbTable)
+    .mustBeTrue(AwsAttribute.PointInTimeRecoveryEnabled)
+    .onViolation(Effect.Warn)
+    .message('DynamoDB tables must enable point-in-time recovery')
+    .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
 ] as const

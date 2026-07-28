@@ -16,7 +16,7 @@
  *   export const spec = [...coreSecurity, ...cisAws, ...pciDss]
  */
 import { rule } from '../spec/rule'
-import { AwsResource, AwsAttribute, Block } from '../vocabulary'
+import { AwsResource, AwsAttribute, Block, Effect } from '../vocabulary'
 
 export const cisAws = [
   // ── CloudTrail log file validation (CIS §3.4 — not in core) ────────────
@@ -69,4 +69,22 @@ export const cisAws = [
       'EKS node groups must not enable remote_access (use SSM Session Manager)',
     )
     .rationale('CIS AWS — no direct SSH to nodes; SSM provides audited access'),
+
+  // ── S3 access logging (CIS §2.6 — not in core) ────────────────────────
+  rule()
+    .id('s3-access-logging')
+    .resource(AwsResource.S3Bucket)
+    .mustHaveAssociated(AwsResource.S3BucketLogging, AwsAttribute.Bucket)
+    .onViolation(Effect.Warn)
+    .message('S3 buckets must have access logging enabled')
+    .rationale('CIS AWS §2.6 — log all access to S3 buckets'),
+
+  // ── ALB access logging (CIS — not in core) ───────────────────────────
+  rule()
+    .id('alb-access-logging')
+    .resource(AwsResource.Lb)
+    .mustBeTrue(AwsAttribute.AccessLogsEnabled)
+    .onViolation(Effect.Warn)
+    .message('Load balancers must enable access logs')
+    .rationale('CIS AWS — log all load balancer traffic for audit'),
 ] as const

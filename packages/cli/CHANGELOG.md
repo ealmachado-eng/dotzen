@@ -6,6 +6,38 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.5.1
+
+### Added — batch 2 rules for expanded vocabulary (ROADMAP #6)
+
+4 new preset rules governing previously-ungoverned resource types:
+
+**`coreSecurity` (2 new rules):**
+
+- **DynamoDB encryption at rest** — `aws_dynamodb_table` must have
+  `server_side_encryption { enabled = true }` (block). Uses existing
+  `AwsAttribute.ServerSideEncryptionEnabled`.
+- **DynamoDB point-in-time recovery** — `aws_dynamodb_table` must have
+  `point_in_time_recovery { enabled = true }` (warn). Uses existing
+  `AwsAttribute.PointInTimeRecoveryEnabled`.
+
+**`cisAws` (2 new rules):**
+
+- **S3 access logging** — `aws_s3_bucket` must have an associated
+  `aws_s3_bucket_logging` resource (warn). Uses `mustHaveAssociated`
+  via the `bucket` attribute.
+- **ALB access logging** — `aws_lb` must have `access_logs.enabled = true`
+  (warn). Uses existing `AwsAttribute.AccessLogsEnabled`.
+
+### Migration notes
+
+Backward-compatible — no existing `.zen/spec.ts` needs changes. The new
+rules are additive to the preset packs. Users composing
+`[...coreSecurity, ...cisAws]` will see new `warn`-effect findings on S3
+buckets without logging, ALBs without access logs, and DynamoDB tables
+without encryption/PITR. Review the new findings — they were silent passes
+before.
+
 ## 1.5.0
 
 ### Fixed — dogfood-driven improvements from real-world Terraform modules
