@@ -107,4 +107,16 @@ export const cisAws = [
     .rationale(
       'CIS AWS — image retention/cleanup prevents stale vulnerable images',
     ),
+
+  // ── WAFv2 Web ACL on ALB (CIS — not in core) ────────────────────────
+  rule()
+    .id('alb-waf-association')
+    .resource(AwsResource.Lb)
+    .mustHaveAssociated(
+      AwsResource.Wafv2WebAclAssociation,
+      AwsAttribute.ResourceArn,
+    )
+    .onViolation(Effect.Warn)
+    .message('Load balancers must have a WAF Web ACL associated')
+    .rationale('CIS AWS — protect load balancers with WAF rules'),
 ] as const

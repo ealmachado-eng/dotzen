@@ -104,6 +104,13 @@ export enum AwsResource {
   CustomerGateway = 'aws_customer_gateway',
   VpnConnection = 'aws_vpn_connection',
   VpnGateway = 'aws_vpn_gateway',
+  // VPC extras — recognized so they don't surface as ungoverned on real VPC modules.
+  VpnGatewayAttachment = 'aws_vpn_gateway_attachment',
+  VpnGatewayRoutePropagation = 'aws_vpn_gateway_route_propagation',
+  VpcDhcpOptions = 'aws_vpc_dhcp_options',
+  VpcDhcpOptionsAssociation = 'aws_vpc_dhcp_options_association',
+  VpcBlockPublicAccessExclusion = 'aws_vpc_block_public_access_exclusion',
+  VpcBlockPublicAccessOptions = 'aws_vpc_block_public_access_options',
   VpnConnectionRoute = 'aws_vpn_connection_route',
   TransitGateway = 'aws_ec2_transit_gateway',
   TransitGatewayRoute = 'aws_ec2_transit_gateway_route',
@@ -650,6 +657,8 @@ export enum AwsAttribute {
   Role = 'role',
   // IAM group policy — links to the group by name.
   Group = 'group',
+  // WAFv2 web ACL association — links to the protected resource via ARN.
+  ResourceArn = 'resource_arn',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

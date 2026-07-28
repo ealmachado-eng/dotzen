@@ -6,6 +6,33 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.6.2
+
+### Added — remaining ungoverned VPC types + WAFv2 on ALB (ROADMAP #5)
+
+- **6 VPC-specific resource types** added to `AwsResource` (verified
+  against provider docs): `aws_vpc_block_public_access_exclusion`,
+  `aws_vpc_block_public_access_options`, `aws_vpc_dhcp_options`,
+  `aws_vpc_dhcp_options_association`, `aws_vpn_gateway_attachment`,
+  `aws_vpn_gateway_route_propagation`. Eliminates the remaining 6
+  ungoverned entries from the AWS VPC module dogfood.
+
+- **WAFv2 Web ACL on ALB** — new `cisAws` rule using
+  `mustHaveAssociated(AwsResource.Wafv2WebAclAssociation,
+AwsAttribute.ResourceArn)`. No new engine condition needed — the
+  existing `resolvedRef` mechanism already handles ARN-based resource
+  attribute references (`resource_arn = aws_lb.web.arn` resolves to
+  `{type: 'aws_lb', name: 'web'}` via `refAtBottom`).
+
+- New vocabulary: `AwsAttribute.ResourceArn` (`resource_arn`).
+
+### Migration notes
+
+Backward-compatible. Users composing `[...coreSecurity, ...cisAws]` will
+see new `warn`-effect findings on ALBs without a WAFv2 Web ACL
+association. The VPC types are recognized (not ungoverned) but not
+governed by any rule — no new violations from them.
+
 ## 1.6.1
 
 ### Fixed — blind spots found in AI-generated code testing
