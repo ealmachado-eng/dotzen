@@ -729,6 +729,13 @@ export enum AwsAttribute {
   // `value = "enabled"`. Flattened to `setting.name` and `setting.value`.
   EcsSettingName = 'setting.name',
   EcsSettingValue = 'setting.value',
+  // OpenSearch (aws_opensearch_domain) — nested-block attrs flattened to
+  // dotted paths: at-rest encryption, node-to-node TLS, endpoint HTTPS.
+  OpenSearchEncryptAtRest = 'encrypt_at_rest.enabled',
+  OpenSearchNodeToNodeEncryption = 'node_to_node_encryption.enabled',
+  OpenSearchEnforceHttps = 'domain_endpoint_options.enforce_https',
+  // Amazon MQ (aws_mq_broker) — broker admin password (plaintext credential).
+  MqAdminPassword = 'admin_password',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.

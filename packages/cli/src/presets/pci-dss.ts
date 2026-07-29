@@ -74,11 +74,15 @@ export const pciDss = [
     )
     .rationale('PCI 10.7 — retain audit trail history for at least 1 year'),
 
-  // ── RDS not publicly accessible (PCI 1.3.1) ────────────────────────────
+  // ── RDS/Aurora/DocDB not publicly accessible (PCI 1.3.1) ────────────────
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(
+      AwsResource.DbInstance,
+      AwsResource.RdsClusterInstance,
+      AwsResource.DocdbClusterInstance,
+    )
     .mustBeFalse(AwsAttribute.PubliclyAccessible)
-    .message('RDS instances must not be publicly accessible')
+    .message('RDS/Aurora/DocDB instances must not be publicly accessible')
     .rationale('PCI 1.3.1 — limit cardholder data to need-to-know'),
 
   // ── No drift hiding on security attrs (PCI 6.5) ────────────────────────

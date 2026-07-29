@@ -269,6 +269,22 @@ export const coreSecurity = [
     .message('RDS/Aurora and DocDB clusters must encrypt storage at rest')
     .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
 
+  // ── OpenSearch (Elasticsearch) encryption at rest + node-to-node TLS ─────
+  rule()
+    .id('opensearch-encryption-at-rest')
+    .resource(AwsResource.OpensearchDomain)
+    .mustBeTrue(AwsAttribute.OpenSearchEncryptAtRest)
+    .message('OpenSearch domains must encrypt data at rest')
+    .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
+
+  rule()
+    .id('opensearch-node-to-node-encryption')
+    .resource(AwsResource.OpensearchDomain)
+    .mustBeTrue(AwsAttribute.OpenSearchNodeToNodeEncryption)
+    .onViolation(Effect.Warn)
+    .message('OpenSearch domains must enable node-to-node encryption')
+    .rationale('Common control: encrypt data in transit between nodes'),
+
   // ── No hardcoded secrets on resource attributes ───────────────────────
   rule()
     .id('no-hardcoded-db-password')
@@ -297,6 +313,30 @@ export const coreSecurity = [
     .resource(AwsResource.ElasticacheReplicationGroup)
     .denyLiteral(AwsAttribute.AuthToken)
     .message('ElastiCache auth tokens must be a reference, not a literal')
+    .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
+
+  // ── No hardcoded Amazon MQ broker admin password ──────────────────────
+  rule()
+    .id('no-hardcoded-mq-admin-password')
+    .resource(AwsResource.MqBroker)
+    .denyLiteral(AwsAttribute.MqAdminPassword)
+    .message(
+      'Amazon MQ broker admin passwords must be a reference, not a literal',
+    )
+    .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
+
+  // ── No hardcoded Secrets Manager secret values ────────────────────────
+  // WARN (not block): Secrets Manager is the right *destination*, but a
+  // literal `secret_string` still lands in Terraform state + VCS. Surface it
+  // so the author moves the value to a reference / generated credential.
+  rule()
+    .id('no-hardcoded-secret-string')
+    .resource(AwsResource.SecretsmanagerSecretVersion)
+    .denyLiteral(AwsAttribute.SecretString)
+    .onViolation(Effect.Warn)
+    .message(
+      'Secrets Manager secret_string should be a reference, not a literal (lands in state/VCS)',
+    )
     .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
 
   // ── State backend must be encrypted ───────────────────────────────────

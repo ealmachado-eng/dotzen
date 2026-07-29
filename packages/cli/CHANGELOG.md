@@ -6,6 +6,62 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.15
+
+Preset audit round 2 — close the remaining data-store / credential / exposure
+gaps found by a deeper sweep of all eight presets against the vocabulary.
+(OpenSearch nested-block flattening verified end-to-end against a real
+`encrypt_at_rest {}` fixture before release.)
+
+### Added — OpenSearch domain hardening (`coreSecurity` + `cisAws`)
+
+`aws_opensearch_domain` was recognized but ungoverned. Added three
+nested-block attributes and rules:
+
+- `encrypt_at_rest.enabled` → **blocking** at-rest encryption (`coreSecurity`)
+- `node_to_node_encryption.enabled` → **warn** inter-node TLS (`coreSecurity`)
+- `domain_endpoint_options.enforce_https` → **warn** endpoint HTTPS (`cisAws`)
+
+Verified: a domain missing `encrypt_at_rest` flags BLOCKING; one with all
+three set passes; `0` could-not-evaluate (the flattener resolves the nested
+blocks to dotted paths).
+
+### Added — Amazon MQ + Secrets Manager credential rules (`coreSecurity`)
+
+- `aws_mq_broker` `admin_password` → **blocking** `denyLiteral`
+  (`no-hardcoded-mq-admin-password`)
+- `aws_secretsmanager_secret_version` `secret_string` → **warn** `denyLiteral`
+  (`no-hardcoded-secret-string`). Secrets Manager is the right _destination_,
+  but a literal value still lands in state/VCS — surfaced as a warning rather
+  than a hard block.
+
+### Fixed — Aurora/DocDB cluster instances now covered for public exposure
+
+`cisAws`, `pciDss`, and `dataProtection` ran `mustBeFalse(publicly_accessible)`
+on `aws_db_instance` only. Aurora/DocDB **instances**
+(`aws_rds_cluster_instance`, `aws_docdb_cluster_instance`) carry the same
+attribute and could be publicly exposed — now added to all three rules.
+
+### Added — ElastiCache transit encryption (`cisAws`)
+
+`cisAws` governed ElastiCache _at-rest_ encryption only. Added a **warn**
+`mustBeTrue(transit_encryption_enabled)` rule for Redis traffic in transit.
+
+### Added — Azure SQL admin password (`cisAzure`)
+
+Cross-cloud parity: `coreSecurity` governs AWS db passwords, `cisGcp` governs
+Cloud SQL `root_password`, but `cisAzure` only governed MSSQL TLS. Added a
+**blocking** `denyLiteral(administrator_login_password)` rule for Azure SQL.
+
+### Net effect
+
+Cluster-instance public exposure, OpenSearch encryption, MQ/Secrets-manager
+credentials, ElastiCache transit, and Azure SQL passwords are now governed.
+Presets remain structurally consistent (all eight compile + validate; count
+assertions still hold — `coreSecurity` now at ~18 rules). MSK client-broker
+encryption intentionally deferred (complex nested structure, needs normalize
+work).
+
 ## 1.9.14
 
 Preset audit follow-up — close three DB-cluster / credential gaps found by a

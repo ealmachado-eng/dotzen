@@ -73,9 +73,15 @@ export const dataProtection = [
     .rationale('GDPR Art. 5(1)(f) — no public bucket policies'),
 
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(
+      AwsResource.DbInstance,
+      AwsResource.RdsClusterInstance,
+      AwsResource.DocdbClusterInstance,
+    )
     .mustBeFalse(AwsAttribute.PubliclyAccessible)
-    .message('RDS must not be publicly accessible (GDPR Art. 5(1)(f))')
+    .message(
+      'RDS/Aurora/DocDB must not be publicly accessible (GDPR Art. 5(1)(f))',
+    )
     .rationale('GDPR Art. 5(1)(f) — restrict access to personal data'),
 
   // ── Data-classification tagging (GDPR Art. 30 — records of processing) ─

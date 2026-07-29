@@ -39,6 +39,22 @@ export const cisAws = [
     .message('ElastiCache replication groups must encrypt at rest')
     .rationale('CIS AWS — encrypt ElastiCache'),
 
+  rule()
+    .resource(AwsResource.ElasticacheReplicationGroup)
+    .mustBeTrue(AwsAttribute.TransitEncryptionEnabled)
+    .onViolation(Effect.Warn)
+    .message('ElastiCache replication groups must enable transit encryption')
+    .rationale('CIS AWS — encrypt Redis traffic in transit'),
+
+  // ── OpenSearch enforce HTTPS at the domain endpoint ───────────────────
+  rule()
+    .id('opensearch-enforce-https')
+    .resource(AwsResource.OpensearchDomain)
+    .mustBeTrue(AwsAttribute.OpenSearchEnforceHttps)
+    .onViolation(Effect.Warn)
+    .message('OpenSearch domains must enforce HTTPS on the endpoint')
+    .rationale('CIS AWS — reject plaintext access to the domain endpoint'),
+
   // ── S3 block public ACLs (CIS §2 — core has denyAcl, this adds the block) ─
   rule()
     .resource(AwsResource.S3Bucket)
@@ -46,11 +62,17 @@ export const cisAws = [
     .message('S3 buckets must block public ACLs')
     .rationale('CIS AWS — enable block_public_acls'),
 
-  // ── RDS not publicly accessible (CIS §3 — not in core) ─────────────────
+  // ── RDS/Aurora/DocDB not publicly accessible (CIS §3 — not in core) ────
+  // Cluster instances (`aws_rds_cluster_instance`, `aws_docdb_cluster_instance`)
+  // carry `publicly_accessible` too — covered alongside `aws_db_instance`.
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(
+      AwsResource.DbInstance,
+      AwsResource.RdsClusterInstance,
+      AwsResource.DocdbClusterInstance,
+    )
     .mustBeFalse(AwsAttribute.PubliclyAccessible)
-    .message('RDS instances must not be publicly accessible')
+    .message('RDS/Aurora/DocDB instances must not be publicly accessible')
     .rationale('CIS AWS — no public DB endpoint'),
 
   // ── ECR image scanning (CIS — not in core) ─────────────────────────────

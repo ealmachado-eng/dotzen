@@ -128,7 +128,10 @@ resource "azurerm_role_assignment" "bad_owner" {
 
 # A secret-looking variable WITHOUT sensitive = true (binding-surface rule)
 variable "sql_password" {
-  default = "hunter2"
+  # No hardcoded default — caller supplies it at apply time. The declaration
+  # is itself non-compliant (not `sensitive = true`), so denyInsensitiveVariable
+  # still flags it; `good_sql` references it but the value is unresolved → CNE
+  # (not a denyLiteral violation).
 }
 
 # A local with a hardcoded secret (binding-surface rule)

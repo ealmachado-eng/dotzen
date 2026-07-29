@@ -79,6 +79,15 @@ export const cisAzure = [
     .message('MSSQL servers must enforce TLS 1.2 minimum')
     .rationale('CIS Azure §4.2 — enforce TLS'),
 
+  // ── Azure SQL admin password must not be hardcoded ────────────────────
+  // Cross-cloud parity with `coreSecurity` (AWS db password) + `cisGcp`
+  // (Cloud SQL root password). A literal admin password lands in state/VCS.
+  rule()
+    .resource(AzureResource.MssqlServer)
+    .denyLiteral(AzureAttribute.AdministratorLoginPassword)
+    .message('Azure SQL admin passwords must be a reference, not a literal')
+    .rationale('CIS Azure — no plaintext DB credentials'),
+
   rule()
     .resource(AzureResource.PostgresqlServer)
     .mustBeTrue(AzureAttribute.SslEnforcementEnabled)
