@@ -273,6 +273,15 @@ export const coreSecurity = [
     .message('RDS passwords must be a reference, not a literal')
     .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
 
+  // ── No hardcoded Aurora/Redshift cluster master passwords ──────────────
+  // Clusters use `master_password` (distinct from `aws_db_instance.password`).
+  rule()
+    .id('no-hardcoded-cluster-password')
+    .resource(AwsResource.RdsCluster, AwsResource.RedshiftCluster)
+    .denyLiteral(AwsAttribute.MasterPassword)
+    .message('Cluster master passwords must be a reference, not a literal')
+    .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
+
   // ── State backend must be encrypted ───────────────────────────────────
   rule()
     .id('encrypted-state')

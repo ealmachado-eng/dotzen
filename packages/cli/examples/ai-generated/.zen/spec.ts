@@ -53,9 +53,9 @@ export const spec = [
     .rationale('FinOps ownership + cost allocation policy'),
 
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(AwsResource.DbInstance, AwsResource.RdsCluster)
     .mustBeTrue(AwsAttribute.StorageEncrypted)
-    .message('RDS instances must have storage encryption at rest')
+    .message('RDS instances and Aurora clusters must encrypt storage at rest')
     .rationale('LGPD/PCI-DSS data-at-rest protection'),
 
   rule()

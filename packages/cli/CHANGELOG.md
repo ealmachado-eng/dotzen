@@ -6,6 +6,48 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.13
+
+Dogfood round 10 follow-up — close the Aurora governance gap across shipped
+specs. Round 10 surfaced that the ad-hoc dogfood spec targeted only
+`aws_db_instance` for DB encryption/password, so Aurora (`aws_rds_cluster`)
+got **no** DB finding. Investigation showed `coreSecurity` already governed
+Aurora **encryption** (`rds-cluster-encryption`), but three shipped artifacts
+still missed Aurora for either encryption or master-password:
+
+### Fixed — `coreSecurity` now governs Aurora/Redshift master passwords
+
+The `no-hardcoded-db-password` rule targeted only `aws_db_instance.password`.
+Added `no-hardcoded-cluster-password` targeting `aws_rds_cluster` and
+`aws_redshift_cluster` via the `master_password` attribute (the cluster-level
+credential, distinct from `aws_db_instance.password`). Mirrors the pattern
+already in the ai-generated example spec. Engine behavior for
+`RdsCluster` + `denyLiteral(MasterPassword)` was already covered by
+`evaluate.secrets.test.ts`.
+
+### Fixed — scaffold template now Aurora-aware
+
+`dotzen init`'s generated `.zen/spec.ts`:
+
+- Storage-encryption rule now targets `aws_db_instance` **and** `aws_rds_cluster`
+- Added an Aurora `master_password` plaintext-secret rule (previously only
+  `aws_db_instance.password` was governed)
+
+Users who scaffold a spec (without composing `coreSecurity`) are now protected
+against unencrypted / plaintext-password Aurora clusters out of the box.
+
+### Fixed — ai-generated example spec encryption rule
+
+`examples/ai-generated/.zen/spec.ts` storage-encryption rule now targets
+`aws_rds_cluster` alongside `aws_db_instance` (its master-password rule
+already covered Aurora/Redshift — now encryption matches).
+
+### Net effect
+
+All three shipped spec surfaces (preset, scaffold, example) now govern Aurora
+clusters for both storage encryption and master-password plaintext — no
+remaining path where an Aurora cluster silently escapes DB governance.
+
 ## 1.9.12
 
 Dogfood round 10 — fresh-repo verification follow-up. Ran v1.9.11 against 4

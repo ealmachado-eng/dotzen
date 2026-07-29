@@ -1,6 +1,6 @@
 {
   "name": "@dotzen/dotzen",
-  "version": "1.9.12",
+  "version": "1.9.13",
   "description": "Prose as Code — governance for AI-generated Terraform (AWS, Azure, GCP).",
   "license": "MIT",
   "keywords": [

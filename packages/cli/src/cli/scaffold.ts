@@ -62,9 +62,9 @@ export const spec = [
     .rationale('FinOps ownership + cost allocation policy'),
 
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(AwsResource.DbInstance, AwsResource.RdsCluster)
     .mustBeTrue(AwsAttribute.StorageEncrypted)
-    .message('RDS instances must have storage encryption at rest'),
+    .message('RDS instances and Aurora clusters must encrypt storage at rest'),
 
   rule()
     .resource(AwsResource.S3Bucket)
@@ -77,6 +77,14 @@ export const spec = [
     .resource(AwsResource.DbInstance)
     .denyLiteral(AwsAttribute.Password)
     .message('RDS passwords must be a reference, not a literal')
+    .rationale('No plaintext secrets — use Secrets Manager / SSM'),
+
+  // Aurora/RDS clusters use master_password (a different attribute than
+  // aws_db_instance.password) — governed separately.
+  rule()
+    .resource(AwsResource.RdsCluster)
+    .denyLiteral(AwsAttribute.MasterPassword)
+    .message('Aurora cluster master passwords must be a reference, not a literal')
     .rationale('No plaintext secrets — use Secrets Manager / SSM'),
 
   // No inline IAM policies — managed policies are auditable and reusable.
