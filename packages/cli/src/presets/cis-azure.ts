@@ -21,6 +21,7 @@ import {
   NetworkDefaultAction,
   BuiltInRole,
   Port,
+  Effect,
 } from '../vocabulary'
 
 export const cisAzure = [
@@ -60,6 +61,17 @@ export const cisAzure = [
     .message('Storage accounts must disable public network access')
     .rationale('CIS Azure — no public endpoint'),
 
+  rule()
+    .id('storage-infrastructure-encryption')
+    .resource(AzureResource.StorageAccount)
+    .mustBeTrue(AzureAttribute.InfrastructureEncryptionEnabled)
+    .onViolation(Effect.Warn)
+    .message('Storage accounts must enable infrastructure encryption')
+    .rationale(
+      'CIS Azure — a second platform-managed encryption layer at rest ' +
+        'depthens data protection',
+    ),
+
   // ── SQL servers (CIS Azure §4) ─────────────────────────────────────────
   rule()
     .resource(AzureResource.MssqlServer)
@@ -78,6 +90,18 @@ export const cisAzure = [
     .mustBeTrue(AzureAttribute.SslEnforcementEnabled)
     .message('MySQL servers must enforce SSL connections')
     .rationale('CIS Azure §4.4 — enforce SSL'),
+
+  // ── Cosmos DB (CIS Azure §4) ───────────────────────────────────────────
+  rule()
+    .id('cosmos-no-local-auth')
+    .resource(AzureResource.CosmosdbAccount)
+    .mustBeTrue(AzureAttribute.LocalAuthenticationDisabled)
+    .onViolation(Effect.Warn)
+    .message('Cosmos DB accounts must disable local (key-based) authentication')
+    .rationale(
+      'CIS Azure — use Entra ID (AAD) identity-based auth; local keys are ' +
+        'a long-lived credential surface',
+    ),
 
   // ── Key Vault (CIS Azure §8) ───────────────────────────────────────────
   rule()
@@ -110,6 +134,19 @@ export const cisAzure = [
     .mustBeTrue(AzureAttribute.HttpsOnly)
     .message('App Services must enforce HTTPS-only')
     .rationale('CIS Azure §9.3 — redirect HTTP to HTTPS'),
+
+  rule()
+    .id('app-service-min-tls')
+    .resource(
+      AzureResource.LinuxWebApp,
+      AzureResource.WindowsWebApp,
+      AzureResource.LinuxFunctionApp,
+      AzureResource.WindowsFunctionApp,
+    )
+    .mustBeOneOf(AzureAttribute.SiteConfigMinTlsVersion, SqlTlsVersion.V12)
+    .onViolation(Effect.Warn)
+    .message('App Services must enforce TLS 1.2 minimum')
+    .rationale('CIS Azure §9.2 — reject weak TLS'),
 
   // ── Container Registry (CIS Azure) ─────────────────────────────────────
   rule()

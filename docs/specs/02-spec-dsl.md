@@ -634,6 +634,17 @@ builds the engine:
 > cloud identifier makes this reliable in practice; the status quo was a
 > false violation on the parent.
 
+> **v1.8 — Azure niche remainder (ROADMAP #5).** Three `warn`-effect
+> `cisAzure` rules close the optional Azure CIS-L1 remainder, reusing
+> existing conditions (no engine change): Cosmos DB
+> `local_authentication_disabled` (`mustBeTrue`), modern App Service /
+> Function App `site_config.minimum_tls_version = "1.2"` (`mustBeOneOf`),
+> and storage `infrastructure_encryption_enabled` (`mustBeTrue`).
+> Client-cert was deliberately skipped — it is not a universal control
+> and would false-violate apps that do not use mTLS. New vocabulary:
+> `AzureAttribute.LocalAuthenticationDisabled`,
+> `AzureAttribute.InfrastructureEncryptionEnabled`.
+
 ## Deferred (documented for continuity, not v1 work)
 
 - `ts-pattern` exhaustive matching in the **engine** (Layer 4) — do this

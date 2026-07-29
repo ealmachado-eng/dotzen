@@ -355,6 +355,8 @@ export enum AzureAttribute {
   AllowNestedItemsToBePublic = 'allow_nested_items_to_be_public',
   MinTlsVersion = 'min_tls_version',
   PublicNetworkAccessEnabled = 'public_network_access_enabled',
+  // Storage — second platform-managed encryption layer at rest (CIS Azure).
+  InfrastructureEncryptionEnabled = 'infrastructure_encryption_enabled',
   // MSSQL server
   MinimumTlsVersion = 'minimum_tls_version',
   AdministratorLoginPassword = 'administrator_login_password',
@@ -363,6 +365,8 @@ export enum AzureAttribute {
   // AKS
   PrivateClusterEnabled = 'private_cluster_enabled',
   LocalAccountDisabled = 'local_account_disabled',
+  // Cosmos DB — disable key-based local auth in favor of Entra ID/AAD.
+  LocalAuthenticationDisabled = 'local_authentication_disabled',
   // App Service (Linux/Windows web app)
   HttpsOnly = 'https_only',
   // PostgreSQL / MySQL single server

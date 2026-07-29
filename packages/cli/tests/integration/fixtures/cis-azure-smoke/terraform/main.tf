@@ -91,6 +91,7 @@ resource "azurerm_storage_account" "good_storage" {
   min_tls_version          = "TLS1_2"
   allow_nested_items_to_be_public = false
   public_network_access_enabled   = false
+  infrastructure_encryption_enabled = true
 
   network_rules {
     default_action = "Deny"

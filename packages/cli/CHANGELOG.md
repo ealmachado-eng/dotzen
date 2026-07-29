@@ -6,6 +6,39 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.8.0
+
+Closes the optional Azure niche remainder (ROADMAP #5): three `warn`-effect
+`cisAzure` rules + two new `AzureAttribute` members. Reuses existing
+conditions — no engine change.
+
+### Added — `cisAzure` preset rules (Azure niche, ROADMAP #5)
+
+- **Cosmos DB local auth** (`cosmos-no-local-auth`) — `azurerm_cosmosdb_account`
+  must set `local_authentication_disabled = true` (Entra ID/AAD identity-based
+  auth; local keys are a long-lived credential surface). `mustBeTrue`, `warn`.
+- **App Service min-TLS** (`app-service-min-tls`) — `azurerm_linux_web_app` /
+  `windows_web_app` / `linux_function_app` / `windows_function_app` must enforce
+  `site_config.minimum_tls_version = "1.2"`. `mustBeOneOf`, `warn`. (Client-cert
+  was deliberately skipped — it is not a universal control and would
+  false-violate apps that do not use mTLS.)
+- **Storage infrastructure encryption** (`storage-infrastructure-encryption`) —
+  `azurerm_storage_account` must enable `infrastructure_encryption_enabled` (a
+  second platform-managed encryption layer at rest). `mustBeTrue`, `warn`.
+
+### Added — vocabulary
+
+- `AzureAttribute.LocalAuthenticationDisabled` (`local_authentication_disabled`)
+- `AzureAttribute.InfrastructureEncryptionEnabled` (`infrastructure_encryption_enabled`)
+
+### Migration notes
+
+Backward-compatible. Consumers composing `[...coreSecurity, ...cisAzure]` will
+see new `warn`-effect findings on Cosmos accounts using key auth, App Services
+on a weak TLS floor, and storage accounts without infrastructure encryption.
+The `cis-azure-smoke` integration fixture's compliant storage account was
+updated to set `infrastructure_encryption_enabled = true`.
+
 ## 1.7.0
 
 A feature release: a new project-level condition, two engine resolution

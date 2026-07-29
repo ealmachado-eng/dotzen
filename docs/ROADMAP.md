@@ -284,8 +284,11 @@ doc 02): each provider gets its own vocabulary module (`AzureResource` /
   = Deny (`mustEqual`, warn); managed-disk `disk_encryption_set_id` CMK
   (`mustBeSet`, warn); Key Vault diagnostic-logging presence
   (`mustHaveAssociated` on `azurerm_monitor_diagnostic_setting`, warn).
-- **Azure ~ CIS L1 reached.** Optional niche remainder: storage
-  infrastructure-encryption, App Service min-TLS/client-cert, Cosmos local-auth.
+- **Azure ~ CIS L1 reached.** ✅ **DONE (v1.8.0)** — the optional niche
+  remainder is shipped: storage infrastructure-encryption, App Service
+  min-TLS (client-cert deliberately skipped — not a universal control),
+  Cosmos DB local-auth. Three `warn` `cisAzure` rules reusing existing
+  conditions; two new `AzureAttribute` members.
 
 ### GCP (google) — initial CIS slice, DONE
 - ✅ `google_compute_firewall` SSH/RDP from `0.0.0.0/0` — `denyIngress`, via
