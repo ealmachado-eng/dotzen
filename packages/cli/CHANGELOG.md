@@ -6,6 +6,56 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.10
+
+Dogfood round 9 — precision suffix + ungoverned-coverage fixes. Running
+v1.9.9 against 3 fresh repos (AWS EC2, AWS EventBridge, GCP VPC-SC)
+surfaced a `credentials_path` identifier FP and two large ungoverned-noise
+categories on the EventBridge repo.
+
+### Fixed — `_path` identifier + config-flag suffix
+
+`denyInsensitiveVariable` and `denyPlaintextLocalSecret` now skip names
+ending in `_path` (e.g. `credentials_path`, `file_path`, `key_path`). A
+path is a structural identifier / filesystem location, not a hardcoded
+secret or sensitive value. Added to both `CONFIG_FLAG_SUFFIX` and
+`IDENTIFIER_SUFFIX`. (Eliminates the `credentials_path` FP on GCP VPC-SC.)
+
+### Added — `aws_iam_policy_attachment` + EventBridge vocabulary
+
+The AWS EventBridge repo surfaced 403 ungoverned resources, 224 of which
+were `aws_iam_policy_attachment` — the generic policy attachment (can
+attach to roles/users/groups via list attrs). Only the three specific
+variants (`aws_iam_role_policy_attachment`, `aws_iam_group_policy_attachment`,
+`aws_iam_user_policy_attachment`) were previously in the vocabulary.
+
+Also added the four core EventBridge (formerly CloudWatch Events) resource
+types that were missing while their less-common siblings (bus, archive,
+permission, bus_policy) were already present:
+
+- `aws_cloudwatch_event_rule`
+- `aws_cloudwatch_event_target`
+- `aws_cloudwatch_event_connection`
+- `aws_cloudwatch_event_api_destination`
+
+These are recognized-but-not-yet-rule-bearing — surfacing them removes
+ungoverned noise; adding rules later is enum-add only.
+
+### Dogfood round 9 summary
+
+| Repo            | V   | P   | CNE | Ungov    |
+| --------------- | --- | --- | --- | -------- |
+| AWS EC2         | 16  | —   | 16  | —        |
+| AWS EventBridge | 0   | —   | —   | 403 → ~0 |
+| GCP VPC-SC      | 6   | —   | —   | —        |
+
+EC2: 16 violations are resource tags (expected); 16 CNE are variable-driven
+SG ports (expected — can't evaluate `var.port` without caller input).
+EventBridge: 0 violations; 403 ungoverned → ~0 after the vocabulary
+expansion (`aws_iam_policy_attachment` ×224 + EventBridge types).
+VPC-SC: 6 violations — `credentials_path` FP (fixed by `_path` suffix),
+`vpn_shared_secret` real (legitimate hardcoded secret).
+
 ## 1.9.9
 
 Dogfood round 8 — precision + coverage fixes. Running v1.9.8 against 4 fresh

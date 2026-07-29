@@ -1236,7 +1236,7 @@ function evalInsensitiveSecretOutput(
  * a local named `secret_rotation_enabled = "my-password"` IS suspicious).
  */
 const CONFIG_FLAG_SUFFIX =
-  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length|_status|_policy|_arns|_arn|_permission|_age|_length|_required|_prevention|_duration|_expression|_key_id|_strategy|_name|_suffix)$/i
+  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length|_status|_policy|_arns|_arn|_permission|_age|_length|_required|_prevention|_duration|_expression|_key_id|_strategy|_name|_suffix|_path)$/i
 
 /**
  * Identifier suffixes — names ending in these are structural IDENTIFIERS
@@ -1247,7 +1247,7 @@ const CONFIG_FLAG_SUFFIX =
  * contains "secret" (as part of "secretstore"). (Dogfood round 8.)
  */
 const IDENTIFIER_SUFFIX =
-  /(_name|_arn|_arns|_id|_key_id|_suffix|_sa|_account)$/i
+  /(_name|_arn|_arns|_id|_key_id|_suffix|_sa|_account|_path)$/i
 
 /**
  * Config-flag verb prefixes — `allow_*`, `create_*`, `attach_*`, `enable_*`,

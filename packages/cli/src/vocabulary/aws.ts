@@ -140,6 +140,11 @@ export enum AwsResource {
   IamUserGroupMembership = 'aws_iam_user_group_membership',
   IamUserPolicy = 'aws_iam_user_policy',
   IamUserPolicyAttachment = 'aws_iam_user_policy_attachment',
+  // Generic policy attachment — can attach to roles, users, or groups via
+  // `roles`/`users`/`groups` list attrs. The three specific variants above
+  // (role/group/user) are preferred when the target type is known, but the
+  // generic form is common in modules that parameterize the principal type.
+  IamPolicyAttachment = 'aws_iam_policy_attachment',
   IamUserSshKey = 'aws_iam_user_ssh_key',
   IamAccessKey = 'aws_iam_access_key',
   IamInstanceProfile = 'aws_iam_instance_profile',
@@ -196,6 +201,14 @@ export enum AwsResource {
   CloudwatchEventBusPolicy = 'aws_cloudwatch_event_bus_policy',
   CloudwatchEventArchive = 'aws_cloudwatch_event_archive',
   CloudwatchEventPermission = 'aws_cloudwatch_event_permission',
+  // EventBridge (formerly CloudWatch Events) — rule/target/connection/api-
+  // destination are the legacy `aws_cloudwatch_event_*` names still used by
+  // the vast majority of modules. The bus/archive/permission entries above
+  // are the less common siblings.
+  CloudwatchEventRule = 'aws_cloudwatch_event_rule',
+  CloudwatchEventTarget = 'aws_cloudwatch_event_target',
+  CloudwatchEventConnection = 'aws_cloudwatch_event_connection',
+  CloudwatchEventApiDestination = 'aws_cloudwatch_event_api_destination',
   CloudwatchQueryDefinition = 'aws_cloudwatch_query_definition',
   CloudwatchMetricStream = 'aws_cloudwatch_metric_stream',
   // Route53 / DNS / ACM
