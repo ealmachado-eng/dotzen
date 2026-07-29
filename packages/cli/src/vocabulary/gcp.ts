@@ -97,6 +97,7 @@ export enum GcpResource {
   ProjectIamBinding = 'google_project_iam_binding',
   ProjectIamPolicy = 'google_project_iam_policy',
   ProjectIamCustomRole = 'google_project_iam_custom_role',
+  ProjectIamAuditConfig = 'google_project_iam_audit_config',
   ProjectOrganization = 'google_organization_iam_member',
   OrganizationIamBinding = 'google_organization_iam_binding',
   OrganizationIamPolicy = 'google_organization_iam_policy',
@@ -270,6 +271,7 @@ export enum GcpAttribute {
   EnableLegacyAbac = 'enable_legacy_abac',
   EnablePrivateNodes = 'private_cluster_config.enable_private_nodes',
   NetworkPolicyEnabled = 'network_policy.enabled',
+  ShieldedNodesEnabled = 'shielded_nodes.enabled',
   // KMS
   RotationPeriod = 'rotation_period',
   // Storage bucket hardening
@@ -277,6 +279,9 @@ export enum GcpAttribute {
   // Cloud Run Functions (google_cloudfunctions2_function) — service_config.
   IngressSettings = 'service_config.ingress_settings',
   ServiceAccountEmail = 'service_config.service_account_email',
+  // BigQuery — public-access principal (standalone resource + inline block).
+  SpecialGroup = 'special_group',
+  AccessSpecialGroup = 'access.special_group',
 }
 
 export enum PublicAccessPreventionMode {

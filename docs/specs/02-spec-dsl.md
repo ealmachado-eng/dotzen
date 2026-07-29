@@ -645,6 +645,19 @@ builds the engine:
 > `AzureAttribute.LocalAuthenticationDisabled`,
 > `AzureAttribute.InfrastructureEncryptionEnabled`.
 
+> **v1.9 — GCP niche remainder (ROADMAP #6).** Three `cisGcp` rules close
+> the optional GCP CIS-L1 remainder, reusing existing conditions (no engine
+> change): Cloud Audit Logs config presence (`requireResource` — the v1.7
+> project-level condition; `warn`), GKE Shielded Nodes
+> (`shielded_nodes.enabled`, `mustBeTrue`, `warn`), and BigQuery dataset
+> public access (`denyValue` on `special_group` / `access.special_group`,
+> `block`). The BigQuery inline form catches the FIRST `access {}` block
+> only — a multi-block dataset where a later block is public is a known
+> flattener gap (documented in the preset). New vocabulary:
+> `GcpResource.ProjectIamAuditConfig`,
+> `GcpAttribute.ShieldedNodesEnabled`, `GcpAttribute.SpecialGroup`,
+> `GcpAttribute.AccessSpecialGroup`.
+
 ## Deferred (documented for continuity, not v1 work)
 
 - `ts-pattern` exhaustive matching in the **engine** (Layer 4) — do this

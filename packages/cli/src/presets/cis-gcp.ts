@@ -22,6 +22,7 @@ import {
   IngressSetting,
   Port,
   Block,
+  Effect,
 } from '../vocabulary'
 export const cisGcp = [
   // ── Compute: no public IP (CIS GCP §4.1) ──────────────────────────────
@@ -102,6 +103,30 @@ export const cisGcp = [
       'CIS GCP §7.4 — pods authenticate as their own identity, not the node SA',
     ),
 
+  // ── GKE Shielded Nodes (CIS GCP §7.x) ──────────────────────────────────
+  rule()
+    .id('gke-shielded-nodes')
+    .resource(GcpResource.ContainerCluster)
+    .mustBeTrue(GcpAttribute.ShieldedNodesEnabled)
+    .onViolation(Effect.Warn)
+    .message('GKE clusters must enable Shielded GKE Nodes')
+    .rationale(
+      'CIS GCP — Shielded Nodes provide integrity verification (secure boot + ' +
+        'measured boot) at the node level, complementing per-instance shielded VMs',
+    ),
+
+  // ── Cloud Audit Logs config presence (CIS GCP §2.x) ───────────────────
+  rule()
+    .id('require-audit-config')
+    .allResources()
+    .requireResource(GcpResource.ProjectIamAuditConfig)
+    .onViolation(Effect.Warn)
+    .message('A project IAM audit config must be declared (Cloud Audit Logs)')
+    .rationale(
+      'CIS GCP §2.x — an audit config captures admin/data read/write access ' +
+        'logs; absence means actions go unlogged',
+    ),
+
   // ── KMS (CIS GCP §3) ───────────────────────────────────────────────────
   rule()
     .resource(GcpResource.KmsCryptoKey)
@@ -166,4 +191,19 @@ export const cisGcp = [
     .denyIngress(Port.SSH)
     .message('Firewall rules must not open SSH to the internet')
     .rationale('CIS GCP §4.6 — no public SSH'),
+
+  // ── BigQuery dataset public access (CIS GCP) ───────────────────────────
+  // Flag a public grant via the standalone resource (`special_group`) OR the
+  // dataset's inline access block (`access.special_group`). Two conditions on
+  // one rule: each resource type trips only its own (the other attr is absent
+  // → pass). NOTE: the inline form catches the FIRST access block only (the
+  // flattener recurses into v[0]); a multi-block dataset where a later block
+  // is public is a known gap (needs the multi-block collect change).
+  rule()
+    .id('bigquery-no-public-access')
+    .resource(GcpResource.BigqueryDatasetAccess, GcpResource.BigqueryDataset)
+    .denyValue(GcpAttribute.SpecialGroup, IamMember.AllAuthenticatedUsers)
+    .denyValue(GcpAttribute.AccessSpecialGroup, IamMember.AllAuthenticatedUsers)
+    .message('BigQuery datasets must not grant access to allAuthenticatedUsers')
+    .rationale('CIS GCP — restrict dataset access to known principals'),
 ] as const

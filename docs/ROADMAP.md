@@ -316,9 +316,14 @@ doc 02): each provider gets its own vocabulary module (`AzureResource` /
 - ✅ **CIS-L1 breadth:** subnetwork VPC flow logs (`mustHaveBlock(log_config)`,
   warn); bucket versioning (`mustBeTrue`, warn) + access logging
   (`mustHaveBlock(logging)`, warn).
-- **GCP ~ CIS L1 reached.** Optional niche remainder: Cloud Audit Logs
-  config (`google_project_iam_audit_config`); BigQuery dataset public access
-  (needs multi-`access`-block handling); GKE shielded nodes / workload identity.
+- **GCP ~ CIS L1 reached.** ✅ **DONE (v1.9.0)** — the optional niche
+  remainder is shipped: Cloud Audit Logs config presence
+  (`requireResource` — uses the v1.7 project-level condition), GKE Shielded
+  Nodes, and BigQuery dataset public access (standalone + inline first-block;
+  multi-block inline is a known flattener gap, documented). Three `cisGcp`
+  rules reusing existing conditions; new vocab:
+  `GcpResource.ProjectIamAuditConfig`, `GcpAttribute.ShieldedNodesEnabled`,
+  `GcpAttribute.SpecialGroup`, `GcpAttribute.AccessSpecialGroup`.
 
 ### API Gateway (beyond CIS L1 — Well-Architected security)
 Not part of any cloud's CIS Foundations L1, added as demand-driven breadth.

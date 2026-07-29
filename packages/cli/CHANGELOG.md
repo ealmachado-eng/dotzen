@@ -6,6 +6,46 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.0
+
+Closes the optional GCP niche remainder (ROADMAP #6): three `cisGcp` rules +
+new vocabulary. Reuses existing conditions (including the v1.7
+`requireResource` for the audit-config presence check) — no engine change.
+
+### Added — `cisGcp` preset rules (GCP niche, ROADMAP #6)
+
+- **Cloud Audit Logs config presence** (`require-audit-config`) — a
+  `google_project_iam_audit_config` must be declared so admin/data access is
+  logged. Uses the v1.7 `requireResource` condition (project-level presence).
+  `warn`.
+- **GKE Shielded Nodes** (`gke-shielded-nodes`) — `google_container_cluster`
+  must enable `shielded_nodes.enabled` (integrity verification at the node
+  level, complementing per-instance shielded VMs). `mustBeTrue`, `warn`.
+- **BigQuery dataset public access** (`bigquery-no-public-access`) — flags a
+  `special_group = "allAuthenticatedUsers"` grant on the standalone
+  `google_bigquery_dataset_access` resource OR the dataset's inline
+  `access {}` block. Two `denyValue` conditions on one rule (each resource
+  type trips only its own — the other attr is absent → pass). `block`.
+  NOTE: the inline form catches the FIRST `access {}` block only (the
+  flattener recurses into `v[0]`); a multi-block dataset where a later block
+  is public is a known gap (needs the multi-block `collect` change).
+
+### Added — vocabulary
+
+- `GcpResource.ProjectIamAuditConfig` (`google_project_iam_audit_config`)
+- `GcpAttribute.ShieldedNodesEnabled` (`shielded_nodes.enabled`)
+- `GcpAttribute.SpecialGroup` (`special_group`) — standalone BigQuery access
+- `GcpAttribute.AccessSpecialGroup` (`access.special_group`) — inline access
+
+### Migration notes
+
+Backward-compatible. Consumers composing `[...coreSecurity, ...cisGcp]` will
+see new findings: a `warn` for projects with no audit config, a `warn` for GKE
+clusters without shielded nodes, and a `block` for BigQuery datasets granting
+`allAuthenticatedUsers`. The `cis-gcp-smoke` fixture's compliant GKE cluster
+was updated to set `shielded_nodes { enabled = true }` and a compliant
+`google_project_iam_audit_config` was added.
+
 ## 1.8.0
 
 Closes the optional Azure niche remainder (ROADMAP #5): three `warn`-effect

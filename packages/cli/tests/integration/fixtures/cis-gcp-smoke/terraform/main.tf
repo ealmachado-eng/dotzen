@@ -126,8 +126,28 @@ resource "google_container_cluster" "good_gke" {
     workload_pool = "my-project.svc.id.goog"
   }
 
+  shielded_nodes {
+    enabled = true
+  }
+
   node_config {
     machine_type = "e2-medium"
+  }
+}
+
+# Cloud Audit Logs config (CIS GCP §2.x — the project-level presence rule
+# requires this to exist).
+resource "google_project_iam_audit_config" "audit" {
+  project = "my-project"
+  service = "allServices"
+  audit_log_config {
+    log_type = "ADMIN_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_WRITE"
   }
 }
 
