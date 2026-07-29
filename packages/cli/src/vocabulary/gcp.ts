@@ -59,6 +59,9 @@ export enum GcpResource {
   ComputeSecurityPolicy = 'google_compute_security_policy',
   ComputeRouter = 'google_compute_router',
   ComputeRouterNat = 'google_compute_router_nat',
+  // Cloud Router BGP sub-resources — interface + peer (the BGP session).
+  ComputeRouterInterface = 'google_compute_router_interface',
+  ComputeRouterPeer = 'google_compute_router_peer',
   ComputeVpnGateway = 'google_compute_vpn_gateway',
   ComputeVpnTunnel = 'google_compute_vpn_tunnel',
   ComputeInterconnect = 'google_compute_interconnect',
@@ -247,6 +250,13 @@ export enum GcpResource {
   ComputeReservation = 'google_compute_reservation',
   // Cloud DNS IAM Bindings for completeness
   OrgPolicy = 'google_org_policy_policy',
+  // Project / org management — bare project resource + API-enablement
+  // (`google_project_service`) + legacy org-level constraint policy
+  // (`google_organization_policy`; its successor is `google_org_policy_policy`
+  // above). Recognized-but-not-rule-bearing.
+  Project = 'google_project',
+  ProjectService = 'google_project_service',
+  OrganizationPolicy = 'google_organization_policy',
   // Jigu / Anos
   AlibabaInstallAmazonProvider = 'google_access_context_manager_access_policy_iam_binding',
 }

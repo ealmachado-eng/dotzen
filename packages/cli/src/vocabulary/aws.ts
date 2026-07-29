@@ -182,6 +182,14 @@ export enum AwsResource {
   SpotInstanceRequest = 'aws_spot_instance_request',
   SpotDatafeedSubscription = 'aws_spot_datafeed_subscription',
   SpotFleetRequest = 'aws_spot_fleet_request',
+  // Modern EC2 decomposition — `aws_ec2_tag` (per-tag resource, the successor
+  // to inline `tags`), `aws_volume_attachment` (EBS↔instance link),
+  // `aws_network_interface` (ENI), `aws_ec2_capacity_reservation`. Recognized
+  // so they don't surface as ungoverned on real EC2 module repos.
+  Ec2Tag = 'aws_ec2_tag',
+  VolumeAttachment = 'aws_volume_attachment',
+  NetworkInterface = 'aws_network_interface',
+  Ec2CapacityReservation = 'aws_ec2_capacity_reservation',
   ImagebuilderComponent = 'aws_imagebuilder_component',
   ImagebuilderImage = 'aws_imagebuilder_image',
   ImagebuilderImagePipeline = 'aws_imagebuilder_image_pipeline',
@@ -209,6 +217,17 @@ export enum AwsResource {
   CloudwatchEventTarget = 'aws_cloudwatch_event_target',
   CloudwatchEventConnection = 'aws_cloudwatch_event_connection',
   CloudwatchEventApiDestination = 'aws_cloudwatch_event_api_destination',
+  // EventBridge modern families — Pipes (`aws_pipes_pipe`), EventBridge
+  // Scheduler (`aws_scheduler_schedule` / `_schedule_group`), and the
+  // CloudWatch Logs account-level delivery triplet (delivery / source /
+  // destination). Newer than the legacy `aws_cloudwatch_event_*` names above;
+  // recognized-but-not-rule-bearing.
+  PipesPipe = 'aws_pipes_pipe',
+  SchedulerSchedule = 'aws_scheduler_schedule',
+  SchedulerScheduleGroup = 'aws_scheduler_schedule_group',
+  CloudwatchLogDelivery = 'aws_cloudwatch_log_delivery',
+  CloudwatchLogDeliveryDestination = 'aws_cloudwatch_log_delivery_destination',
+  CloudwatchLogDeliverySource = 'aws_cloudwatch_log_delivery_source',
   CloudwatchQueryDefinition = 'aws_cloudwatch_query_definition',
   CloudwatchMetricStream = 'aws_cloudwatch_metric_stream',
   // Route53 / DNS / ACM

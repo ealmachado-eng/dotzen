@@ -6,6 +6,58 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.11
+
+Dogfood round 9 follow-up — close the remaining ungoverned vocabulary gaps
+surfaced by the v1.9.10 verification run. All 19 additions are
+recognized-but-not-yet-rule-bearing (pure enum-add, no engine work), per
+the established ROADMAP item-1 pattern: surfacing them removes `ungoverned`
+noise on real module repos, and adding rules later is enum-add only.
+
+### Added — AWS resource vocabulary (10)
+
+**Modern EC2 decomposition** (surfaced on `terraform-aws-ec2`):
+
+- `aws_ec2_tag` — per-tag resource, successor to inline `tags`
+- `aws_volume_attachment` — EBS↔instance link
+- `aws_network_interface` — ENI
+- `aws_ec2_capacity_reservation`
+
+**EventBridge modern families** (surfaced on `terraform-aws-eventbridge`):
+
+- `aws_pipes_pipe` — EventBridge Pipes
+- `aws_scheduler_schedule` / `aws_scheduler_schedule_group` — EventBridge Scheduler
+- `aws_cloudwatch_log_delivery` / `_destination` / `_source` — account-level log-delivery triplet
+
+### Added — GCP resource vocabulary (5)
+
+Surfaced on `terraform-google-vpc-service-controls`:
+
+- `google_project` — the bare project resource (only `google_project_iam_*` were present)
+- `google_project_service` — API enablement
+- `google_compute_router_interface` / `_peer` — Cloud Router BGP sub-resources (`google_compute_router` was already present)
+- `google_organization_policy` — legacy org-level constraint policy (successor is `google_org_policy_policy`, already present)
+
+### Added — Data source vocabulary (4)
+
+Read-only, no security surface — recognized so they don't surface as ungoverned:
+
+- `data.aws_cloudwatch_event_bus`
+- `data.aws_organizations_organization`
+- `data.google_project`
+- `data.google_projects`
+
+### Dogfood verification (v1.9.11 target)
+
+All three round-9 repos should now report **zero ungoverned** (only
+violations/CNE/remote-module-following remain):
+
+| Repo            | Ungov (v1.9.10)  | Ungov (v1.9.11 target) |
+| --------------- | ---------------- | ---------------------- |
+| AWS EC2         | 4 types          | 0                      |
+| AWS EventBridge | 6 types + 2 data | 0                      |
+| GCP VPC-SC      | 5 types + 2 data | 0                      |
+
 ## 1.9.10
 
 Dogfood round 9 — precision suffix + ungoverned-coverage fixes. Running

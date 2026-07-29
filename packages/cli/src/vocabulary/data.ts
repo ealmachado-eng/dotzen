@@ -35,6 +35,9 @@ export enum DataResource {
   AwsSubnet = 'data.aws_subnet',
   AwsVpc = 'data.aws_vpc',
   AwsSecurityGroup = 'data.aws_security_group',
+  // EventBridge / Organizations — read-only data sources.
+  AwsCloudwatchEventBus = 'data.aws_cloudwatch_event_bus',
+  AwsOrganizationsOrganization = 'data.aws_organizations_organization',
   // Azure data sources — same rationale: read-only, no security surface.
   AzurermClientConfig = 'data.azurerm_client_config',
   AzurermResourceGroup = 'data.azurerm_resource_group',
@@ -48,6 +51,9 @@ export enum DataResource {
   GoogleComputeSubnetwork = 'data.google_compute_subnetwork',
   GoogleClientConfig = 'data.google_client_config',
   GoogleClientOpenidUserinfo = 'data.google_client_openid_userinfo',
+  // Project lookups — read-only.
+  GoogleProject = 'data.google_project',
+  GoogleProjects = 'data.google_projects',
 }
 
 export enum DataAttribute {
