@@ -22,8 +22,20 @@ export interface ResolvedRef {
   readonly name: string
 }
 
+/** A scalar HCL literal — the value types that can appear as a sole
+ *  attribute value or as a list element. Arrays of scalars are list-valued
+ *  attributes (`NormalizedResource.lists`); maps appear in `tags`/`labels`
+ *  (`TagsInfo`) or inside parsed policies. */
+export type Scalar = string | number | boolean
+
 export type NormalizedValue =
-  | { readonly kind: 'literal'; readonly value: string | number | boolean }
+  // A scalar literal OR a list literal resolved from a function call
+  // (`toset(...)` / `concat(...)` / `flatten(...)`). List literals are routed
+  // to `NormalizedResource.lists` by `collect` (never `attributes`) so the
+  // engine's scalar-attribute evaluators never see an array where they expect
+  // a scalar — the widening is plumbing for list-yielding expressions, not a
+  // general "attributes may hold arrays" change.
+  | { readonly kind: 'literal'; readonly value: Scalar | readonly Scalar[] }
   | {
       readonly kind: 'unresolved'
       readonly expr: string

@@ -10,6 +10,7 @@ import {
   IngressRule,
   NormalizedValue,
   ResolvedRef,
+  Scalar,
   TagsInfo,
   PolicyInfo,
   ListInfo,
@@ -436,10 +437,15 @@ function tryEvalConcat(
   const inner = raw.slice(firstOpen + 2, firstClose).trim()
   // Resolve the inner expression through `resolveValue` (handles sole refs,
   // `each.value.<field>`, and conservative ternaries — any single-interp
-  // inner that resolves to a literal). A pure `${ref}` never reaches here;
-  // SOLE_REF/EACH_VALUE_FIELD handle it earlier in resolveValue.
+  // inner that resolves to a SCALAR literal). A pure `${ref}` never reaches
+  // here; SOLE_REF/EACH_VALUE_FIELD handle it earlier in resolveValue. An
+  // array-literal inner (a list-yielding function call like `concat(...)` —
+  // the whole `${fn(...)}` has one interpolation) must NOT be string-coerced
+  // (String(['a','b']) = 'a,b' is a false value); fall through so
+  // tryEvalFunctionCall handles it instead.
   const innerValue = resolveValue(`\${${inner}}`, scope, depth - 1)
-  if (innerValue.kind !== 'literal') return undefined
+  if (innerValue.kind !== 'literal' || Array.isArray(innerValue.value))
+    return undefined
   const prefix = raw.slice(0, firstOpen)
   const suffix = raw.slice(firstClose + 1)
   return {
@@ -488,8 +494,238 @@ function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
     // interpolation strings and compound inner exprs stay unresolved.
     const concat = tryEvalConcat(raw, scope, depth)
     if (concat !== undefined) return concat
+    // Function-call eval (ROADMAP "compound caller inputs") — `toset`/`tolist`/
+    // `concat`/`flatten` over resolvable list arguments. Returns a literal
+    // array; any non-list / unresolvable / unknown-function arg returns
+    // undefined so the caller falls through to unresolved (never a guess).
+    const fn = tryEvalFunctionCall(raw, scope, depth)
+    if (fn !== undefined) return fn
   }
   return toValue(raw)
+}
+
+/**
+ * Resolve a list of raw cidr/source-range values to `NormalizedValue[]`,
+ * spreading any list-yielding result (a whole-list ref or a `concat`/`toset`/
+ * `flatten` function call) into individual entries. Each raw entry may be a
+ * scalar cidr, a sole ref to a list of cidrs, or a function-call string that
+ * resolves to a list; resolveListExpr flattens the list-yielding cases, then
+ * each element is re-resolved via `resolveValue` so inner refs (a list whose
+ * own elements are refs) are followed. Used by every ingress extraction site
+ * so `cidr_blocks = concat(var.pub, var.priv)` produces one NormalizedValue
+ * per cidr (not a single array-valued literal).
+ */
+function resolveCidrList(raws: unknown[], scope: Scope): NormalizedValue[] {
+  const out: NormalizedValue[] = []
+  for (const raw of raws) {
+    if (typeof raw === 'string') {
+      const list = resolveListExpr(raw, scope)
+      if (list) {
+        for (const c of list) out.push(resolveValue(c, scope))
+        continue
+      }
+    }
+    out.push(resolveValue(raw, scope))
+  }
+  return out
+}
+
+/**
+ * CONSERVATIVE function-call evaluator — closes the ROADMAP "compound caller
+ * inputs" gap for the four list-yielding Terraform built-ins that AI-generated
+ * Terraform reaches for most: `toset`/`tolist` (identity-on-list, the `for_each
+ * = toset([...])` pattern), `concat` (N lists → one), and `flatten`
+ * (single-level flatten of a list-of-lists). hcl2json represents every
+ * function call as a `'${fname(...)}'` string; this evaluator extracts the
+ * args, resolves each to a list (literal array / sole ref to a list default /
+ * nested function call), and returns the combined list as a `literal` array
+ * NormalizedValue. Returns `undefined` for ANY non-list operand, unknown
+ * function, unresolvable ref, or structural mismatch — so the caller degrades
+ * honestly to `unresolved` (could-not-evaluate) rather than guessing. Map-
+ * yielding functions (`merge`) are handled separately by the tag path
+ * (`resolveMergeMap`); they are not list-yielding and have no scalar-attribute
+ * consumer, so they deliberately return undefined here.
+ *
+ * Discipline (matches tryEvalTernary/tryEvalConcat): one evaluator per
+ * function, each total-or-undefined, never a false verdict. Adding a function
+ * = one case in the switch.
+ */
+function tryEvalFunctionCall(
+  raw: string,
+  scope: Scope,
+  depth: number,
+): NormalizedValue | undefined {
+  if (depth <= 0) return undefined
+  let s = raw.trim()
+  // hcl2json wraps function calls in `${...}`; accept both wrapped and bare.
+  if (s.startsWith('${') && s.endsWith('}')) s = s.slice(2, -1).trim()
+  const m = /^([a-z_][a-z0-9_]*)\s*\(/.exec(s)
+  if (!m || m[1] === undefined) return undefined
+  const fname = m[1]
+  const inner = callInner(s, fname)
+  if (inner === null) return undefined
+  const args = splitTopLevelArgs(inner)
+  switch (fname) {
+    case 'toset':
+    case 'tolist': {
+      // Identity-on-list: toset/tolist only assert uniqueness/ordering at
+      // apply time; statically the element list is unchanged. Operate on
+      // scalars — a nested list/object element is a Terraform type error,
+      // so degrade honestly rather than guess.
+      if (args.length !== 1) return undefined
+      const arr = resolveListArg(args[0]!, scope, depth - 1)
+      if (arr === undefined) return undefined
+      if (arr.some((el) => el !== null && typeof el === 'object'))
+        return undefined
+      return { kind: 'literal', value: arr as readonly Scalar[] }
+    }
+    case 'concat': {
+      // N list args → one concatenated list. Any non-list arg degrades.
+      // Nested-array elements are preserved (concat does not flatten —
+      // `concat([[1]], [2])` = `[[1], 2]`, matching Terraform semantics).
+      const out: Scalar[] = []
+      for (const a of args) {
+        const arr = resolveListArg(a, scope, depth - 1)
+        if (arr === undefined) return undefined
+        for (const el of arr) out.push(el as Scalar)
+      }
+      return { kind: 'literal', value: out }
+    }
+    case 'flatten': {
+      // Single-level flatten: each element that is itself a list is spread;
+      // scalar elements are kept. (Terraform's `flatten` is recursive, but a
+      // single level covers the common `[var.a, var.b]` shape; deeper
+      // nesting degrades honestly — never a guess at structure.)
+      if (args.length !== 1) return undefined
+      const arr = resolveListArg(args[0]!, scope, depth - 1)
+      if (arr === undefined) return undefined
+      const out: Scalar[] = []
+      for (const el of arr) {
+        if (Array.isArray(el)) out.push(...(el as readonly Scalar[]))
+        else if (el !== null && typeof el === 'object') return undefined
+        else out.push(el as Scalar)
+      }
+      return { kind: 'literal', value: out }
+    }
+    default:
+      // Unknown / map-yielding function — no static list semantics; degrade.
+      return undefined
+  }
+}
+
+/**
+ * Resolve a single function-argument expression to its raw JS value, or
+ * undefined. An arg may be: a nested function call (`concat(...)` → recurse),
+ * an array literal (`[var.a, var.b]` → resolve each element, following refs),
+ * an object literal (`{ K = V }` → parseHclValue), a sole `var`/`local`
+ * reference (→ resolveRaw to its default), or a scalar literal. Any compound
+ * expression, unknown shape, or unresolvable ref returns undefined — so the
+ * caller degrades honestly. Elements inside an array literal are resolved
+ * recursively (so `flatten([var.a, var.b])` works when both vars have list
+ * defaults), and nested arrays are preserved (flatten spreads them; toset/
+ * concat reject them as wrong-type args at the call site).
+ */
+function resolveArgValue(
+  arg: string,
+  scope: Scope,
+  depth: number,
+): unknown | undefined {
+  const s = arg.trim()
+  if (s.length === 0 || depth <= 0) return undefined
+  // Nested function call — recurse via the evaluator.
+  if (/^[a-z_][a-z0-9_]*\s*\(/.test(s)) {
+    const v = tryEvalFunctionCall(s, scope, depth - 1)
+    if (v?.kind === 'literal') return v.value
+    return undefined
+  }
+  // Array literal — split the body and resolve each element independently
+  // (parseHclValue alone rejects ref elements; we want them followed).
+  if (s[0] === '[') {
+    return resolveArrayLiteral(s, scope, depth)
+  }
+  // Object literal — parse structurally (refs inside values are acceptable;
+  // the consumer — merge — only needs the key set / literal values).
+  if (s[0] === '{') {
+    const parsed = parseHclValue(s)
+    return parsed === UNRESOLVED ? undefined : parsed
+  }
+  // Sole var/local ref — resolveRaw follows the chain to its default.
+  const ref = ARG_REF.exec(s)
+  if (ref && ref[1] !== undefined && ref[2] !== undefined) {
+    return resolveRaw(`\${${ref[1]}.${ref[2]}}`, scope, depth - 1)
+  }
+  // Scalar literal (quoted string / number / boolean / null).
+  return parseHclScalar(s)
+}
+
+/**
+ * Resolve an HCL array-literal string (`[a, b, ...]`) to a JS array, following
+ * refs and nested function calls inside. Each element is resolved via
+ * `resolveArgValue`; if ANY element is unresolvable the whole array degrades
+ * to undefined (honest — a partial array would be a guess). Nested arrays are
+ * preserved as-is (flatten spreads them; other functions reject them). Used
+ * by `resolveArgValue` for array-literal arguments like `flatten([var.a, var.b])`.
+ */
+function resolveArrayLiteral(
+  s: string,
+  scope: Scope,
+  depth: number,
+): unknown[] | undefined {
+  const close = matchBracket(s, 0)
+  if (close === -1) return undefined
+  const body = s.slice(1, close)
+  const out: unknown[] = []
+  for (const el of splitTopLevelEntries(body)) {
+    if (el.trim().length === 0) continue
+    const resolved = resolveArgValue(el, scope, depth - 1)
+    if (resolved === undefined) return undefined
+    out.push(resolved)
+  }
+  return out
+}
+
+/**
+ * Resolve a single function-argument expression to a flat list of values, or
+ * undefined. Wraps `resolveArgValue` and requires the result to be an array
+ * (the element shape — scalar or nested list — is preserved for the caller to
+ * validate: toset/concat want scalars, flatten wants possibly-nested lists).
+ * Non-list args (objects, scalars, undefined) return undefined.
+ */
+function resolveListArg(
+  arg: string,
+  scope: Scope,
+  depth: number,
+): readonly unknown[] | undefined {
+  const v = resolveArgValue(arg, scope, depth)
+  return Array.isArray(v) ? v : undefined
+}
+
+/**
+ * Resolve ANY list-valued expression to a flat JS array of scalars, or
+ * undefined when it cannot be statically determined. The single entry point
+ * for list-yielding expressions across the normalizer: `for_each`/`count`
+ * expansion, `dynamic` block iteration, and list-attribute harvesting. Handles
+ * three shapes: a literal array passed directly by hcl2json, a sole `var`/
+ * `local` reference resolving to a list default, and a `toset`/`tolist`/
+ * `concat`/`flatten` function call. Everything else (unresolvable ref,
+ * non-list value, unknown function, compound expression) returns undefined —
+ * which the caller degrades to could-not-evaluate or "follow once" honestly,
+ * never a silent false expansion. (Exported for direct unit testing.)
+ */
+export function resolveListExpr(
+  raw: unknown,
+  scope: Scope,
+  depth = 8,
+): readonly Scalar[] | undefined {
+  if (Array.isArray(raw)) return raw as Scalar[]
+  if (typeof raw !== 'string') return undefined
+  // Sole ref to a list default (e.g. for_each = var.envs).
+  const sole = resolveRaw(raw, scope, depth)
+  if (Array.isArray(sole)) return sole as Scalar[]
+  // Function call (toset/tolist/concat/flatten).
+  const fn = tryEvalFunctionCall(raw, scope, depth)
+  if (fn?.kind === 'literal' && Array.isArray(fn.value)) return fn.value
+  return undefined
 }
 
 /** Collect `variable` defaults and `locals` from all parsed files. */
@@ -631,25 +867,19 @@ export function mergeProviderRegions(
 function mapIngressObj(o: unknown, scope: Scope): IngressRule {
   const oo = asObject(o)
   const raw = oo.cidr_blocks
-  let cidrBlocks: NormalizedValue[]
-  if (Array.isArray(raw)) {
-    cidrBlocks = raw.map((c) => resolveValue(c, scope))
-  } else if (typeof raw === 'string') {
-    // A whole-list reference, e.g. `cidr_blocks = var.allowed_cidrs`
-    // (common in modules). Follow it to a concrete list; if it can't be
-    // resolved, keep it as one unresolved element so the check honestly
-    // degrades to "could not evaluate" instead of silently passing.
-    const resolved = resolveRaw(raw, scope)
-    cidrBlocks = Array.isArray(resolved)
-      ? resolved.map((c) => resolveValue(c, scope))
-      : [{ kind: 'unresolved', expr: raw }]
-  } else {
-    cidrBlocks = []
-  }
+  // hcl2json gives `cidr_blocks` as an array (list literal) OR a string (a
+  // whole-list ref like `var.allowed_cidrs`, or a list-yielding function call
+  // like `concat(...)`/`toset(...)`). resolveCidrList handles all three shapes
+  // and spreads a function-call result into individual cidr entries.
+  const raws: unknown[] = Array.isArray(raw)
+    ? raw
+    : raw !== undefined
+      ? [raw]
+      : []
   return {
     fromPort: resolveValue(oo.from_port, scope),
     toPort: resolveValue(oo.to_port, scope),
-    cidrBlocks,
+    cidrBlocks: resolveCidrList(raws, scope),
   }
 }
 
@@ -699,12 +929,13 @@ export const countIsZero = (count: unknown, scope: Scope): boolean => {
  * Whether a `for_each` collection resolves to EMPTY → zero instances → skip
  * silently (same intent-not-gap rationale as `count = 0`). Returns false for:
  *  - no `for_each` (undefined) — a normal single-instance resource.
- *  - an UNRESOLVABLE for_each (`toset([...])` / a var with no default / a
- *    function call) — follow once honestly, matching module-level behavior;
- *    the engine degrades dependent checks to could-not-evaluate. (Note: a
- *    literal `toset([])` is a function call dotzen cannot see inside, so it
- *    is treated as unresolvable and followed once — a known limitation,
- *    identical to module `for_each` handling.)
+ *  - an UNRESOLVABLE for_each (a var with no default, an unknown function,
+ *    a compound expression) — follow once honestly, matching module-level
+ *    behavior; the engine degrades dependent checks to could-not-evaluate.
+ *  List-yielding function calls (`toset`/`tolist`/`concat`/`flatten`) ARE
+ *  resolved — so `for_each = toset([])` now correctly skips (was previously
+ *  treated as unresolvable and followed once; the ROADMAP "compound caller
+ *  inputs" closure).
  */
 export function forEachIsEmpty(forEach: unknown, scope: Scope): boolean {
   if (forEach === undefined) return false
@@ -713,11 +944,14 @@ export function forEachIsEmpty(forEach: unknown, scope: Scope): boolean {
     return Object.keys(forEach as Record<string, unknown>).length === 0
   // Literal array → empty when length 0.
   if (Array.isArray(forEach)) return forEach.length === 0
-  // Reference: `${var.x}` / `${local.x}` → resolveRaw to a literal collection.
+  // A string expression — resolve via the unified list resolver (handles
+  // sole refs to lists AND toset/tolist/concat/flatten function calls).
   if (typeof forEach === 'string') {
+    const list = resolveListExpr(forEach, scope)
+    if (list !== undefined) return list.length === 0
+    // Map-yielding sole ref (for_each over a map — each.key is the map key).
     const resolved = resolveRaw(forEach, scope)
-    if (Array.isArray(resolved)) return resolved.length === 0
-    if (resolved && typeof resolved === 'object')
+    if (resolved && typeof resolved === 'object' && !Array.isArray(resolved))
       return Object.keys(resolved as Record<string, unknown>).length === 0
     return false // unresolvable → follow once
   }
@@ -743,6 +977,11 @@ export interface ForEachElement {
  *    without `each.*` (the engine degrades dependent checks to
  *    could-not-evaluate). Distinguishable from a real one-element set by the
  *    synthetic key '?' used only on the unresolvable path.
+ *
+ * List-yielding function calls (`toset`/`tolist`/`concat`/`flatten`) are
+ * resolved via `resolveListExpr` — so `for_each = toset(["dev","prd"])` now
+ * expands to two real instances (was: one honest follow, the ROADMAP
+ * "compound caller inputs" limitation, now closed).
  */
 export function expandForEach(
   forEach: unknown,
@@ -760,18 +999,21 @@ export function expandForEach(
   if (Array.isArray(forEach)) {
     return forEach.map((value) => ({ key: String(value), value }))
   }
-  // Reference: `${var.x}` / `${local.x}` → resolveRaw to a literal collection.
+  // A string expression — resolve via the unified list resolver (handles
+  // sole refs to lists AND toset/tolist/concat/flatten function calls), then
+  // fall back to map-yielding sole refs (for_each over a map).
   if (typeof forEach === 'string') {
-    const resolved = resolveRaw(forEach, scope)
-    if (Array.isArray(resolved)) {
-      return resolved.map((value) => ({ key: String(value), value }))
+    const list = resolveListExpr(forEach, scope)
+    if (list) {
+      return list.map((value) => ({ key: String(value), value }))
     }
-    if (resolved && typeof resolved === 'object') {
+    const resolved = resolveRaw(forEach, scope)
+    if (resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
       return Object.entries(resolved as Record<string, unknown>).map(
         ([key, value]) => ({ key, value }),
       )
     }
-    // Unresolvable (no default, or a `toset(...)`/function-call compound) →
+    // Unresolvable (no default, unknown function, compound expression) →
     // follow once honestly, no `each.*` bindings.
     return [{ key: '?', value: undefined }]
   }
@@ -860,7 +1102,7 @@ function ruleResourceIngress(
     {
       fromPort: resolveValue(block.from_port, scope),
       toPort: resolveValue(block.to_port, scope),
-      cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+      cidrBlocks: resolveCidrList(cidrs, scope),
     },
   ]
 }
@@ -891,7 +1133,7 @@ function naclEntryToIngress(
   return {
     fromPort: resolveValue(o.from_port, scope),
     toPort: resolveValue(o.to_port, scope),
-    cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+    cidrBlocks: resolveCidrList(cidrs, scope),
   }
 }
 
@@ -1008,7 +1250,7 @@ function gcpFirewallToIngress(
   if (direction !== 'INGRESS') return []
 
   const srcRaw = Array.isArray(block.source_ranges) ? block.source_ranges : []
-  const cidrBlocks = srcRaw.map((s) => resolveValue(s, scope))
+  const cidrBlocks = resolveCidrList(srcRaw, scope)
 
   const allows = Array.isArray(block.allow) ? block.allow : []
   const out: IngressRule[] = []
@@ -1065,7 +1307,7 @@ function ingressFor(
       {
         fromPort: resolveValue(block.from_port, scope),
         toPort: resolveValue(block.to_port, scope),
-        cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+        cidrBlocks: resolveCidrList(cidrs, scope),
       },
     ]
   }
@@ -1112,9 +1354,12 @@ const OBJECT_KEY = /([A-Za-z_][A-Za-z0-9_-]*)\s*=(?!=)/g
 // inside an object literal's *values* (e.g. `Ou = var.ou`) must not count.
 const ARG_REF = /^\$?\{?\s*(var|local)\.([A-Za-z0-9_-]+)\s*\}?$/
 
-/** The substring inside the outermost `merge( … )`, or null if unbalanced. */
-function mergeInner(value: string): string | null {
-  const m = /^merge\s*\(/.exec(value)
+/** The substring inside the outermost `fname( … )` call, or null if the
+ *  string does not start with `fname(` or the parens are unbalanced. The
+ *  general form of the merge-only helper below; used by the function-call
+ *  evaluator (`tryEvalFunctionCall`) to extract any function's argument list. */
+function callInner(value: string, fname: string): string | null {
+  const m = new RegExp(`^${fname}\\s*\\(`).exec(value)
   if (!m) return null
   let depth = 0
   const start = m[0].length
@@ -1127,6 +1372,11 @@ function mergeInner(value: string): string | null {
     }
   }
   return null
+}
+
+/** The substring inside the outermost `merge( … )`, or null if unbalanced. */
+function mergeInner(value: string): string | null {
+  return callInner(value, 'merge')
 }
 
 /** Split an argument list on top-level commas, respecting (), {}, [], quotes. */
@@ -1152,71 +1402,135 @@ function splitTopLevelArgs(inner: string): string[] {
 }
 
 /**
+ * Resolve ONE `merge(...)` argument to a partial map result, or null.
+ * Shared by `resolveMergeMap`. An arg may be: an object literal (`{ K = V }`),
+ * a sole `var`/`local` reference, or a nested function call (merge or other).
+ * Object literals carry their literal values when fully knowable; if any
+ * value is a ref/compound, parseHclValue rejects the whole object and we fall
+ * back to KEY-PRESENCE extraction (the partial-key semantic tags rely on: a
+ * ref-valued key like `{ Ou = var.ou }` still proves Ou is present). Returns
+ * `{map, complete}`: `complete` is true only when the arg is fully knowable
+ * (merge only adds keys, so an incomplete arg means the merged set could grow).
+ */
+function resolveMergeArg(
+  arg: string,
+  scope: Scope,
+  depth: number,
+): { map: Record<string, unknown>; complete: boolean } | null {
+  const s = arg.trim()
+  if (s.length === 0) return { map: {}, complete: true }
+  // Object literal — prefer a full structural parse (value-producing); fall
+  // back to OBJECT_KEY presence when any value is a ref/compound. Either way
+  // the KEY SET is fully knowable (the identifiers are literal), so this arg
+  // is always `complete` for the key-presence purpose tags rely on — ref
+  // values make the VALUE unknowable (stored undefined), not the key presence.
+  if (s[0] === '{') {
+    const parsed = parseHclValue(s)
+    if (
+      parsed !== UNRESOLVED &&
+      parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed)
+    ) {
+      return { map: { ...(parsed as Record<string, unknown>) }, complete: true }
+    }
+    // Ref-valued (or compound) entries — keep presence, values undefined.
+    const map: Record<string, unknown> = {}
+    for (const m of s.match(OBJECT_KEY) ?? [])
+      map[m.replace(/\s*=$/, '')] = undefined
+    return { map, complete: true }
+  }
+  // Sole var/local ref — follow to its value and recurse (handles a ref whose
+  // value is itself a merge expr or another ref chain).
+  const ref = ARG_REF.exec(s)
+  if (ref && ref[1] !== undefined && ref[2] !== undefined) {
+    const key = `${ref[1]}.${ref[2]}`
+    if (!scope.has(key)) return { map: {}, complete: false }
+    return resolveMergeMap(scope.get(key), scope, depth - 1)
+  }
+  // Nested function call — recurse for merge; other functions degrade.
+  if (/^[a-z_][a-z0-9_]*\s*\(/.test(s)) {
+    return resolveMergeMap(s, scope, depth - 1)
+  }
+  return { map: {}, complete: false } // opaque (scalar, compound expr)
+}
+
+/**
+ * Resolve a map-valued expression to a merged map and a `complete` flag, or
+ * null when it cannot be statically determined. Handles three top-level
+ * shapes: a literal object map (hcl2json-direct), a sole `var`/`local`
+ * reference (followed through scope, possibly to another merge expr), and a
+ * `merge(...)` call (each arg resolved via `resolveMergeArg`, later args
+ * overriding earlier on key conflict — Terraform's merge semantics). The
+ * `complete` flag is true iff every arg is fully knowable; merge only adds
+ * keys, so an incomplete arg means the result could grow → callers (tagKeys)
+ * treat a missing required key as could-not-evaluate rather than a false
+ * absence claim.
+ *
+ * This is the generalized, value-producing form of the former tag-only
+ * `tagKeys` merge path (ROADMAP "compound caller inputs": only `merge()` was
+ * partially handled, for tags). tagKeys now delegates and projects to keys.
+ * No scalar-attribute consumer reads map values today, so the merged map is
+ * forward-looking — but the resolver is reusable for any future map-valued
+ * condition. (Exported for direct unit testing.)
+ */
+export function resolveMergeMap(
+  value: unknown,
+  scope: Scope,
+  depth = 8,
+): { map: Record<string, unknown>; complete: boolean } | null {
+  if (value === undefined) return { map: {}, complete: true }
+  if (value && typeof value === 'object' && !Array.isArray(value))
+    return { map: value as Record<string, unknown>, complete: true }
+  if (typeof value !== 'string' || depth <= 0) return null
+
+  // Sole var/local ref — follow the chain to its value.
+  const ref = SOLE_REF.exec(value)
+  if (ref && ref[1] !== undefined && ref[2] !== undefined) {
+    const key = `${ref[1]}.${ref[2]}`
+    return scope.has(key)
+      ? resolveMergeMap(scope.get(key), scope, depth - 1)
+      : null
+  }
+
+  // Only treat `merge(...)` as the TOP-LEVEL call (strip a `${…}` wrapper
+  // first). merge nested inside another function is opaque → null.
+  const stripped = value.replace(/^\$\{/, '').replace(/\}$/, '').trim()
+  if (/^merge\s*\(/.test(stripped)) {
+    const inner = mergeInner(stripped)
+    if (inner === null) return null
+    const merged: Record<string, unknown> = {}
+    let complete = true
+    for (const arg of splitTopLevelArgs(inner)) {
+      const sub = resolveMergeArg(arg, scope, depth - 1)
+      if (sub === null) {
+        complete = false // unresolvable — could add unknown keys
+        continue
+      }
+      for (const [k, v] of Object.entries(sub.map)) merged[k] = v // later wins
+      if (!sub.complete) complete = false
+    }
+    return { map: merged, complete }
+  }
+
+  return null // not a merge, not a ref, not an object → opaque
+}
+
+/**
  * Keys known to be present on a tags value, and whether that set is
- * COMPLETE. Follows sole `var`/`local` references to their value, and
- * unions the literal keys (and resolvable refs) inside a `merge(...)`.
- * Returns `null` when nothing can be determined (an unresolvable reference
- * or an opaque expression) — which becomes "could not evaluate".
+ * COMPLETE. Delegates to `resolveMergeMap` (the generalized merge resolver)
+ * and projects to the key set. Returns `null` when nothing can be determined
+ * (an unresolvable reference or an opaque expression) — which becomes
+ * "could not evaluate".
  */
 function tagKeys(
   value: unknown,
   scope: Scope,
   depth = 8,
 ): { keys: string[]; complete: boolean } | null {
-  if (value === undefined) return { keys: [], complete: true }
-  if (value && typeof value === 'object' && !Array.isArray(value))
-    return { keys: Object.keys(value), complete: true }
-  if (typeof value !== 'string') return null
-
-  const ref = SOLE_REF.exec(value) // exactly one ${var.x} / ${local.y}
-  if (ref) {
-    if (depth <= 0) return null
-    const key = `${ref[1]}.${ref[2]}`
-    return scope.has(key) ? tagKeys(scope.get(key), scope, depth - 1) : null
-  }
-
-  // Only treat `merge(...)` as the TOP-LEVEL call (strip a `${…}` wrapper
-  // first). merge nested inside another function is opaque → could-not-eval.
-  const stripped = value.replace(/^\$\{/, '').replace(/\}$/, '').trim()
-  if (/^merge\s*\(/.test(stripped)) {
-    const inner = mergeInner(stripped)
-    if (inner === null) return null
-    // merge() only ADDS keys, so the result is COMPLETE iff every top-level
-    // argument is fully knowable: an object literal, or a ref that resolves
-    // to a complete map. An unresolvable ref or an opaque expression (e.g. a
-    // function call) means more keys could appear → PARTIAL, so a missing
-    // required tag degrades to could-not-evaluate rather than a false claim.
-    const keys = new Set<string>()
-    let complete = true
-    for (const arg of splitTopLevelArgs(inner)) {
-      const refMatch = ARG_REF.exec(arg)
-      if (arg.startsWith('{')) {
-        // Object literal: keys are the `ident =` pairs (tag maps are flat);
-        // the values — which may themselves mention refs — are irrelevant.
-        for (const m of arg.match(OBJECT_KEY) ?? [])
-          keys.add(m.replace(/\s*=$/, ''))
-      } else if (refMatch) {
-        const scopeKey = `${refMatch[1]}.${refMatch[2]}`
-        const sub =
-          depth > 0 && scope.has(scopeKey)
-            ? tagKeys(scope.get(scopeKey), scope, depth - 1)
-            : null
-        if (sub === null) {
-          complete = false // unresolvable ref — could add unknown keys
-        } else {
-          // Proven-present keys count even from a partial sub (merge only
-          // adds); a partial sub still means the whole set is incomplete.
-          for (const k of sub.keys) keys.add(k)
-          if (!sub.complete) complete = false
-        }
-      } else {
-        complete = false // opaque arg (function call, etc.) may add keys
-      }
-    }
-    return { keys: [...keys], complete }
-  }
-
-  return null // some other unresolvable expression
+  const m = resolveMergeMap(value, scope, depth)
+  if (m === null) return null
+  return { keys: Object.keys(m.map), complete: m.complete }
 }
 
 /**
@@ -1410,7 +1724,25 @@ function collect(
         items: v.map((x) => resolveValue(x, scope)),
       }
     } else if (typeof v !== 'object') {
-      out.attributes[key] = resolveValue(v, scope)
+      // A scalar-typed raw value (string/number/boolean). Usually resolves to
+      // a scalar literal. BUT a function-call string (`'${concat(...)}'` etc.)
+      // may resolve to a list literal — and that MUST route to `lists`, not
+      // `attributes`, so the engine's scalar-attribute evaluators never see an
+      // array where they expect a scalar (Phase 0 routing contract). An
+      // unresolvable function call stays an `unresolved` NormalizedValue in
+      // attributes (honest — not a known list, not a known scalar).
+      const resolved = resolveValue(v, scope)
+      if (resolved.kind === 'literal' && Array.isArray(resolved.value)) {
+        out.lists[key] = {
+          kind: 'resolved',
+          items: (resolved.value as readonly Scalar[]).map((x) => ({
+            kind: 'literal',
+            value: x,
+          })),
+        }
+      } else {
+        out.attributes[key] = resolved
+      }
     }
   }
 }

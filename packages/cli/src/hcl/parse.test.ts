@@ -710,11 +710,13 @@ module "db" {
     expect(labels).toEqual(['dev', 'prd'])
   })
 
-  it('for_each = toset([...]) (compound, unresolvable) — followed once, each.value stays unresolved (honest)', async () => {
-    // toset(...) is a compound expression resolveRaw cannot unwrap, so the
-    // collection is not statically knowable. followModules follows once,
-    // WITHOUT each bindings — any each.* ref inside degrades to unresolved
-    // (could-not-evaluate) via the engine. No false expansion.
+  it('for_each = toset([...]) now expands per element (compound-input closure)', async () => {
+    // The ROADMAP "compound caller inputs" gap is closed: toset/tolist/concat/
+    // flatten over resolvable list arguments are statically evaluated, so
+    // `for_each = toset(["dev","prd"])` expands to two real instances with
+    // each.value threaded — exactly like the bare-list and var-resolved-list
+    // cases above. (Was: followed once honestly, each.value unresolved — the
+    // documented limitation, now lifted.)
     const dir = scratch({
       [`${ENV}/main.tf`]: caller(`module "db" {
   source   = "../../modules/rds"
@@ -725,10 +727,20 @@ module "db" {
     const r = await scan(dir)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    // One instance, not two; trace has plain (db) label, no [key].
     const list = sgs(r.value.resources)
-    expect(list).toHaveLength(1)
-    expect(list[0]?.file).toMatch(/\(db\)$/)
+    expect(list).toHaveLength(2)
+    // Per-instance trace carries the element as the [key] suffix.
+    const labels = list
+      .map((s) => s.file.match(/\(db\[([^\]]+)\]\)/)?.[1])
+      .sort()
+    expect(labels).toEqual(['dev', 'prd'])
+    // each.value resolves to the element per instance (the set elements are
+    // "dev"/"prd", threaded into cidr_blocks = ["${each.value}"]).
+    const cidrs = list
+      .map((s) => (s.ingress[0]?.cidrBlocks[0] as { value?: string }).value)
+      .sort()
+    expect(cidrs).toEqual(['dev', 'prd'])
+    expect(r.value.skips).toHaveLength(0)
   })
 
   it('for_each = var.x (var no default — unresolvable) — followed once (honest)', async () => {

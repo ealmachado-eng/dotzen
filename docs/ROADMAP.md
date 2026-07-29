@@ -856,9 +856,9 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 
 ---
 
-## Current state (v1.9.16) & still-open
+## Current state (post-v1.9.18) & still-open
 
-Engine stable: 685 tests (84 unit files + integration), 0 false positives
+Engine stable: 761 tests (85 unit files + integration), 0 false positives
 since dogfood round 6, ~3200 resource/data types recognized across
 AWS/Azure/GCP. `examples/ai-generated/.zen/spec.ts` is the canonical
 comprehensive spec reference; `coreSecurity` + the per-cloud CIS packs are the
@@ -866,10 +866,34 @@ shipped baselines.
 
 **Genuinely open — capability, not coverage:**
 
-- **Compound caller inputs** — Terraform built-in function modeling
-  (`concat()` / `flatten()` / `toset()` for non-empty collections) across all
-  attributes. Only `merge()` is partially handled (tags). Deferred — broad
-  effort, diminishing returns (sole-ref caller inputs already work).
+- **Compound caller inputs** — ✅ **DONE (post-v1.9.18).** Terraform built-in
+  function modeling for the four list-yielding functions AI-generated
+  Terraform reaches for most: `toset()` / `tolist()` (identity-on-list — the
+  `for_each = toset([...])` pattern), `concat()` (N lists → one), and
+  `flatten()` (single-level flatten of a list-of-lists). A new
+  `tryEvalFunctionCall` evaluator sits in the `resolveValue` chain and returns
+  a list-literal `NormalizedValue` for any resolvable list argument;
+  `resolveListExpr` is the single entry point wired into `expandForEach` /
+  `forEachIsEmpty` / `dynamicBlocks` (so `for_each = toset(["dev","prd"])`
+  now expands to two real instances — was: one honest follow) and into
+  `collect` (list-attr routing: a function-call result lands in
+  `NormalizedResource.lists`, never `attributes`, so scalar-attr evaluators
+  never see an array) and the ingress cidr extractors (a `concat()` result
+  spreads into one `NormalizedValue` per cidr). `merge()` was generalized too:
+  the tag-only `tagKeys` path now delegates to a reusable, value-producing
+  `resolveMergeMap` (returns the merged map + a `complete` flag; object
+  literals with ref VALUES keep key-presence — the partial-key semantic tags
+  rely on — while marking values undefined). Any non-list / unresolvable /
+  unknown-function argument degrades honestly to unresolved
+  (could-not-evaluate) — never a guess, never a false verdict. The
+  `NormalizedValue.literal.value` type widened to `Scalar | readonly Scalar[]`
+  (Phase 0 plumbing) with defensive `!Array.isArray` guards on the two
+  `String(v.value)` engine paths. 44 new unit tests in
+  `normalize.functions.test.ts` + the obsolete `parse.test.ts` "toset followed
+  once" assertion rewritten to assert the new (correct) expansion. Remaining
+  niche: deeper `flatten()` recursion (Terraform's is recursive; we cover one
+  level — the common `[var.a, var.b]` shape) and other built-ins
+  (`keys`/`values`/`length`/`contains`) — low ROI, add on demand.
 - **`data.aws_iam_policy_document` through `followModules`** — ✅ **DONE
   (v1.9.17 / v1.9.18).** A child module consuming its OWN data doc
   (`policy = data.aws_iam_policy_document.x.json`) already resolved (data

@@ -6,6 +6,89 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.19
+
+Capability — close the **compound caller inputs** gap (the last
+"capability, not coverage" item on the roadmap). Statically evaluate the
+four list-yielding Terraform built-ins AI-generated Terraform reaches for
+most: `toset()` / `tolist()`, `concat()`, and `flatten()`. Previously any
+function call in a value position degraded to could-not-evaluate; now a
+resolvable list argument yields a definite verdict.
+
+```hcl
+# These previously degraded to could-not-evaluate; now they resolve.
+for_each    = toset(["dev", "prd"])          # → two real instances (was: 1)
+cidr_blocks = concat(var.public, var.private) # → spread into ingress
+list_attr   = flatten([var.a, var.b])         # → r.lists for listContains
+```
+
+### Changed — verdicts (consumers: re-run `dotzen check`)
+
+This converts some **could-not-evaluate** findings into definite
+**violations** or **passes** on existing configs. A rule that previously
+stayed silent (could-not-evaluate) on a `for_each = toset([...])` resource
+now evaluates that resource per-instance — so a violating config that was
+hidden behind the limitation now surfaces real violations. This is the
+correct behavior (the old silence was a false sense of compliance), but
+expect potentially new findings on configs that used these function calls.
+
+### Added — `tryEvalFunctionCall` + `resolveListExpr`
+
+A new function-call evaluator sits in the `resolveValue` chain and returns
+a list-literal `NormalizedValue` for any resolvable list argument
+(literal array, sole ref to a list default, or nested function call).
+`resolveListExpr` is the single entry point, wired into:
+
+- `expandForEach` / `forEachIsEmpty` — `for_each = toset([...])` expands
+  per element; `toset([])` correctly skips (was followed once).
+- `collect` — a list-yielding function result routes to
+  `NormalizedResource.lists` (never `attributes`, so scalar-attribute
+  evaluators never see an array where they expect a scalar).
+- ingress cidr extractors — a `concat()` result spreads into one
+  `NormalizedValue` per cidr (not a single array-valued literal).
+
+### Added — generalized `resolveMergeMap`
+
+The tag-only `merge()` handling (`tagKeys`) is extracted into a reusable,
+value-producing `resolveMergeMap` (returns the merged map + a `complete`
+flag). `tagKeys` delegates and projects to keys — no regression to the
+partial-key semantic (`merge({ Ou = var.ou }, var.tags)` still proves `Ou`
+is present even when its value is unknowable). Produces literal values when
+a merged object is fully literal; forward-looking for any future map-valued
+condition.
+
+### Changed — `NormalizedValue.literal.value` widened
+
+The literal value type now accepts `readonly Scalar[]` (was scalar-only).
+Array literals route exclusively to `NormalizedResource.lists`, so no
+scalar-attribute evaluator observes an array; two `String(v.value)` paths
+in the engine (`evalMustEqual`, `evalMustBeOneOf`) carry defensive
+`!Array.isArray` guards as belt-and-suspenders.
+
+### Fixed — `tryEvalConcat` array-coercion
+
+`tryEvalConcat` (the `prefix${sole_ref}suffix` evaluator) runs before
+`tryEvalFunctionCall` in the resolver chain and would match a
+single-interpolation function call like `${concat(...)}`, recursively
+resolve it to an array, then silently `String(array)`-coerce it to
+`"a,b"` — a false value. It now rejects non-scalar inner results and
+falls through to `tryEvalFunctionCall`.
+
+### Discipline
+
+Any non-list / unresolvable / unknown-function argument degrades honestly
+to unresolved (could-not-evaluate) — never a guess, never a false verdict.
+Deeper `flatten()` recursion (Terraform's is recursive; we cover one
+level — the common `[var.a, var.b]` shape) and other built-ins
+(`keys`/`values`/`length`/`contains`) remain deferred (low ROI).
+
+### Tests
+
+44 new unit tests in `normalize.functions.test.ts` (resolver, routing,
+ingress spread, merge generalization). The obsolete `parse.test.ts`
+"toset followed once" assertion is rewritten to assert the new (correct)
+two-instance expansion. Gate: 723 unit + 38 integration, 0 regressions.
+
 ## 1.9.18
 
 Capability — resolve IAM policies re-exported through **nested module

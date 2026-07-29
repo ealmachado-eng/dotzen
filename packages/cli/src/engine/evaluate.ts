@@ -533,7 +533,11 @@ function evalMustEqual(c: MustEqual, r: NormalizedResource): ConditionOutcome {
       kind: 'cannotEvaluate',
       reason: `${c.attr} is an unresolved reference`,
     }
-  if (v?.kind === 'literal' && String(v.value) === c.value)
+  if (
+    v?.kind === 'literal' &&
+    !Array.isArray(v.value) &&
+    String(v.value) === c.value
+  )
     return { kind: 'pass' }
   return { kind: 'violation', detail: `${c.attr} must equal "${c.value}"` }
 }
@@ -843,7 +847,11 @@ function evalMustBeOneOf(
       kind: 'cannotEvaluate',
       reason: `${c.attr} is an unresolved reference`,
     }
-  if (v?.kind === 'literal' && c.values.includes(String(v.value)))
+  if (
+    v?.kind === 'literal' &&
+    !Array.isArray(v.value) &&
+    c.values.includes(String(v.value))
+  )
     return { kind: 'pass' }
   return {
     kind: 'violation',
