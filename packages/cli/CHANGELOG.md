@@ -6,6 +6,12 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.8
+
+Re-publish of v1.9.7 (the v1.9.7 tag pipeline failed on a CHANGELOG.md
+format:check — the format step ran from the wrong cwd in the release chain).
+Identical engine code to v1.9.7; the only change is the formatted CHANGELOG.
+
 ## 1.9.7
 
 Dogfood round 7 — one config-flag suffix fix. Running v1.9.6 against 3 fresh
