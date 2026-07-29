@@ -6,6 +6,50 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.14
+
+Preset audit follow-up — close three DB-cluster / credential gaps found by a
+systematic cross-reference of all eight presets against the vocabulary (the
+same Aurora-style pattern: a sibling cluster resource carries the attribute
+but the rule missed it).
+
+### Fixed — `coreSecurity` now governs DocumentDB clusters
+
+`aws_docdb_cluster` carries both `storage_encrypted` and `master_password`
+(it is MongoDB-compatible master auth), but was missed by the same blind spot
+that previously missed Aurora:
+
+- `rds-cluster-encryption` now targets `aws_rds_cluster` **and** `aws_docdb_cluster`
+- `no-hardcoded-cluster-password` now targets `aws_rds_cluster`,
+  `aws_redshift_cluster`, **and** `aws_docdb_cluster`
+
+(Redshift still uses a distinct `encrypted` attr for at-rest encryption, kept
+in the CIS/PCI/NIST packs.)
+
+### Fixed — Aurora backup retention now governed
+
+`aws_rds_cluster` carries `backup_retention_period`, but the retention rules
+targeted only `aws_db_instance`:
+
+- `coreSecurity` baseline (≥7 days) now targets `aws_db_instance` **and** `aws_rds_cluster`
+- `pciDss` stricter baseline (≥30 days) now targets both as well
+
+### Fixed — `coreSecurity` now denies plaintext ElastiCache AUTH tokens
+
+Added `no-hardcoded-elasticache-auth-token` governing
+`aws_elasticache_replication_group.auth_token` (the Redis AUTH credential).
+The CIS pack already governed ElastiCache _at-rest encryption_; the plaintext
+AUTH token was a credential surface that previously escaped `coreSecurity`
+(the ai-generated example spec already had this rule).
+
+### Net effect
+
+No DB-cluster type now silently escapes storage-encryption, master-password,
+or backup-retention governance across the cluster family
+(Aurora / DocDB / Redshift). ElastiCache's AUTH credential is now on par with
+RDS/Redshift passwords. Presets remain structurally consistent (all eight
+compile + validate; the `coreSecurity >= 15` count assertion now holds at 16).
+
 ## 1.9.13
 
 Dogfood round 10 follow-up — close the Aurora governance gap across shipped

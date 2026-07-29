@@ -65,10 +65,13 @@ export const pciDss = [
     .rationale('PCI 1.3.4 — restrict cross-account public access'),
 
   // ── Stricter backup retention (PCI 10.7 — 1 year) ──────────────────────
+  // Aurora clusters (`aws_rds_cluster`) carry `backup_retention_period` too.
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(AwsResource.DbInstance, AwsResource.RdsCluster)
     .mustBeAtLeast(AwsAttribute.BackupRetentionPeriod, 30)
-    .message('RDS backup retention must be at least 30 days (PCI audit trail)')
+    .message(
+      'RDS/Aurora backup retention must be at least 30 days (PCI audit trail)',
+    )
     .rationale('PCI 10.7 — retain audit trail history for at least 1 year'),
 
   // ── RDS not publicly accessible (PCI 1.3.1) ────────────────────────────

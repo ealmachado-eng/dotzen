@@ -194,10 +194,11 @@ export const coreSecurity = [
     ),
 
   // ── RDS backup retention (baseline ≥7) ─────────────────────────────────
+  // Aurora clusters (`aws_rds_cluster`) carry `backup_retention_period` too.
   rule()
-    .resource(AwsResource.DbInstance)
+    .resource(AwsResource.DbInstance, AwsResource.RdsCluster)
     .mustBeAtLeast(AwsAttribute.BackupRetentionPeriod, 7)
-    .message('RDS backup retention must be at least 7 days')
+    .message('RDS/Aurora backup retention must be at least 7 days')
     .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
 
   // ── EFS encryption at rest ─────────────────────────────────────────────
@@ -258,11 +259,14 @@ export const coreSecurity = [
     .rationale('Common control: recoverability — SOC CC7.3, NIST CP-9'),
 
   // ── RDS cluster encryption at rest ─────────────────────────────────────
+  // Aurora (`aws_rds_cluster`) and DocumentDB (`aws_docdb_cluster`) both
+  // carry `storage_encrypted`. Redshift uses a different attr (`encrypted`)
+  // and is governed separately in the CIS/PCI/NIST packs.
   rule()
     .id('rds-cluster-encryption')
-    .resource(AwsResource.RdsCluster)
+    .resource(AwsResource.RdsCluster, AwsResource.DocdbCluster)
     .mustBeTrue(AwsAttribute.StorageEncrypted)
-    .message('RDS clusters must encrypt storage at rest')
+    .message('RDS/Aurora and DocDB clusters must encrypt storage at rest')
     .rationale('Common control: encrypt data at rest — PCI 3.4, NIST SC-28'),
 
   // ── No hardcoded secrets on resource attributes ───────────────────────
@@ -273,13 +277,26 @@ export const coreSecurity = [
     .message('RDS passwords must be a reference, not a literal')
     .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
 
-  // ── No hardcoded Aurora/Redshift cluster master passwords ──────────────
+  // ── No hardcoded Aurora/Redshift/DocDB cluster master passwords ─────────
   // Clusters use `master_password` (distinct from `aws_db_instance.password`).
   rule()
     .id('no-hardcoded-cluster-password')
-    .resource(AwsResource.RdsCluster, AwsResource.RedshiftCluster)
+    .resource(
+      AwsResource.RdsCluster,
+      AwsResource.RedshiftCluster,
+      AwsResource.DocdbCluster,
+    )
     .denyLiteral(AwsAttribute.MasterPassword)
     .message('Cluster master passwords must be a reference, not a literal')
+    .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
+
+  // ── No hardcoded ElastiCache AUTH token ────────────────────────────────
+  // `auth_token` is the Redis AUTH credential for a replication group.
+  rule()
+    .id('no-hardcoded-elasticache-auth-token')
+    .resource(AwsResource.ElasticacheReplicationGroup)
+    .denyLiteral(AwsAttribute.AuthToken)
+    .message('ElastiCache auth tokens must be a reference, not a literal')
     .rationale('Common control: no plaintext secrets — PCI 3.5, GDPR Art. 32'),
 
   // ── State backend must be encrypted ───────────────────────────────────
