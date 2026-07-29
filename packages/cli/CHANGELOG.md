@@ -29,7 +29,8 @@ path (`modules/rds/main.tf`) and the full trace round-trips through
 the synthetic location `<project>:0`. SARIF requires `region.startLine >= 1`,
 so v1.9.22's `startLine: 0` failed validation. These findings now emit zero
 `locations` (SARIF §3.27.5 permits it) and carry their context in the message
-+ `properties` — they appear in the dashboard without a bogus file:line.
+
+- `properties` — they appear in the dashboard without a bogus file:line.
 
 ### Validation
 
