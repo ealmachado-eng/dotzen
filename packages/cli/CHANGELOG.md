@@ -6,6 +6,58 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.21
+
+Fix — close two **pre-existing false-positive** classes surfaced by a fresh
+dogfood round (10 real module repos across AWS/Azure/GCP + cloudposse). The
+v1.9.19/v1.9.20 surface (function-eval, list-aware denyValue) was clean —
+these were older engine limitations exposed by the complex
+`terraform-aws-modules/terraform-aws-eks` repo.
+
+### Fixed — `denyBlockPresence` / `mustHaveBlock` on conditional dynamic blocks
+
+A `dynamic "<name>" { for_each = … }` whose `for_each` could not be statically
+resolved (e.g. `for_each = var.remote_access != null ? [var.remote_access] : []`
+with a defaultless var) was treated as DEFINITELY present, so `denyBlockPresence`
+false-fired (and `mustHaveBlock` would have falsely passed). The block's
+presence is genuinely unknown — it may or may not be created at apply time.
+
+New model: `NormalizedResource.conditionalBlocks` records these paths;
+`expandDynamicInto` now splits three ways — non-empty `for_each` → `blocks`
+(definite), empty `[]` → not recorded (definite absence, was also a false-fire
+source), unresolvable → `conditionalBlocks`. `evalDenyBlockPresence` and
+`evalMustHaveBlock` degrade to **could-not-evaluate** for conditional blocks.
+
+### Fixed — `denyIfAssociated` / `mustHaveAssociated` cross-module aliasing
+
+The cross-resource association index was keyed by base address (`type.name`).
+Resources in different module instances share base addresses — a root
+`aws_iam_role.this` and a submodule's `aws_iam_role.this` collide. A
+submodule's `aws_iam_role_policy { role = aws_iam_role.this.id }` was
+associating onto the root role, false-firing `iam-role-no-inline-policy` on a
+role that has only managed-policy attachments.
+
+The index is now scoped by **file-trace** (the module instance): a child's
+direct `type.name` ref always points at a parent in its OWN module (cross-
+module refs go through `module.x.y` outputs, not bare refs), so the scope key
+`${file}\0${addr}` isolates module instances without weakening real catches.
+
+### Dogfood round (validation)
+
+10 fresh repos (terraform-aws-modules/security-group, /rds, /eks, /alb,
+/ec2-instance, /s3-bucket; Azure/azurerm-storage, /azurerm-compute;
+terraform-google-modules/bigquery, /network). Published v1.9.20 totals:
+V=31, CNE=44, UNG=22 — 29 real findings, 2 false positives (both fixed here).
+On `terraform-aws-eks`: V=8→6, CNE=23→24 (the two FPs removed, one became a
+correct CNE). The other 9 repos: unchanged (no regressions). v1.9.19/v1.9.20
+surface produced 0 false positives.
+
+### Tests
+
+4 new block-presence-on-conditional cases + 2 cross-module association-
+isolation cases + 1 normalize case for empty-for_each no-record. Gate:
+738 unit + 38 integration, 0 regressions.
+
 ## 1.9.20
 
 Fix — close the **BigQuery multi-`access{}` block** gap (the last documented

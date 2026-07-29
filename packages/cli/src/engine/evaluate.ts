@@ -187,6 +187,19 @@ interface EvalContext {
   readonly literalLinks: LiteralLinks
 }
 
+/**
+ * Scope key for cross-resource association: the child's file-trace (its module
+ * instance) + the parent address. Resources in DIFFERENT module instances can
+ * share a base address (`aws_iam_role.this` appears in a root module AND in
+ * each followed submodule), but a child's direct `type.name` ref always points
+ * at a parent in its OWN module (cross-module refs go through `module.x.y`
+ * outputs, not bare refs). Scoping the index by file-trace prevents a
+ * submodule's child (e.g. a submodule's `aws_iam_role_policy { role =
+ * aws_iam_role.this.id }`) from aliasing onto a same-named root parent that
+ * has no such child — the cross-module false-positive hit.
+ */
+const assocKey = (file: string, addr: string): string => `${file}\0${addr}`
+
 function buildAssociations(resources: NormalizedResource[]): EvalContext {
   const idx: Associations = new Map()
   const unresolved: UnresolvableCandidates = new Map()
@@ -200,9 +213,10 @@ function buildAssociations(resources: NormalizedResource[]): EvalContext {
         // inspecting the expr for any other unresolved shape.
         if (v.resolvedRef) {
           const parentAddr = `${v.resolvedRef.type}.${v.resolvedRef.name}`
-          const set = idx.get(parentAddr) ?? new Set<string>()
+          const scoped = assocKey(res.file, parentAddr)
+          const set = idx.get(scoped) ?? new Set<string>()
           set.add(key)
-          idx.set(parentAddr, set)
+          idx.set(scoped, set)
           continue
         }
 
@@ -221,9 +235,10 @@ function buildAssociations(resources: NormalizedResource[]): EvalContext {
         const m = RESOURCE_REF.exec(v.expr)
         if (!m) continue
         const parentAddr = `${m[1]}.${m[2]}`
-        const set = idx.get(parentAddr) ?? new Set<string>()
+        const scoped = assocKey(res.file, parentAddr)
+        const set = idx.get(scoped) ?? new Set<string>()
         set.add(key)
-        idx.set(parentAddr, set)
+        idx.set(scoped, set)
         continue
       }
       // A literal string in an attr MAY be a parent-name reference (the C6
@@ -1036,7 +1051,8 @@ function evalMustHaveAssociated(
   ctx: EvalContext,
 ): ConditionOutcome {
   const key = `${c.childType}|${c.via}`
-  if (ctx.associations.get(address(r))?.has(key)) return { kind: 'pass' }
+  if (ctx.associations.get(assocKey(r.file, address(r)))?.has(key))
+    return { kind: 'pass' }
   // C6 literal-name linking: a child whose `via` attr is a literal string
   // equal to this resource's Terraform label (e.g. `bucket = "data"` for
   // `aws_s3_bucket.data`). Heuristic — see `LiteralLinks` for rationale.
@@ -1064,7 +1080,7 @@ function evalDenyIfAssociated(
   ctx: EvalContext,
 ): ConditionOutcome {
   const key = `${c.childType}|${c.via}`
-  if (ctx.associations.get(address(r))?.has(key)) {
+  if (ctx.associations.get(assocKey(r.file, address(r)))?.has(key)) {
     return {
       kind: 'violation',
       detail: `has an associated ${c.childType} (referencing this via ${c.via}) — use a managed policy instead`,
@@ -1089,10 +1105,14 @@ function evalDenyIfAssociated(
 /**
  * Whether a resource declares a given nested block. Prefers the recorded
  * block paths (which capture even empty blocks); falls back to the flattened
- * dotted keys so hand-built resources without `blocks` still work.
+ * dotted keys so hand-built resources without `blocks` still work. A
+ * CONDITIONAL block (unresolvable dynamic for_each) emits dotted attrs from
+ * its content, but its presence is UNKNOWN — the fallback must not treat
+ * those as definite presence (the evaluators degrade via hasConditionalBlock).
  */
 function hasBlock(block: string, r: NormalizedResource): boolean {
   if (r.blocks?.includes(block)) return true
+  if (hasConditionalBlock(block, r)) return false
   const prefix = `${block}.`
   return (
     Object.keys(r.attributes).some((k) => k.startsWith(prefix)) ||
@@ -1100,14 +1120,26 @@ function hasBlock(block: string, r: NormalizedResource): boolean {
   )
 }
 
+/** Whether a block's presence is CONDITIONALLY unknown — a `dynamic` block
+ *  whose `for_each` could not be resolved. The block may or may not be
+ *  created at apply time, so block-presence rules degrade to
+ *  could-not-evaluate rather than a definite verdict. */
+function hasConditionalBlock(block: string, r: NormalizedResource): boolean {
+  return r.conditionalBlocks?.includes(block) ?? false
+}
+
 /** Same-resource: pass iff the resource declares the given nested block. */
 function evalMustHaveBlock(
   c: MustHaveBlock,
   r: NormalizedResource,
 ): ConditionOutcome {
-  return hasBlock(c.block, r)
-    ? { kind: 'pass' }
-    : { kind: 'violation', detail: `missing ${c.block} block` }
+  if (hasBlock(c.block, r)) return { kind: 'pass' }
+  if (hasConditionalBlock(c.block, r))
+    return {
+      kind: 'cannotEvaluate',
+      reason: `${c.block} block is a dynamic block with an unresolvable for_each — presence unknown`,
+    }
+  return { kind: 'violation', detail: `missing ${c.block} block` }
 }
 
 /** Same-resource: flag iff the resource declares the given nested block. */
@@ -1115,9 +1147,17 @@ function evalDenyBlockPresence(
   c: DenyBlockPresence,
   r: NormalizedResource,
 ): ConditionOutcome {
-  return hasBlock(c.block, r)
-    ? { kind: 'violation', detail: `${c.block} block must not be declared` }
-    : { kind: 'pass' }
+  if (hasBlock(c.block, r))
+    return {
+      kind: 'violation',
+      detail: `${c.block} block must not be declared`,
+    }
+  if (hasConditionalBlock(c.block, r))
+    return {
+      kind: 'cannotEvaluate',
+      reason: `${c.block} block is a dynamic block with an unresolvable for_each — presence unknown`,
+    }
+  return { kind: 'pass' }
 }
 
 /**

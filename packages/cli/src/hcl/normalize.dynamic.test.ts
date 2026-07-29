@@ -104,12 +104,45 @@ describe('normalize — dynamic blocks (non-ingress/egress/tags) expanded into a
     const scope = buildScope([parsed])
     const res = normalize(parsed, 'main.tf', raw, scope)
     const x = res[0]!
-    // Block path still recorded (the dynamic block IS declared).
-    expect(x.blocks).toContain('settings')
+    // Unresolvable for_each → block presence unknown → recorded as CONDITIONAL
+    // (not `blocks`, which would mean definite presence and false-fire
+    // denyBlockPresence). mustHaveBlock / denyBlockPresence degrade to CNE.
+    expect(x.blocks).not.toContain('settings')
+    expect(x.conditionalBlocks).toContain('settings')
     const enabled = x.attributes['settings.enabled']
     expect(enabled?.kind).toBe('unresolved')
     if (enabled?.kind === 'unresolved')
       expect(enabled.expr).toBe('${settings.value}')
+  })
+
+  it('does NOT record a dynamic block whose for_each resolves empty', () => {
+    // for_each = [] (empty resolved collection) → the block is NOT created at
+    // apply time → neither `blocks` nor `conditionalBlocks` records it. This
+    // prevents denyBlockPresence from false-firing on a conditional dynamic
+    // block that resolves to zero instances.
+    const parsed = {
+      variable: { cfg: [{ default: [] }] },
+      resource: {
+        azurerm_linux_function_app: {
+          x: [
+            {
+              dynamic: {
+                settings: [
+                  {
+                    for_each: '${var.cfg}',
+                    content: [{ enabled: '${settings.value}' }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    }
+    const scope = buildScope([parsed])
+    const res = normalize(parsed, 'main.tf', raw, scope)
+    expect(res[0]?.blocks).not.toContain('settings')
+    expect(res[0]?.conditionalBlocks ?? []).not.toContain('settings')
   })
 
   it('records the block path so mustHaveBlock/denyBlockPresence see a dynamic block', () => {

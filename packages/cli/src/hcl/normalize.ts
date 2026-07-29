@@ -1628,6 +1628,8 @@ interface Extracted {
   attributes: Record<string, NormalizedValue>
   lists: Record<string, ListInfo>
   blocks: string[]
+  /** Dynamic blocks whose `for_each` is unresolvable — presence unknown. */
+  conditionalBlocks: string[]
 }
 
 /**
@@ -1669,10 +1671,14 @@ function expandDynamicInto(
         : collection && typeof collection === 'object'
           ? Object.values(collection)
           : undefined
-      // Record the block path — the dynamic block generates `<name>` (per
-      // element), so it IS present for mustHaveBlock/denyBlockPresence.
-      out.blocks.push(blockPrefix)
-      if (elements) {
+      // Block-presence semantics depend on whether the for_each resolves:
+      //  - non-empty  → block IS created (record in `blocks` — definite).
+      //  - empty `[]` → block is NOT created (do NOT record — definite absence;
+      //    was a false-positive source for denyBlockPresence when recorded).
+      //  - unresolvable → block MAY be created (record in `conditionalBlocks`
+      //    so mustHaveBlock/denyBlockPresence degrade to could-not-evaluate).
+      if (elements && elements.length > 0) {
+        out.blocks.push(blockPrefix)
         for (const el of elements)
           for (const c of contents)
             collect(
@@ -1681,8 +1687,11 @@ function expandDynamicInto(
               scope,
               out,
             )
+      } else if (elements) {
+        // elements is [] → empty resolved collection → block absent. Do nothing.
       } else {
-        // Unresolvable for_each → keep content once, values unresolved (honest).
+        // Unresolvable for_each → block presence unknown.
+        out.conditionalBlocks.push(blockPrefix)
         for (const c of contents) collect(blockPrefix, asObject(c), scope, out)
       }
     }
@@ -1720,7 +1729,12 @@ function collectNestedBlocks(
   // Multi-block: collect each into a temp, then merge. A key seen in multiple
   // temps → lists (aggregated, order preserved); a key in one temp → scalar.
   const temps: Extracted[] = blocks.map((b) => {
-    const t: Extracted = { attributes: {}, lists: {}, blocks: [] }
+    const t: Extracted = {
+      attributes: {},
+      lists: {},
+      blocks: [],
+      conditionalBlocks: [],
+    }
     collect(key, b, scope, t)
     return t
   })
@@ -1796,7 +1810,12 @@ function extractAttrs(
   block: Record<string, unknown> | undefined,
   scope: Scope,
 ): Extracted {
-  const out: Extracted = { attributes: {}, lists: {}, blocks: [] }
+  const out: Extracted = {
+    attributes: {},
+    lists: {},
+    blocks: [],
+    conditionalBlocks: [],
+  }
   if (block) collect('', block, scope, out)
   return out
 }
@@ -2559,6 +2578,9 @@ function normalizeOne(
     attributes: extracted.attributes,
     lists: extracted.lists,
     blocks: extracted.blocks,
+    conditionalBlocks: extracted.conditionalBlocks.length
+      ? extracted.conditionalBlocks
+      : undefined,
     policy: policyOf(block, dataPolicies, moduleOutputPolicies),
     containers: containersOf(block),
     envVars: envVarsOf(type, block, scope),

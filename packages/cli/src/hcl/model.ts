@@ -184,6 +184,14 @@ export interface NormalizedResource {
   /** Dotted paths of every nested block declared (even empty ones), for
    *  `mustHaveBlock` / `denyBlockPresence`. */
   readonly blocks?: string[]
+  /** Dotted paths of nested blocks whose presence is CONDITIONALLY unknown —
+   *  a `dynamic "<name>" { for_each = … }` whose `for_each` cannot be
+   *  statically resolved (e.g. `var.x != null ? [var.x] : []`). The block MAY
+   *  or may not be created at apply time, so `mustHaveBlock` /
+   *  `denyBlockPresence` degrade to could-not-evaluate rather than a definite
+   *  verdict. Distinct from `blocks` (definite presence) and absence (no
+   *  entry in either list). */
+  readonly conditionalBlocks?: string[]
   /** Resolved value of the `environment` tag, if present — used for rule scoping. */
   readonly environment?: NormalizedValue
   /** Parsed IAM `policy` document, if the resource has one. */

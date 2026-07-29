@@ -856,13 +856,15 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 
 ---
 
-## Current state (post-v1.9.18) & still-open
+## Current state (post-v1.9.21) & still-open
 
-Engine stable: 761 tests (85 unit files + integration), 0 false positives
-since dogfood round 6, ~3200 resource/data types recognized across
-AWS/Azure/GCP. `examples/ai-generated/.zen/spec.ts` is the canonical
-comprehensive spec reference; `coreSecurity` + the per-cloud CIS packs are the
-shipped baselines.
+Engine feature-complete for static HCL governance: 738 unit + 38 integration
+tests (87 unit files), 0 false positives since dogfood round 6 across 35+ real
+module repos (a fresh 10-repo round in v1.9.21 closed 2 pre-existing FP
+classes: conditional-dynamic-block presence + cross-module association
+aliasing), ~3200 resource/data types recognized across AWS/Azure/GCP.
+`examples/ai-generated/.zen/spec.ts` is the canonical comprehensive spec
+reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
 
 **Genuinely open — capability, not coverage:**
 
@@ -924,3 +926,36 @@ shipped baselines.
   `aws_opensearch_package_association` / `_vpc_endpoint` — enum-add
   candidates if a repo's ungoverned must reach 0.
 - ACM / Route 53 — deprioritized (thin / no dangerous AI-gen surface).
+
+---
+
+## Future directions (post-engine-feature-complete)
+
+The static-analysis engine is at diminishing returns on coverage/precision.
+The levers below are either a genuine new capability, an adoption unlock, or
+a strategic pivot — listed by category, not priority.
+
+### Architectural — the next real capability
+
+- **v2 graph layer (dependency-graph rules).** The engine is deliberately
+  per-resource + single-hop association (`mustHaveAssociated`). A class of
+  real controls needs a multi-hop join the engine does not do:
+  - **Public-vs-private subnet classification** — `subnet → route_table_association → route → internet_gateway` (the documented skip under VPC/networking above). Unlocks "no DB / no IGW in a public subnet", prod-VPC isolation rules.
+  - **Resource dependency chains** — e.g. "an SG attached to a public ALB must not be attached to a private DB", KMS-key-to-bucket provenance, load-balancer-to-target reachability.
+  This is a v2 architectural decision (a graph index over `NormalizedResource[]`), not a rule. It adds a new condition family (`denyIfReachable`, `mustBeInPrivateSubnet`) and a build pass after normalize. Scope it as its own design doc before coding.
+
+### Adoption — output & integration (cheap, high-leverage)
+
+- **SARIF output (`--format sarif`).** The terminal + JSON formats exist; SARIF is the lingua franca of security dashboards (GitHub Security tab, GitLab DevSecOps, Azure DevOps). Small addition (a `report/renderSarif.ts` mapping `CheckReport` → SARIF run/results); large adoption ROI — makes dotzen a first-class CI security stage alongside semgrep/gitleaks. Preserve the per-violation output contract (rule, resource, file:line, severity, rationale).
+- **VS Code extension (inline `.tf` findings).** Larger lift; surfaces violations in-editor as the author writes Terraform — the highest-friction-reduction lever for spec adoption. Reuses the engine's JSON output; the work is the extension shell (diagnostics provider, debounce, `.zen/` detection). Consider only if SARIF + adoption traction warrants the investment.
+
+### Adoption — ecosystem (non-code)
+
+- **Dogfood breadth.** Run v1.9.20 across more real module repos (cloudposse, terraform-aws-modules, FaztWeb, etc.) and publish the noise-floor / catch-rate. The engine has had 0 false positives since round 6 on ~25 repos — broader data strengthens the adoption story.
+- **Spec registry / community specs.** The `05-future-cloud-layer.md` future-directions doc sketches a hosted-spec angle. Seed `examples/` with org-profile specs (startup, enterprise, regulated) so consumers `export const spec = [...coreSecurity, ...enterpriseProfile]` instead of authoring from scratch.
+- **README / docs story.** The engine is documented deeply (`docs/specs/*`) but the *product* story (why governance-as-code for AI-generated Terraform, the 30-second demo) is undertold. A canonical worked example + the `npx` one-liner is the highest-ROI doc work.
+
+### Niche (on-demand only)
+
+- **Recursive `flatten()`** (we cover one level — the common `[var.a, var.b]` shape; Terraform's is recursive) and other built-ins (`keys()` / `values()` / `length()` / `contains()`). Add only when a real fixture demands it.
+- **More clouds** (Oracle/IBM/Alibaba) — unlikely demand; the multi-cloud architecture makes this vocabulary+rules work if it ever lands.

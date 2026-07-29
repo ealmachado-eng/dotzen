@@ -317,3 +317,72 @@ describe('evaluate — C6 literal-name association (child references parent by l
     expect(r.violations).toHaveLength(0) // SSE config is not an inline policy
   })
 })
+
+describe('evaluate — denyIfAssociated / mustHaveAssociated module-scope isolation', () => {
+  // Cross-resource associations are scoped by module (file-trace): a child's
+  // direct `type.name` ref always points at a parent in its OWN module, so a
+  // submodule's child must NOT alias onto a same-named root parent. The
+  // dogfood FP: terraform-aws-modules/eks root `aws_iam_role.this` (no inline
+  // policy) was flagged because a SUBMODULE's `aws_iam_role_policy` referenced
+  // its own `aws_iam_role.this` — same base address, different module.
+  const noInlineRule: Rule = {
+    id: 'no-inline-policy',
+    target: { kind: 'resource', types: [AwsResource.IamRole] },
+    conditions: [
+      {
+        kind: 'denyIfAssociated',
+        childType: AwsResource.IamRolePolicy,
+        via: AwsAttribute.Role,
+      },
+    ],
+    effect: Effect.Block,
+    message: 'no inline policy',
+  }
+  const roleAt = (file: string): NormalizedResource => ({
+    type: AwsResource.IamRole,
+    name: 'this',
+    file,
+    line: 1,
+    ingress: [],
+    tags: { kind: 'resolved', keys: [] },
+    attributes: {},
+  })
+  const inlinePolicyAt = (file: string): NormalizedResource => ({
+    type: AwsResource.IamRolePolicy,
+    name: 'this',
+    file,
+    line: 1,
+    ingress: [],
+    tags: { kind: 'resolved', keys: [] },
+    attributes: {
+      role: ref('${aws_iam_role.this.id}', {
+        type: 'aws_iam_role',
+        name: 'this',
+      }),
+    },
+  })
+
+  it('does NOT flag a root role when only a SUBMODULE has the inline policy', () => {
+    // Root role (main.tf) has no inline policy in its module; the submodule
+    // (modules/sub/main.tf (sub)) has its own role.this + inline policy.
+    // Pre-fix: the root role was falsely flagged (aliasing on the shared
+    // `aws_iam_role.this` address). Now: only the submodule role violates,
+    // so exactly ONE violation (was two).
+    const root = roleAt('main.tf')
+    const subRole = roleAt('modules/sub/main.tf (sub)')
+    const subPolicy = inlinePolicyAt('modules/sub/main.tf (sub)')
+    const r = evaluate([noInlineRule], [root, subRole, subPolicy])
+    expect(r.violations).toHaveLength(1)
+  })
+
+  it('still flags BOTH modules when each has its own inline policy', () => {
+    // Sanity: scoping does not weaken the real catch. Each module's role has
+    // its own inline policy → both violate.
+    const root = roleAt('main.tf')
+    const rootPolicy = inlinePolicyAt('main.tf')
+    const subRole = roleAt('modules/sub/main.tf (sub)')
+    const subPolicy = inlinePolicyAt('modules/sub/main.tf (sub)')
+    const r = evaluate([noInlineRule], [root, rootPolicy, subRole, subPolicy])
+    expect(r.violations).toHaveLength(2)
+  })
+})
