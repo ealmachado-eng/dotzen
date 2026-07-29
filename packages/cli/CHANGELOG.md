@@ -22,11 +22,11 @@ correctly flagged.
 
 ### Dogfood round 7 summary
 
-| Repo | V | P | CNE | Ungov |
-|---|---|---|---|---|
-| GCP BigQuery | 0 | 80 | 17 | 1 |
-| AWS ElastiCache | 26 | 1338 | 23 | 15 |
-| GCP Memorystore | 0 | 58 | 19 | 8 |
+| Repo            | V   | P    | CNE | Ungov |
+| --------------- | --- | ---- | --- | ----- |
+| GCP BigQuery    | 0   | 80   | 17  | 1     |
+| AWS ElastiCache | 26  | 1338 | 23  | 15    |
+| GCP Memorystore | 0   | 58   | 19  | 8     |
 
 BigQuery + Memorystore **fully clean** (0 violations). ElastiCache: 13 real
 (`auth_token` not sensitive) + 13 tags. 0 FPs after the fix. 13 CNE = variable-
