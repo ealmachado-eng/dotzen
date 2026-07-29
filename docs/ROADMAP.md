@@ -767,3 +767,121 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
     `_prevention`. The IAM module dropped from 159 → 30 violations (0
     secret-variable false positives remain; all 30 are legitimate inline-
     policy findings).
+
+---
+
+## Dogfood-driven precision + vocabulary + preset audit (v1.9.4 → v1.9.16)
+
+Items 9–10 (round 2) introduced config-flag precision on
+`denyInsensitiveVariable`. Rounds 3–11 extended that precision, closed the
+vocabulary gaps that surfaced as `ungoverned`, and completed a full preset
+audit. **Convergence: 0 false positives from round 6 onward** across 25+ real
+module repos (terraform-aws-modules / terraform-google-modules / cloudposse).
+
+### Precision hardening — secret-detection rules (v1.9.4–v1.9.9, rounds 3–8)
+
+`denyInsensitiveVariable` / `denyPlaintextLocalSecret` over-fired on
+identifier-shaped and config-flag names. Layered, conservative skips added
+(each eliminated single-suffix false positives on a fresh repo without
+weakening real catches):
+
+- **Type-based skip** — a `bool`/`number` and any collection-typed variable is
+  definitionally not a secret (`NormalizedBinding.type` threaded through
+  normalize → evaluate).
+- **Verb-prefix skip** — `allow_*`/`create_*`/`attach_*`/`enable_*`/`disable_*`.
+- **Config-flag suffix list** — grew to 27 suffixes (`_enabled`, `_disabled`,
+  `_interval`, …, `_strategy`, `_path`).
+- **Identifier suffix (locals only)** — `_name`/`_arn`/`_sa`/`_path`/…: a
+  local like `secretstore_name` is a resource identifier, not a hardcoded
+  secret. Config-flag suffixes deliberately do NOT apply to locals.
+
+### `UTILITY_TYPES` + `DataResource` expansion (v1.9.4–v1.9.9)
+
+Silent-skip / recognized-read-only additions that collapsed `ungoverned`
+noise on real module repos: `cloudinit_config`, `local_file`, `aws_arn`,
+`external`, `docker_*`, `terraform_remote_state`, 40+ Kubernetes-provider
+types (Helm / kubectl / native K8s — not cloud IaC), `archive_file`; data
+sources `aws_iam_policy`, `aws_cloudwatch_log_group`, `aws_canonical_user_id`,
+`aws_secretsmanager_secret(_version)`, `aws_subnets`, `aws_route53_zone`,
+`aws_ecrpublic_authorization_token`, etc.
+
+### Ungoverned-vocabulary closure rounds (v1.9.10–v1.9.12, rounds 9–10)
+
+Recognized-but-not-yet-rule-bearing enum-adds driven directly by dogfood
+`ungoverned` output — each round drove a repo's ungoverned to 0:
+
+- **v1.9.10** — `_path` suffix; `aws_iam_policy_attachment` (the generic form)
+  + EventBridge legacy (`event_rule`/`event_target`/`event_connection`/
+  `event_api_destination`).
+- **v1.9.11** — EC2 modern (`aws_ec2_tag`, `aws_volume_attachment`,
+  `aws_network_interface`, `aws_ec2_capacity_reservation`), EventBridge modern
+  (`aws_pipes_pipe`, `aws_scheduler_schedule(_group)`,
+  `aws_cloudwatch_log_delivery*`), GCP (`google_project`,
+  `google_project_service`, `google_compute_router_interface`/`_peer`,
+  `google_organization_policy`), 4 data sources.
+- **v1.9.12** — `data.archive_file` → `UTILITY_TYPES`; Aurora
+  (`aws_rds_cluster_activity_stream`/`_parameter_group`, `aws_rds_shard_group`,
+  `aws_appautoscaling_*`, `aws_dsql_cluster(_peering)`), CloudWatch Logs
+  (`log_account_policy`/`log_anomaly_detector`/`log_data_protection_policy`/
+  `log_subscription_filter`), Route53 (`hosted_zone_dnssec`/`key_signing_key`/
+  `resolver_firewall_rule`), 3 data sources.
+
+### Preset audit — DB-cluster / credential / data-store coverage (v1.9.13–v1.9.16)
+
+A systematic cross-reference of all eight presets against the vocabulary
+closed the cluster-family blind spots (the "Aurora pattern": a sibling
+cluster resource carries the attribute but the rule missed it):
+
+- **v1.9.13** — Aurora governance gap: `coreSecurity` gained
+  `no-hardcoded-cluster-password` (`aws_rds_cluster`/`aws_redshift_cluster` →
+  `master_password`); scaffold + ai-generated example specs made Aurora-aware
+  for storage encryption.
+- **v1.9.14** — DocDB cluster added to encryption + cluster-password rules;
+  Aurora backup retention (`coreSecurity` ≥7, `pciDss` ≥30) now targets
+  `aws_rds_cluster`; ElastiCache `auth_token` plaintext (`coreSecurity`).
+- **v1.9.15** — OpenSearch (`encrypt_at_rest` / `node_to_node_encryption` /
+  `enforce_https`), Amazon MQ `admin_password`, Secrets Manager
+  `secret_string` (warn), ElastiCache transit (warn), Azure SQL
+  `administrator_login_password`, Aurora/DocDB cluster-instance
+  `publicly_accessible` (cis-aws / pci / data-protection). OpenSearch
+  nested-block flattening verified end-to-end.
+- **v1.9.16** — MSK `client_broker` (deny `PLAINTEXT`). The flagged risk
+  (2-level nested `encryption_info.encryption_in_transit.client_broker`)
+  needed **no normalize change** — the flattener already recurses at
+  arbitrary depth; verified empirically.
+
+**The preset audit is 100% complete.** Every DB-cluster type (Aurora / DocDB /
+Redshift), every credential surface (RDS/Aurora/DocDB/Redshift/MQ/Secrets
+Manager/ElastiCache), OpenSearch, and MSK are governed.
+
+---
+
+## Current state (v1.9.16) & still-open
+
+Engine stable: 685 tests (84 unit files + integration), 0 false positives
+since dogfood round 6, ~3200 resource/data types recognized across
+AWS/Azure/GCP. `examples/ai-generated/.zen/spec.ts` is the canonical
+comprehensive spec reference; `coreSecurity` + the per-cloud CIS packs are the
+shipped baselines.
+
+**Genuinely open — capability, not coverage:**
+
+- **Compound caller inputs** — Terraform built-in function modeling
+  (`concat()` / `flatten()` / `toset()` for non-empty collections) across all
+  attributes. Only `merge()` is partially handled (tags). Deferred — broad
+  effort, diminishing returns (sole-ref caller inputs already work).
+- **`data.aws_iam_policy_document` through `followModules`** — policy
+  documents resolve root-level only today; a document defined in a followed
+  child module (or arriving via a module output) degrades to
+  could-not-evaluate.
+- **BigQuery multi-access-block inline flattener** — inline `access {}` blocks
+  resolve the first block only; a multi-block dataset where a later block is
+  public is a known gap (needs the multi-block collect change).
+
+**Open — low priority:**
+
+- Round-11 minor ungoverned: `aws_elasticache_global_replication_group`,
+  `aws_elasticache_serverless_cache`, `aws_opensearchserverless_*`,
+  `aws_opensearch_package_association` / `_vpc_endpoint` — enum-add
+  candidates if a repo's ungoverned must reach 0.
+- ACM / Route 53 — deprioritized (thin / no dangerous AI-gen surface).
