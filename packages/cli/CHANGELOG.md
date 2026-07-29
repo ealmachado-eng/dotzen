@@ -6,6 +6,37 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.16
+
+Preset audit complete — the last deferred gap (MSK) is closed. The earlier
+round flagged MSK client-broker encryption as risky because its attribute
+lives in a **2-level nested block**
+(`encryption_info.encryption_in_transit.client_broker`); existing attributes
+only used 1-level nesting. Investigation confirmed the flattener (`collect`
+in `normalize.ts`) already recurses through nested blocks at arbitrary depth,
+so **no normalize change was needed** — verified empirically against a real
+3-cluster fixture before release.
+
+### Added — Amazon MSK client-broker encryption (`coreSecurity`)
+
+`aws_msk_cluster` was recognized but ungoverned. Added:
+
+- `MskClientBroker` attribute (`encryption_info.encryption_in_transit.client_broker`) — the flattener resolves the 2-level nesting unchanged
+- `MskClientBrokerEncryption` enum (`TLS` / `TLS_PLAINTEXT` / `PLAINTEXT`)
+- `msk-no-plaintext-client-broker` rule — **blocking** `denyValue(PLAINTEXT)`
+
+A cluster with `client_broker = "PLAINTEXT"` (TLS disabled) now flags; `TLS`
+and the AWS default (block omitted → defaults to TLS) pass. `TLS_PLAINTEXT`
+(mixed mode, TLS still available) is intentionally not flagged to avoid noise.
+
+### Net effect
+
+**The preset audit is now 100% complete.** Every DB-cluster type (Aurora /
+DocDB / Redshift), every credential surface (RDS/Aurora/DocDB/Redshift/MQ/
+Secrets Manager/ElastiCache), OpenSearch, and MSK are governed. No remaining
+"everything except …" caveat. Verified: MSK fixture (PLAINTEXT→BLOCKING,
+TLS→pass, default→pass, 0 CNE).
+
 ## 1.9.15
 
 Preset audit round 2 — close the remaining data-store / credential / exposure

@@ -736,6 +736,10 @@ export enum AwsAttribute {
   OpenSearchEnforceHttps = 'domain_endpoint_options.enforce_https',
   // Amazon MQ (aws_mq_broker) — broker admin password (plaintext credential).
   MqAdminPassword = 'admin_password',
+  // Amazon MSK (aws_msk_cluster) — broker-to-client encryption. 2-level nested
+  // block (`encryption_info.encryption_in_transit.client_broker`); the
+  // flattener recurses, so no special-case normalize is needed.
+  MskClientBroker = 'encryption_info.encryption_in_transit.client_broker',
 }
 
 // Known weak ELB TLS policies (permit TLS 1.0/1.1). Use with `denyValue`.
@@ -777,4 +781,14 @@ export enum Acl {
 // AWS API Gateway method authorization types. `NONE` = unauthenticated.
 export enum ApiGatewayAuthorization {
   None = 'NONE',
+}
+
+// Amazon MSK client-broker encryption modes (for `denyValue` on
+// `encryption_info.encryption_in_transit.client_broker`). `PLAINTEXT` is the
+// no-TLS mode (the violation); `TLS_PLAINTEXT` allows both; `TLS` is the
+// secure default (TLS only). Govern with `denyValue(Plaintext)`.
+export enum MskClientBrokerEncryption {
+  Tls = 'TLS',
+  TlsPlaintext = 'TLS_PLAINTEXT',
+  Plaintext = 'PLAINTEXT',
 }

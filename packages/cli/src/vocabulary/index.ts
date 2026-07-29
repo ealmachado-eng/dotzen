@@ -112,6 +112,7 @@ export {
   XrayMode,
   Acl,
   ApiGatewayAuthorization,
+  MskClientBrokerEncryption,
 } from './aws'
 export type AnyResource =
   AwsResource | AzureResource | GcpResource | DataResource

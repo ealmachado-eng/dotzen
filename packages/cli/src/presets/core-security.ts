@@ -22,6 +22,7 @@ import {
   Acl,
   Provisioner,
   Effect,
+  MskClientBrokerEncryption,
 } from '../vocabulary'
 
 export const coreSecurity = [
@@ -284,6 +285,19 @@ export const coreSecurity = [
     .onViolation(Effect.Warn)
     .message('OpenSearch domains must enable node-to-node encryption')
     .rationale('Common control: encrypt data in transit between nodes'),
+
+  // ── Amazon MSK: no plaintext broker traffic ────────────────────────────
+  // `client_broker = "PLAINTEXT"` disables TLS between clients and brokers.
+  // The attribute lives in a 2-level nested block; absence defaults to TLS.
+  rule()
+    .id('msk-no-plaintext-client-broker')
+    .resource(AwsResource.MskCluster)
+    .denyValue(
+      AwsAttribute.MskClientBroker,
+      MskClientBrokerEncryption.Plaintext,
+    )
+    .message('MSK clusters must not use PLAINTEXT client_broker (TLS required)')
+    .rationale('Common control: encrypt broker traffic in transit — PCI 4.1'),
 
   // ── No hardcoded secrets on resource attributes ───────────────────────
   rule()
