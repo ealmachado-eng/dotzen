@@ -555,6 +555,85 @@ builds the engine:
 > policies (`Action: "*"` on an `aws_iam_role_policy`) no longer escape
 > the check.
 
+> **v1.7 — `requireResource` condition (project-level presence).** The
+> first condition that is NOT per-resource — it asserts that at least one
+> resource of `type` exists anywhere in the scanned project. Canonical
+> case: CIS AWS §2.4 "ensure IAM Access Analyzer is enabled" (an
+> `aws_accessanalyzer_analyzer` must be declared). Evaluated once in the
+> PROJECT pass (after every per-resource / per-surface pass); violations
+> carry a synthetic `<project>:0` location since absence has no resource
+> to pin to. Pair with `.allResources()`; the rule's
+> `.environment()`/`.providerAlias()`/`.region()` filters are ignored for
+> this condition (it is about the project as a whole). Combines freely
+> with per-resource conditions on the same rule — each half runs in its
+> own pass.
+> ```typescript
+> rule()
+>   .allResources()
+>   .requireResource(AwsResource.AccessAnalyzer)
+>   .onViolation(Effect.Warn)
+>   .message('An IAM Access Analyzer must be declared')
+>   .rationale('CIS AWS v1.4 §2.4 — monitors for unintended resource access')
+> ```
+
+> **v1.7 — `data.aws_iam_policy_document` policy resolution.** The
+> idiomatic Terraform pattern for composing an IAM policy — author the
+> statement blocks on a `data "aws_iam_policy_document" "x" {}` and wire
+> it via `policy = data.aws_iam_policy_document.x.json` — is now
+> resolved end-to-end. The normalize layer parses the data source's
+> `statement {}` nested blocks (the data-source form: `effect`/`actions`/
+> `resources`/`not_actions`/`principals { type, identifiers }`/
+> `condition { test, variable, values }`) into the same `PolicyInfo`
+> shape a literal-JSON or `jsonencode(...)` policy produces. A
+> cross-file index (`buildDataPolicies`, scoped per directory — data
+> sources are module-local in Terraform, mirroring `buildScope`/
+> `providerDefaults`) lets a consuming resource's data-source ref
+> resolve to the parsed statements at normalize time. The engine is
+> unchanged — it consumes `r.policy` as before, so `denyIamWildcard`,
+> `denyPublicPrincipal`, and `requireSslOnlyPolicy` now fire on
+> data-source-composed policies instead of degrading to
+> could-not-evaluate. An absent data source (or one whose statements
+> do not parse) still degrades honestly to unresolved.
+
+> **v1.7 — Network ACL (NACL) ingress governance.** The stateless
+> subnet-level firewall is now governed by the EXISTING `denyIngress`
+> condition — no new condition kind. The normalize layer maps three AWS
+> NACL shapes into the cloud-neutral `ingress` field that `denyIngress`
+> already reads: the standalone `aws_network_acl_rule` resource, the
+> inline `ingress {}` blocks on `aws_network_acl`, and the same on
+> `aws_default_network_acl`. Only INGRESS + ALLOW rules are openings —
+> a literal `egress = true` is outbound (skip), and a literal
+> `rule_action`/`action = "deny"` is restrictive (skip); an absent or
+> unresolved direction/action includes the rule honestly (the AWS
+> provider defaults `egress` to false). `cidr_block` + `ipv6_cidr_block`
+> both feed `cidrBlocks`. The `cisAws` preset ships a `warn` rule
+> (`nacl-no-public-ssh-rdp`) targeting both `aws_network_acl` and
+> `aws_network_acl_rule` — the subnet-edge analog of the SG
+> `denyIngress` rule one layer up.
+
+> **v1.7 — Secrets Manager resource-policy wildcard.** The existing
+> `denyPublicPrincipal` condition (which parses an inline `policy` via
+> `policyOf` and flags an `Allow` statement with `Principal: "*"`)
+> already governs any resource carrying a parsed policy — so a secret
+> with a public resource policy needs only a rule targeting
+> `aws_secretsmanager_secret_policy`, no new condition and no engine
+> change. The `cisAws` preset ships `no-public-secret-policy` (`block`)
+> — the secret-store analog of the IAM-policy `Principal: "*"` rule.
+
+> **v1.7 — C6 literal-name association.** The documented gap where
+> `mustHaveAssociated`/`denyIfAssociated` failed to link a child that
+> references its parent by a LITERAL string (e.g. `bucket = "data"` for
+> `aws_s3_bucket.data`) is closed. `buildAssociations` now also indexes
+> literal-string attrs by value into a `literalLinks` map; the
+> evaluators query it as `literalLinks.get(parent.name)?.has(childType
+> |viaAttr)`. The match is on the parent's Terraform label (unique per
+> type+module), and the `childType|viaAttr` key prevents an unrelated
+> attr/type carrying the same literal from cross-linking. Heuristic (the
+> literal could theoretically name a different resource of the same cloud
+> identifier), but the common pattern of naming a resource to match its
+> cloud identifier makes this reliable in practice; the status quo was a
+> false violation on the parent.
+
 ## Deferred (documented for continuity, not v1 work)
 
 - `ts-pattern` exhaustive matching in the **engine** (Layer 4) — do this

@@ -164,51 +164,81 @@ type Associations = Map<string, Set<string>>
  */
 type UnresolvableCandidates = Map<string, number>
 
+/**
+ * Literal-name link index: a literal string value -> the set of
+ * `childType|viaAttr` pairs whose `via` attribute carries that literal.
+ * Used to close the C6 "literal-name association" gap — a child that
+ * references its parent by a literal string matching the parent's
+ * Terraform label (e.g. `bucket = "data"` for `aws_s3_bucket.data`),
+ * rather than by a resource ref. The match is queried as
+ * `literalLinks.get(parent.name)?.has(childType|viaAttr)` — the label is
+ * unique per type+module, and the `childType|viaAttr` key prevents an
+ * unrelated attr/type carrying the same literal from cross-linking.
+ * Heuristic (the literal could theoretically name a different resource
+ * of the same cloud identifier), but the common Terraform pattern of
+ * naming a resource to match its cloud identifier makes this reliable
+ * in practice; the status quo was a false violation on the parent.
+ */
+type LiteralLinks = Map<string, Set<string>>
+
 interface EvalContext {
   readonly associations: Associations
   readonly unresolvableCandidates: UnresolvableCandidates
+  readonly literalLinks: LiteralLinks
 }
 
 function buildAssociations(resources: NormalizedResource[]): EvalContext {
   const idx: Associations = new Map()
   const unresolved: UnresolvableCandidates = new Map()
+  const literalLinks: LiteralLinks = new Map()
   for (const res of resources) {
     for (const [attr, v] of Object.entries(res.attributes)) {
-      if (v.kind !== 'unresolved') continue
       const key = `${res.type}|${attr}`
+      if (v.kind === 'unresolved') {
+        // Prefer the structured `resolvedRef` (covers both direct refs and
+        // var/local chains that bottom out at a resource ref). Fall back to
+        // inspecting the expr for any other unresolved shape.
+        if (v.resolvedRef) {
+          const parentAddr = `${v.resolvedRef.type}.${v.resolvedRef.name}`
+          const set = idx.get(parentAddr) ?? new Set<string>()
+          set.add(key)
+          idx.set(parentAddr, set)
+          continue
+        }
 
-      // Prefer the structured `resolvedRef` (covers both direct refs and
-      // var/local chains that bottom out at a resource ref). Fall back to
-      // inspecting the expr for any other unresolved shape.
-      if (v.resolvedRef) {
-        const parentAddr = `${v.resolvedRef.type}.${v.resolvedRef.name}`
+        // A sole `${var.x}` / `${local.y}` whose chain did NOT resolve to a
+        // resource ref — record it as an unresolvable candidate so the parent
+        // can degrade to could-not-evaluate rather than false-violating.
+        if (UNRESOLVED_REF.test(v.expr)) {
+          unresolved.set(key, (unresolved.get(key) ?? 0) + 1)
+          continue
+        }
+
+        // Any other unresolved expression — try the fallback regex for a
+        // direct (non-var/local) resource ref. Compound interpolations and
+        // function calls fall through (no match) and are simply ignored,
+        // matching prior behavior.
+        const m = RESOURCE_REF.exec(v.expr)
+        if (!m) continue
+        const parentAddr = `${m[1]}.${m[2]}`
         const set = idx.get(parentAddr) ?? new Set<string>()
         set.add(key)
         idx.set(parentAddr, set)
         continue
       }
-
-      // A sole `${var.x}` / `${local.y}` whose chain did NOT resolve to a
-      // resource ref — record it as an unresolvable candidate so the parent
-      // can degrade to could-not-evaluate rather than false-violating.
-      if (UNRESOLVED_REF.test(v.expr)) {
-        unresolved.set(key, (unresolved.get(key) ?? 0) + 1)
-        continue
+      // A literal string in an attr MAY be a parent-name reference (the C6
+      // "literal-name association" case: `bucket = "data"` → parent
+      // `aws_s3_bucket.data`). Index by the literal value so the engine can
+      // match a parent by its Terraform label. The childType|viaAttr key
+      // prevents unrelated attrs/types from cross-linking at query time.
+      if (v.kind === 'literal' && typeof v.value === 'string') {
+        const set = literalLinks.get(v.value) ?? new Set<string>()
+        set.add(key)
+        literalLinks.set(v.value, set)
       }
-
-      // Any other unresolved expression — try the fallback regex for a
-      // direct (non-var/local) resource ref. Compound interpolations and
-      // function calls fall through (no match) and are simply ignored,
-      // matching prior behavior.
-      const m = RESOURCE_REF.exec(v.expr)
-      if (!m) continue
-      const parentAddr = `${m[1]}.${m[2]}`
-      const set = idx.get(parentAddr) ?? new Set<string>()
-      set.add(key)
-      idx.set(parentAddr, set)
     }
   }
-  return { associations: idx, unresolvableCandidates: unresolved }
+  return { associations: idx, unresolvableCandidates: unresolved, literalLinks }
 }
 
 const assertNever = (x: never): never => {
@@ -716,15 +746,74 @@ function evalListMustInclude(
   }
 }
 
+/**
+ * Conservative definite-PASS shortcut for `denyValue` on a compound
+ * interpolation (ROADMAP #5). Returns true when the unresolved `expr`
+ * carries literal text outside its single `${...}` block that RULES OUT
+ * every denylist scalar — i.e. no denylist scalar could be formed by
+ * replacing the interpolation with any string.
+ *
+ * Principle: the resolved value of `prefix${ref}suffix` always starts with
+ * `prefix` and ends with `suffix`. A bare denylist scalar `D` could equal
+ * the resolved value only if `D.startsWith(prefix) && D.endsWith(suffix)
+ * && D.length >= prefix.length + suffix.length`. If NONE do, the value is
+ * definitively not in the deny set → PASS (instead of couldNotEvaluate).
+ *
+ * This is what eliminates the 12 couldNotEvaluate the
+ * terraform-google-kubernetes-engine dogfood produced on
+ * `member = "serviceAccount:${google_service_account.default.email}"`
+ * against `[allUsers, allAuthenticatedUsers]`: the resolver cannot follow
+ * a resource-attribute ref, but the `serviceAccount:` prefix is enough to
+ * prove the value can never be a bare public-member scalar.
+ *
+ * Conservative limits (each falls back to couldNotEvaluate):
+ *  - multiple `${...}` blocks (literal text between interpolations is not
+ *    examined — the common case is single-interp);
+ *  - a denylist scalar that itself contains `${` (dynamic — no reasoning);
+ *  - no literal text outside the interpolation (a bare `${ref}`).
+ */
+function denyValueExcludedByLiteral(
+  expr: string,
+  denylist: (string | number)[],
+): boolean {
+  if (!expr.includes('${')) return false
+  // A dynamic denylist scalar voids the literal-prefix reasoning.
+  if (denylist.some((d) => String(d).includes('${'))) return false
+  const firstOpen = expr.indexOf('${')
+  const firstClose = expr.indexOf('}', firstOpen)
+  if (firstOpen === -1 || firstClose === -1) return false
+  // Single interpolation only — multi-interp literal-between handling is
+  // intentionally out of scope (conservative).
+  if (expr.indexOf('${', firstClose + 1) !== -1) return false
+  const prefix = expr.slice(0, firstOpen)
+  const suffix = expr.slice(firstClose + 1)
+  if (prefix === '' && suffix === '') return false
+  for (const d of denylist) {
+    const ds = String(d)
+    if (
+      ds.startsWith(prefix) &&
+      ds.endsWith(suffix) &&
+      ds.length >= prefix.length + suffix.length
+    ) {
+      return false // this scalar could still match → not excludable
+    }
+  }
+  return true
+}
+
 /** Flag a scalar attribute whose literal value is in a forbidden set. */
 function evalDenyValue(c: DenyValue, r: NormalizedResource): ConditionOutcome {
   const v = r.attributes[c.attr]
   if (v === undefined) return { kind: 'pass' } // absent
-  if (v.kind === 'unresolved')
+  if (v.kind === 'unresolved') {
+    // Compound interpolation whose literal prefix/suffix rules out every
+    // denylist scalar → definite PASS (ROADMAP #5). See helper for rationale.
+    if (denyValueExcludedByLiteral(v.expr, c.values)) return { kind: 'pass' }
     return {
       kind: 'cannotEvaluate',
       reason: `${c.attr} is an unresolved reference`,
     }
+  }
   if (c.values.includes(String(v.value)))
     return { kind: 'violation', detail: `${c.attr} is "${String(v.value)}"` }
   return { kind: 'pass' }
@@ -886,8 +975,11 @@ function evalDenyLiteral(
 /**
  * Cross-resource: pass iff some resource of `childType` references this one
  * through its `via` attribute. Association is by resource reference
- * (`bucket = aws_s3_bucket.x.id`), the idiomatic Terraform wiring; a child
- * that points at its parent by a literal name would not be linked. A
+ * (`bucket = aws_s3_bucket.x.id`), the idiomatic Terraform wiring. A child
+ * that references its parent by a LITERAL string matching the parent's
+ * Terraform label (e.g. `bucket = "data"` for `aws_s3_bucket.data`) is
+ * ALSO linked via the `literalLinks` index — a heuristic for the common
+ * pattern of naming a resource to match its cloud identifier. A
  * `var`/`local` chain that bottoms out at a resource ref is followed
  * (normalize surfaces it as `resolvedRef`); a chain that cannot be
  * resolved (a var with no default and no module-caller input) degrades to
@@ -902,6 +994,10 @@ function evalMustHaveAssociated(
 ): ConditionOutcome {
   const key = `${c.childType}|${c.via}`
   if (ctx.associations.get(address(r))?.has(key)) return { kind: 'pass' }
+  // C6 literal-name linking: a child whose `via` attr is a literal string
+  // equal to this resource's Terraform label (e.g. `bucket = "data"` for
+  // `aws_s3_bucket.data`). Heuristic — see `LiteralLinks` for rationale.
+  if (ctx.literalLinks.get(r.name)?.has(key)) return { kind: 'pass' }
   if (ctx.unresolvableCandidates.get(key)) {
     return {
       kind: 'cannotEvaluate',
@@ -929,6 +1025,13 @@ function evalDenyIfAssociated(
     return {
       kind: 'violation',
       detail: `has an associated ${c.childType} (referencing this via ${c.via}) — use a managed policy instead`,
+    }
+  }
+  // C6 literal-name linking — mirror of mustHaveAssociated's check.
+  if (ctx.literalLinks.get(r.name)?.has(key)) {
+    return {
+      kind: 'violation',
+      detail: `has an associated ${c.childType} (referencing this via ${c.via} by literal name) — use a managed policy instead`,
     }
   }
   if (ctx.unresolvableCandidates.get(key)) {
@@ -1444,6 +1547,9 @@ function evalCondition(
       return { kind: 'pass' }
     case 'denyNonApprovedRegion':
       return evalDenyNonApprovedRegion(c, r)
+    // Project-level condition — evaluated in the PROJECT pass (no-op here).
+    case 'requireResource':
+      return { kind: 'pass' }
     default:
       return assertNever(c)
   }
@@ -1484,7 +1590,8 @@ export function evaluate(
           condition.kind === 'denyFloatingProviderVersion' ||
           condition.kind === 'requireEncryptedBackend' ||
           condition.kind === 'denyLocalBackend' ||
-          condition.kind === 'denyFloatingModuleVersion'
+          condition.kind === 'denyFloatingModuleVersion' ||
+          condition.kind === 'requireResource'
         )
           continue
         if (!inScope(condition, rule.target, resource)) continue
@@ -1685,6 +1792,39 @@ export function evaluate(
           case 'pass':
             passed += 1
             break
+        }
+      }
+    }
+  }
+
+  // Project pass — project-level presence checks (requireResource). Each
+  // condition runs ONCE against the whole resource list: pass if any resource
+  // of the required type exists, else a single synthetic-location violation.
+  // Evaluated after every per-resource / per-surface pass so a rule combining
+  // requireResource with a per-resource condition sees both halves. The rule's
+  // environment/providerAlias/region filters are deliberately ignored here —
+  // the check is about the project as a whole (a missing analyzer is missing
+  // regardless of which env tag the rule carries).
+  if (
+    rules.some((r) => r.conditions.some((c) => c.kind === 'requireResource'))
+  ) {
+    const typesPresent = new Set(resources.map((r) => r.type))
+    for (const rule of rules) {
+      for (const condition of rule.conditions) {
+        if (condition.kind !== 'requireResource') continue
+        if (typesPresent.has(condition.type)) {
+          passed += 1
+        } else {
+          violations.push({
+            ruleId: rule.id,
+            message: rule.message,
+            rationale: rule.rationale,
+            effect: rule.effect,
+            resource: condition.type,
+            file: '<project>',
+            line: 0,
+            approvers: rule.approvers,
+          })
         }
       }
     }

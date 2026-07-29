@@ -6,6 +6,106 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.7.0
+
+A feature release: a new project-level condition, two engine resolution
+improvements that convert could-not-evaluate findings to definite verdicts,
+NACL ingress governance, and two C6 association/policy coverage gaps closed.
+
+### Added — new condition
+
+- **`requireResource(type)`** — the first condition that is NOT per-resource.
+  It asserts that at least one resource of `type` exists anywhere in the
+  scanned project (a project-level presence check). Canonical case: CIS AWS
+  §2.4 "ensure IAM Access Analyzer is enabled" (`aws_accessanalyzer_analyzer`
+  must be declared). Evaluated once in a PROJECT pass; violations carry a
+  synthetic `<project>:0` location. Pair with `.allResources()`; the rule's
+  `.environment()`/`.providerAlias()`/`.region()` filters are ignored for
+  this condition. Combines freely with per-resource conditions on the same
+  rule. The `cisAws` preset ships `require-access-analyzer` (`warn`).
+
+### Added — engine: `data.aws_iam_policy_document` policy resolution
+
+- The idiomatic Terraform pattern for composing an IAM policy — author
+  `statement {}` blocks on a `data "aws_iam_policy_document" "x" {}` and
+  wire it via `policy = data.aws_iam_policy_document.x.json` — is now
+  resolved end-to-end. `policyFromStatements` parses the data-source form
+  (`effect`/`actions`/`not_actions`/`principals { type, identifiers }`/
+  `condition { test, variable, values }`) into the same `PolicyInfo` a
+  literal-JSON/`jsonencode(...)` policy produces. A cross-file index
+  (`buildDataPolicies`, scoped per directory — data sources are
+  module-local) lets a consuming resource's data-source ref resolve at
+  normalize time. `denyIamWildcard`, `denyPublicPrincipal`, and
+  `requireSslOnlyPolicy` now fire on data-source-composed policies instead
+  of degrading to could-not-evaluate.
+
+### Added — engine: GCP interpolated IAM member resolution (ROADMAP #5)
+
+- Two conservative changes eliminate the
+  `member = "serviceAccount:${google_service_account.default.email}"`
+  could-not-evaluate pattern (12 of 14 CNE on the GKE module dogfood):
+  - **Resolver** (`tryEvalConcat`): `prefix${sole_ref}suffix` where the
+    sole var/local/each ref resolves to a literal → concatenated literal.
+    Multi-interpolation, compound inner exprs, and resource-attribute refs
+    stay unresolved honestly.
+  - **`denyValue` literal-prefix rule** (`denyValueExcludedByLiteral`): the
+    change that actually eliminates the GKE CNE. A resource-attribute ref
+    is not statically resolvable, but the resolved value always starts with
+    `serviceAccount:` and so can never equal a bare denylist scalar like
+    `allUsers`. `denyValue` now returns a definite PASS (not CNE) when an
+    unresolved expr's single `${...}` block has literal prefix/suffix text
+    that rules out every denylist scalar.
+
+### Added — Network ACL (NACL) ingress governance
+
+- The stateless subnet-level firewall is now governed by the EXISTING
+  `denyIngress` condition — no new condition kind. The normalize layer
+  maps three AWS NACL shapes into the cloud-neutral `ingress` field:
+  standalone `aws_network_acl_rule`, inline `aws_network_acl` `ingress {}`
+  blocks, and `aws_default_network_acl`. Only INGRESS + ALLOW rules are
+  openings (literal `egress=true` and `rule_action`/`action="deny"` are
+  skipped; absent/unresolved includes honestly). The `cisAws` preset ships
+  `nacl-no-public-ssh-rdp` (`warn`) targeting both the standalone and
+  inline forms.
+
+### Added — `cisAws` preset rules
+
+- **`require-access-analyzer`** — project-level presence (`requireResource`,
+  `warn`). CIS AWS §2.4.
+- **`nacl-no-public-ssh-rdp`** — NACL ingress (`denyIngress`, `warn`).
+- **`no-public-secret-policy`** — `aws_secretsmanager_secret_policy` must
+  not grant `Principal: "*"` (`denyPublicPrincipal`, `block`). The
+  secret-store analog of the IAM-policy `Principal: "*"` rule.
+
+### Changed — C6 literal-name association (gap closed)
+
+- `mustHaveAssociated`/`denyIfAssociated` now link a child that references
+  its parent by a LITERAL string matching the parent's Terraform label
+  (e.g. `bucket = "data"` for `aws_s3_bucket.data`). `buildAssociations`
+  indexes literal-string attrs into a `literalLinks` map; the evaluators
+  query it as `literalLinks.get(parent.name)?.has(childType|viaAttr)`. The
+  `childType|viaAttr` key prevents unrelated attrs/types from cross-linking.
+  The status quo was a false violation on the parent; this was a
+  documented C6 gap ("rare; documented in the evaluator").
+
+### Migration notes
+
+Backward-compatible at the DSL level (no existing condition/resource/enum
+removed or renamed). Consumers composing `[...coreSecurity, ...cisAws]`
+will see **new findings** on this version — expected for a feature release:
+
+- **New `warn`/`block` findings** from the three new `cisAws` rules
+  (Access Analyzer absence, NACL public SSH/RDP, public secret policy).
+- **could-not-evaluate → definite verdict conversions** that may surface
+  new violations on existing configs:
+  - `data.aws_iam_policy_document`-composed policies now resolve — a
+    wildcard/principal-`*` policy that previously CNE'd now violates.
+  - `denyValue` compound interpolations with a literal prefix that rules
+    out every denylist scalar now PASS (fewer CNE; no new violations).
+- **Fewer false violations** from C6 literal-name linking (children
+  referencing parents by literal label no longer false-violate
+  `mustHaveAssociated`).
+
 ## 1.6.3
 
 ### Added — ECS container insights + tfRootDirs fix

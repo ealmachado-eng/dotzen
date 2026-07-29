@@ -16,7 +16,7 @@
  *   export const spec = [...coreSecurity, ...cisAws, ...pciDss]
  */
 import { rule } from '../spec/rule'
-import { AwsResource, AwsAttribute, Block, Effect } from '../vocabulary'
+import { AwsResource, AwsAttribute, Block, Port, Effect } from '../vocabulary'
 
 export const cisAws = [
   // ── CloudTrail log file validation (CIS §3.4 — not in core) ────────────
@@ -119,4 +119,52 @@ export const cisAws = [
     .onViolation(Effect.Warn)
     .message('Load balancers must have a WAF Web ACL associated')
     .rationale('CIS AWS — protect load balancers with WAF rules'),
+
+  // ── IAM Access Analyzer enabled (CIS §2.4 — account-level presence) ──
+  rule()
+    .id('require-access-analyzer')
+    .allResources()
+    .requireResource(AwsResource.AccessAnalyzer)
+    .onViolation(Effect.Warn)
+    .message('An IAM Access Analyzer must be declared in the project')
+    .rationale(
+      'CIS AWS v1.4 §2.4 — Access Analyzer monitors for unintended resource ' +
+        'access across the account/organization; its presence is required',
+    ),
+
+  // ── Network ACL no public SSH/RDP (subnet-edge firewall) ─────────────
+  // NACLs are stateless subnet-level firewalls. A public SSH/RDP allow at
+  // the subnet edge is an ingress opening that bypasses SG controls — same
+  // risk the SG denyIngress rule catches one layer up. Covers both the
+  // standalone `aws_network_acl_rule` and inline `aws_network_acl` ingress
+  // blocks (normalize maps both into the cloud-neutral `ingress` field, so
+  // the existing `denyIngress` condition governs them unchanged).
+  rule()
+    .id('nacl-no-public-ssh-rdp')
+    .resource(AwsResource.NetworkAcl, AwsResource.NetworkAclRule)
+    .denyIngress(Port.SSH, Port.RDP)
+    .onViolation(Effect.Warn)
+    .message('Network ACLs must not allow public SSH/RDP ingress')
+    .rationale(
+      'NACLs are stateless subnet firewalls — public SSH/RDP at the subnet ' +
+        'edge is the same risk the SG rule catches one layer up',
+    ),
+
+  // ── Secrets Manager resource policy must not grant public access ──────
+  // A secret whose resource policy grants `Principal: "*"` is readable by
+  // anyone (the resource-policy analog of an S3 bucket going public). The
+  // existing `denyPublicPrincipal` condition (which parses the inline
+  // `policy` via `policyOf` and flags an Allow + Principal "*") governs it
+  // unchanged — same code path as the IAM-policy rule in core-security.
+  rule()
+    .id('no-public-secret-policy')
+    .resource(AwsResource.SecretsmanagerSecretPolicy)
+    .denyPublicPrincipal()
+    .message(
+      'Secret resource policies must not grant Principal "*" (public access)',
+    )
+    .rationale(
+      'A secret with a public resource policy is a catastrophic leak — ' +
+        'restrict to a specific role/account instead',
+    ),
 ] as const

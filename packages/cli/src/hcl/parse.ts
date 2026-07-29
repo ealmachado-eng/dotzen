@@ -24,6 +24,7 @@ import {
   mergeProviderDefaults,
   providerRegions,
   mergeProviderRegions,
+  buildDataPolicies,
   ProviderDefaults,
   ProviderRegionMap,
   Hcl2JsonRoot,
@@ -403,6 +404,14 @@ async function followModules(
           // synthetic '?' marks an unresolvable for_each (one iteration, no
           // each bindings) and is omitted from the label.
           const keyTag = el.key && el.key !== '?' ? `[${el.key}]` : ''
+          // Cross-file index of the child module's own
+          // `data.aws_iam_policy_document` policies (data sources are
+          // module-local in Terraform — a child does NOT inherit the
+          // parent's). Threaded to normalize so a consuming resource's
+          // `policy = data.aws_iam_policy_document.x.json` resolves.
+          const childDataPolicies = buildDataPolicies(
+            parsedModule.value.map((f) => f.parsed),
+          )
           // Trace prefix handed to nested recursion — accumulates the full
           // call chain so a finding on a deep module names every hop.
           let childTraceRoot = ''
@@ -420,6 +429,7 @@ async function followModules(
                 childPd,
                 providerAliasRemap,
                 childRegions,
+                childDataPolicies,
               ),
             )
             // Outputs declared in the followed module — normalize with the
@@ -519,6 +529,11 @@ export async function parseTf(
   // (for providerRegion on resources) and into `followModules` (children
   // inherit the root's regions for GDPR/LGPD residency rules).
   const regions = providerRegions(parsedFiles.value.map((p) => p.parsed))
+  // Cross-file index of `data.aws_iam_policy_document` policies — lets a
+  // consuming resource's `policy = data.aws_iam_policy_document.x.json`
+  // resolve to the data source's parsed statements. Scoped per-directory
+  // (data sources are module-local in Terraform).
+  const dataPolicies = buildDataPolicies(parsedFiles.value.map((p) => p.parsed))
   const resources: NormalizedResource[] = []
   const outputs: NormalizedOutput[] = []
   const bindings: NormalizedBinding[] = []
@@ -538,6 +553,7 @@ export async function parseTf(
         pd,
         undefined,
         regions,
+        dataPolicies,
       ),
     )
     // Ungoverned resources in this root file (type not in vocabulary).

@@ -324,6 +324,46 @@ function tryEvalTernary(
   return undefined
 }
 
+/**
+ * CONSERVATIVE string-concatenation evaluator (ROADMAP #5). Handles the
+ * `prefix${sole_ref}suffix` form — exactly one `${...}` interpolation that
+ * is a sole `var.x` / `local.y` / `each.*` reference, surrounded by bare
+ * literal text (no nested interpolations, no escapes). The reference must
+ * resolve through scope to a literal; the result is the concatenated
+ * literal string. Returns undefined for ANYTHING else — multiple
+ * interpolations, compound inner expressions (ternaries, function calls),
+ * resource-attribute refs (no scope entry), or unresolvable refs — so the
+ * caller falls through to the honest unresolved path. Never a guess.
+ */
+function tryEvalConcat(
+  raw: string,
+  scope: Scope,
+  depth: number,
+): NormalizedValue | undefined {
+  if (depth <= 0) return undefined
+  const firstOpen = raw.indexOf('${')
+  const firstClose = firstOpen === -1 ? -1 : raw.indexOf('}', firstOpen)
+  if (firstOpen === -1 || firstClose === -1) return undefined
+  // Reject multiple interpolations — conservative (the common pattern is
+  // single-interp; multi-interp concat order/segment count is ambiguous).
+  if (raw.indexOf('${', firstClose + 1) !== -1) return undefined
+  const inner = raw.slice(firstOpen + 2, firstClose).trim()
+  // Inner must be a sole ref (var/local/each). Reuse the SOLE_REF shape but
+  // unanchored — the surrounding literal text is the whole point. (A pure
+  // `${ref}` never reaches here; SOLE_REF handles it earlier in resolveValue.)
+  const im = SOLE_REF.exec(`\${${inner}}`)
+  if (!im) return undefined
+  const refKey = soleRefKey(im)
+  const innerValue = resolveValue(`\${${refKey}}`, scope, depth - 1)
+  if (innerValue.kind !== 'literal') return undefined
+  const prefix = raw.slice(0, firstOpen)
+  const suffix = raw.slice(firstClose + 1)
+  return {
+    kind: 'literal',
+    value: `${prefix}${String(innerValue.value)}${suffix}`,
+  }
+}
+
 function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
   if (typeof raw === 'string') {
     const m = SOLE_REF.exec(raw)
@@ -337,6 +377,11 @@ function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
     // anything else returns undefined and falls through to unresolved.
     const ternary = tryEvalTernary(raw, scope, depth)
     if (ternary !== undefined) return ternary
+    // Conservative string-concat eval (ROADMAP #5) — `prefix${sole_ref}suffix`
+    // where the sole var/local/each ref resolves to a literal. Multi-
+    // interpolation strings and compound inner exprs stay unresolved.
+    const concat = tryEvalConcat(raw, scope, depth)
+    if (concat !== undefined) return concat
   }
   return toValue(raw)
 }
@@ -714,6 +759,72 @@ function ruleResourceIngress(
   ]
 }
 
+/**
+ * Map a NACL rule entry to an `IngressRule` (shared by the standalone
+ * `aws_network_acl_rule` resource and the inline `ingress {}` blocks on
+ * `aws_network_acl` / `aws_default_network_acl`). Direction filtering is
+ * done by the caller (standalone checks `egress`; inline is already inside
+ * an `ingress {}` block). Filters out a literal `deny` action — a deny rule
+ * is restrictive, not an opening. An absent/unresolved action includes the
+ * rule honestly (might be `allow`). Handles both `action` (inline block
+ * field) and `rule_action` (standalone resource field) names, and both
+ * `cidr_block` + `ipv6_cidr_block` sources.
+ */
+function naclEntryToIngress(
+  o: Record<string, unknown>,
+  scope: Scope,
+): IngressRule | null {
+  const actionRaw = o.action ?? o.rule_action
+  if (actionRaw !== undefined) {
+    const a = resolveValue(actionRaw, scope)
+    if (a.kind === 'literal' && a.value === 'deny') return null
+  }
+  const cidrs: unknown[] = []
+  if (o.cidr_block !== undefined) cidrs.push(o.cidr_block)
+  if (o.ipv6_cidr_block !== undefined) cidrs.push(o.ipv6_cidr_block)
+  return {
+    fromPort: resolveValue(o.from_port, scope),
+    toPort: resolveValue(o.to_port, scope),
+    cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+  }
+}
+
+/**
+ * Map a standalone `aws_network_acl_rule` resource to ingress. Only INGRESS
+ * + ALLOW rules are openings: a literal `egress = true` is outbound (skip);
+ * a literal `rule_action = "deny"` is restrictive (skip). An absent or
+ * unresolved `egress`/`rule_action` includes the rule honestly (the AWS
+ * provider defaults `egress` to false, so absent = ingress).
+ */
+function naclRuleToIngress(
+  block: Record<string, unknown>,
+  scope: Scope,
+): IngressRule[] {
+  const egress = resolveValue(block.egress, scope)
+  if (egress.kind === 'literal' && egress.value === true) return []
+  const entry = naclEntryToIngress(block, scope)
+  return entry ? [entry] : []
+}
+
+/**
+ * Map the inline `ingress {}` blocks on an `aws_network_acl` /
+ * `aws_default_network_acl` to ingress. Direction is implied by the block
+ * name (only `ingress {}` blocks are read here); each entry is still
+ * filtered on `action = "allow"` via the shared `naclEntryToIngress`.
+ */
+function naclInlineIngress(
+  block: Record<string, unknown>,
+  scope: Scope,
+): IngressRule[] {
+  const entries = Array.isArray(block.ingress) ? block.ingress : []
+  const out: IngressRule[] = []
+  for (const e of entries) {
+    const entry = naclEntryToIngress(asObject(e), scope)
+    if (entry) out.push(entry)
+  }
+  return out
+}
+
 /** A literal (non-interpolated) string, or undefined. */
 const litStr = (v: unknown): string | undefined =>
   typeof v === 'string' && !isInterpolated(v) ? v : undefined
@@ -832,6 +943,10 @@ function ingressFor(
   if (!block) return []
   if (type === AwsResource.VpcSecurityGroupIngressRule)
     return ruleResourceIngress(block, scope)
+  if (type === AwsResource.NetworkAclRule)
+    return naclRuleToIngress(block, scope)
+  if (type === AwsResource.NetworkAcl || type === AwsResource.DefaultNetworkAcl)
+    return naclInlineIngress(block, scope)
   if (type === AzureResource.NetworkSecurityRule)
     return azureRuleToIngress(block, scope)
   if (type === AzureResource.NetworkSecurityGroup) {
@@ -1443,16 +1558,132 @@ function conditionsOf(
 }
 
 /**
+ * Map a `data "aws_iam_policy_document" "x" {}` block's `statement {}`
+ * nested blocks into a `PolicyInfo`. hcl2json emits `statement` as an array
+ * of objects whose field names differ from the JSON-policy form
+ * (`effect`/`actions`/`resources`/`not_actions`/`principals`/`condition`
+ * — lowercase, snake_case) and whose `principals`/`condition` shapes are
+ * the Terraform data-source form (`{ type, identifiers }` and
+ * `{ test, variable, values }` respectively), not the JSON form. Returns
+ * undefined when there are no statement blocks (so a non-policy resource
+ * is unaffected).
+ */
+function policyFromStatements(
+  block: Record<string, unknown> | undefined,
+): PolicyInfo | undefined {
+  const stmts = block?.statement
+  if (!Array.isArray(stmts) || stmts.length === 0) return undefined
+  const statements = stmts.map((s) => {
+    const so = asObject(s)
+    // Principals: the data-source form is `principals { type = "AWS";
+    // identifiers = [...] }` (a nested block). hcl2json wraps it as
+    // `[{ type, identifiers }]`; flatten identifiers across all entries.
+    const principals: string[] = []
+    const pRaw = so.principals
+    if (Array.isArray(pRaw)) {
+      for (const entry of pRaw) {
+        const eo = asObject(entry)
+        principals.push(...toStrList(eo.identifiers))
+      }
+    }
+    // Condition: the data-source form is `condition { test = "IpAddress";
+    // variable = "aws:SourceIp"; values = [...] }` (a nested block) —
+    // reshape to the JSON-form operator→key→[values] the engine expects.
+    const conditions: Record<string, Record<string, string[]>> = {}
+    const cRaw = so.condition
+    if (Array.isArray(cRaw)) {
+      for (const entry of cRaw) {
+        const eo = asObject(entry)
+        const op = typeof eo.test === 'string' ? eo.test : ''
+        const variable = typeof eo.variable === 'string' ? eo.variable : ''
+        const values = toStrList(eo.values)
+        if (op && variable) {
+          const opMap = conditions[op] ?? {}
+          opMap[variable] = values
+          conditions[op] = opMap
+        }
+      }
+    }
+    return {
+      effect: typeof so.effect === 'string' ? so.effect : '',
+      actions: toStrList(so.actions),
+      resources: toStrList(so.resources),
+      notActions: toStrList(so.not_actions),
+      principals,
+      conditions,
+    }
+  })
+  return { kind: 'parsed', statements }
+}
+
+/**
+ * A sole `${data.aws_iam_policy_document.<name>.json}` reference — the
+ * idiomatic Terraform pattern for composing an IAM policy from a data
+ * source. Captured so `policyOf` can resolve it through the cross-file
+ * `dataPolicies` index built by `buildDataPolicies`.
+ */
+const DATA_POLICY_REF =
+  /^\$\{data\.aws_iam_policy_document\.([A-Za-z0-9_-]+)\.json\}$/
+
+/**
+ * Build the cross-file index of `data.aws_iam_policy_document` policies:
+ * data-source name → parsed `PolicyInfo`. Built once per directory (mirrors
+ * `buildScope` / `providerDefaults` / `providerRegions`) and threaded into
+ * `normalize` so a consuming resource's `policy = data.aws_iam_policy_document
+ * .x.json` resolves to the data source's parsed statements at normalize
+ * time. Data sources whose statements cannot be parsed are omitted (the
+ * consuming ref then degrades to unresolved → could-not-evaluate).
+ */
+export function buildDataPolicies(
+  roots: Hcl2JsonRoot[],
+): Map<string, PolicyInfo> {
+  const idx = new Map<string, PolicyInfo>()
+  for (const root of roots) {
+    const byName = root.data?.aws_iam_policy_document
+    if (!byName) continue
+    for (const [name, blocks] of Object.entries(byName)) {
+      const block = (Array.isArray(blocks) ? blocks[0] : blocks) as
+        Record<string, unknown> | undefined
+      const p = policyFromStatements(block)
+      if (p?.kind === 'parsed') idx.set(name, p)
+    }
+  }
+  return idx
+}
+
+/**
  * Parse an IAM `policy` argument. A literal JSON document (heredoc/inline
  * string) OR a `jsonencode(<HCL literal>)` expression is parsed into
  * statements; a `jsonencode(var.x)` / `local.x` / bare variable, or malformed
- * input, is `unresolved` (=> "could not evaluate").
+ * input, is `unresolved` (=> "could not evaluate"). A
+ * `data.aws_iam_policy_document.<name>.json` reference resolves through the
+ * cross-file `dataPolicies` index (built by `buildDataPolicies`). For a
+ * `data.aws_iam_policy_document` block itself, the `statement {}` nested
+ * blocks are parsed via `policyFromStatements` (the data-source form).
  */
 function policyOf(
   block: Record<string, unknown> | undefined,
+  dataPolicies?: Map<string, PolicyInfo>,
 ): PolicyInfo | undefined {
   const raw = block?.policy
-  if (typeof raw !== 'string') return undefined // no inline JSON policy
+  if (typeof raw !== 'string') {
+    // No inline `policy = …` attr — fall back to the data-source
+    // `statement {}` form (only present on data.aws_iam_policy_document).
+    return policyFromStatements(block)
+  }
+
+  // A data-source ref (`policy = data.aws_iam_policy_document.x.json`) —
+  // resolve through the cross-file index when available.
+  if (dataPolicies && isInterpolated(raw)) {
+    const m = DATA_POLICY_REF.exec(raw)
+    if (m) {
+      const dp = dataPolicies.get(m[1]!)
+      if (dp) return dp
+      // Ref to a data source not in the index (absent, or its statements
+      // did not parse) — honestly unresolved.
+      return { kind: 'unresolved' }
+    }
+  }
 
   let doc: unknown
   if (isInterpolated(raw)) {
@@ -1728,6 +1959,7 @@ function normalizeOne(
   instanceKey?: string,
   providerAlias?: string,
   providerRegion?: NormalizedValue,
+  dataPolicies?: Map<string, PolicyInfo>,
 ): NormalizedResource {
   const extracted = extractAttrs(block, scope)
   return {
@@ -1744,7 +1976,7 @@ function normalizeOne(
     attributes: extracted.attributes,
     lists: extracted.lists,
     blocks: extracted.blocks,
-    policy: policyOf(block),
+    policy: policyOf(block, dataPolicies),
     containers: containersOf(block),
     envVars: envVarsOf(type, block, scope),
     provisioners: provisionersOf(block),
@@ -1791,6 +2023,12 @@ export function normalize(
    *  rules. Threaded through `followModules` so child modules inherit the
    *  root's region map. */
   regionMap?: ProviderRegionMap,
+  /** Cross-file index of `data.aws_iam_policy_document.<name>` → parsed
+   *  PolicyInfo (built by `buildDataPolicies`). Lets a consuming resource's
+   *  `policy = data.aws_iam_policy_document.x.json` resolve to the data
+   *  source's parsed statements. Scoped per-directory (data sources are
+   *  module-local in Terraform), mirroring `scope`/`pd`/`regionMap`. */
+  dataPolicies?: Map<string, PolicyInfo>,
 ): NormalizedResource[] {
   const out: NormalizedResource[] = []
   const byType = parsed.resource ?? {}
@@ -1856,6 +2094,7 @@ export function normalize(
             undefined,
             aliasFor(type, block),
             regionFor(aliasFor(type, block)),
+            dataPolicies,
           ),
         )
         continue
@@ -1889,6 +2128,7 @@ export function normalize(
             instanceKey,
             aliasFor(type, block),
             regionFor(aliasFor(type, block)),
+            dataPolicies,
           ),
         )
       }
@@ -1921,6 +2161,7 @@ export function normalize(
           undefined,
           aliasFor(dataType, block),
           regionFor(aliasFor(dataType, block)),
+          dataPolicies,
         ),
       )
     }

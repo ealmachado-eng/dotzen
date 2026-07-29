@@ -50,4 +50,25 @@ describe('RuleBuilder.validate', () => {
       .validate(0)
     expect(r.ok && r.value.effect).toBe(Effect.Warn)
   })
+
+  it('builds a requireResource condition (project-level presence)', () => {
+    const r = rule()
+      .allResources()
+      .requireResource(AwsResource.AccessAnalyzer)
+      .message('an Access Analyzer must exist')
+      .validate(0)
+    expect(r).toEqual({
+      ok: true,
+      value: {
+        id: 'rule-1',
+        target: { kind: 'all' },
+        conditions: [
+          { kind: 'requireResource', type: AwsResource.AccessAnalyzer },
+        ],
+        effect: Effect.Block,
+        message: 'an Access Analyzer must exist',
+        rationale: undefined,
+      },
+    })
+  })
 })

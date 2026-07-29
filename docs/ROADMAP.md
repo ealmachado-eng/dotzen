@@ -86,7 +86,10 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   false violation — the formal "omitted" outcome, matching `evalMustHaveTags`
   / `evalMustEqual`. Direct refs and resolvable chains still link via the
   same `resolvedRef` signal. The "companion resource that points at its
-  parent by a literal name" gap remains (rare, documented).
+  parent by a literal name" gap is closed in v1.7 via the `literalLinks`
+  index (a literal `via` value matching the parent's Terraform label links
+  them, keyed by `childType|viaAttr` so unrelated attrs/types don't
+  cross-link).
 - ✅ **DONE** Open tag taxonomy — `mustHaveTags` accepts `(Tag | (string &
   {}))[]`, so org-specific tag keys work via a consumer's own enum (e.g.
   `enum OrgTag { ApmId = 'apm_id', CmdbAppId = 'cmdb_app_id' }`), keeping
@@ -175,7 +178,15 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
 - ✅ **DONE** `aws_secretsmanager_secret` → rotation enabled (the separate
   `aws_secretsmanager_secret_rotation` resource must reference it) via
   `mustHaveAssociated` (C6, `warn`).
-- **[Low][needs C4]** secret resource-policy wildcard (reuse IAM parsing).
+- ✅ **DONE (v1.7)** secret resource-policy wildcard (reuses IAM parsing).
+  `denyPublicPrincipal` already parses any resource's inline `policy` via
+  `policyOf` and flags an `Allow` + `Principal: "*"`; a rule targeting
+  `aws_secretsmanager_secret_policy` governs it unchanged — no new
+  condition, no engine change. The `cisAws` preset ships
+  `no-public-secret-policy` (`block`) — the secret-store analog of the
+  IAM-policy `Principal: "*"` rule. 4 `evaluate.secret.test.ts` cases pin
+  the contract (public flag, least-privilege pass, Deny+"*" pass,
+  unresolved→CNE).
 
 ### Logging / audit (CIS AWS §3) + IAM baseline (§1) — Tier A, DONE
 - ✅ **DONE** `aws_cloudtrail` → `is_multi_region_trail` +
@@ -190,13 +201,21 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   `Action:"*"` + `Resource:"*"`. Flagging `Resource:"*"` *alone* was
   deliberately NOT added — it is legitimate in most Allow statements, so it
   would be false-positive-prone.
-- ✅ **DONE (v0.1.3)** AWS Config recorder settings — `aws_config_configuration_recorder`
-  with `mustBeTrue` on `recording_group.all_supported` (CIS §3.1) and
+- ✅ **DONE (v0.1.3 / v1.7)** AWS Config recorder settings —
+  `aws_config_configuration_recorder` with `mustBeTrue` on
+  `recording_group.all_supported` (CIS §3.1) and
   `recording_group.include_global_resource_types` (CIS §3.2). Reuses existing
-  conditions with new vocabulary; no engine changes. IAM Access Analyzer
-  vocabulary (`aws_accessanalyzer_analyzer`) added but the useful check is
-  "does an analyzer exist?" — a project-level presence check the engine
-  doesn't yet support (future `requireResource` condition).
+  conditions with new vocabulary; no engine changes. **IAM Access Analyzer
+  presence (v1.7)** — the `aws_accessanalyzer_analyzer` vocabulary was already
+  present, but the useful check ("does an analyzer exist?") is a project-level
+  presence assertion the engine did not support. Added the `requireResource`
+  condition (the first non-per-resource condition): evaluated once in a
+  PROJECT pass, violates with a synthetic `<project>:0` location when no
+  resource of the required type exists anywhere in the scanned project.
+  CIS AWS §2.4 is now in the `cisAws` preset. Pair with `.allResources()`;
+  environment/alias/region filters are ignored for this condition (it is
+  about the project as a whole). Combines freely with per-resource
+  conditions on the same rule.
 - ✅ **DONE (v0.1.3)** S3 SSL-only bucket policy (`aws:SecureTransport`) —
   the new `requireSslOnlyPolicy` condition inspects the now-parsed
   `Condition` blocks for a `Deny` with `Bool["aws:SecureTransport"]`
@@ -209,11 +228,22 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   must reference it via `vpc_id`) via `mustHaveAssociated` (C6, `warn`).
 - ✅ **DONE** `aws_subnet` → `map_public_ip_on_launch` (`block`) and
   `assign_ipv6_address_on_creation` (`warn`) via `denyWhenTrue`.
-- **[Med][new parse shape]** Network ACL rules (`aws_network_acl_rule`) —
-  the stateless subnet-level firewall. Different shape from SG ingress
-  (`rule_number`, `egress`, `rule_action`), so a new normalize path +
-  evaluator, not a reuse. Lower AI-gen frequency than SGs — pull only for
-  a customer who actually writes NACLs.
+- ✅ **DONE (v1.7)** Network ACL rules (`aws_network_acl_rule`,
+  `aws_network_acl`, `aws_default_network_acl`) — the stateless subnet-level
+  firewall. Different shape from SG ingress (`rule_number`, `egress`,
+  `rule_action`/`action`, `cidr_block` singular), so a new normalize path —
+  BUT no new evaluator: the three NACL shapes map into the cloud-neutral
+  `ingress` field that the EXISTING `denyIngress` condition already reads.
+  `naclRuleToIngress` (standalone) filters on `egress = false` + literal
+  `rule_action = "allow"` (a deny rule is restrictive — skip; absent/unresolved
+  includes honestly, matching the AWS provider's `egress` default of false).
+  `naclInlineIngress` (`aws_network_acl` / `aws_default_network_acl` inline
+  `ingress {}` blocks) applies the same action filter via the shared
+  `naclEntryToIngress`. `cidr_block` + `ipv6_cidr_block` both feed
+  `cidrBlocks`. The `cisAws` preset ships `nacl-no-public-ssh-rdp` (`warn`)
+  targeting both the standalone and inline forms — the subnet-edge analog of
+  the SG `denyIngress` rule one layer up. 8 `normalize.nacl.test.ts` +
+  5 `evaluate.nacl.test.ts` cases pin both halves.
 - **Skip — needs a graph layer** public-vs-private subnet checks ("no DB in
   a public subnet"). Requires a multi-hop join
   (`subnet → route_table_association → route → internet gateway`), which
@@ -374,16 +404,17 @@ is the natural next move** — both are Terraform/HCL, so the whole pipeline
 (hcl2json → normalize → conditions → report) carries over and expansion is
 almost pure vocabulary + rules.
 
-Still open (secondary): IAM Access Analyzer presence (needs a project-level
-`requireResource` condition);
-`data.aws_iam_policy_document`;
+Still open (secondary):
 ACM / Route 53 (deprioritized). Note on C6: association is by *resource reference*
 (`bucket = aws_s3_bucket.x.id`), the idiomatic wiring — and a `var`/`local`
 chain that bottoms out at a resource ref is followed (via `resolvedRef`).
-A companion resource that points at its parent by a literal name is not
-linked (rare; documented in the evaluator). An *unresolvable* chain
-(`var.x` with no default and no module input) degrades to
-could-not-evaluate rather than a false violation.
+A companion resource that references its parent by a LITERAL string
+matching the parent's Terraform label (`bucket = "data"` for
+`aws_s3_bucket.data`) is now ALSO linked via the `literalLinks` index
+(v1.7) — a heuristic for the common pattern of naming a resource to
+match its cloud identifier. An *unresolvable* chain (`var.x` with no
+default and no module input) degrades to could-not-evaluate rather than
+a false violation.
 
 ---
 
@@ -611,12 +642,34 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
 
 ## Post-dogfood improvements
 
-5. **GCP interpolated IAM member resolution** — 12 of 14 remaining CNE
-   on the GKE module are `member = "serviceAccount:${google_service_account.default.email}"`
-   — a string-concat-with-ref pattern. Extending the interpolation resolver
-   to handle `prefix:${sole_ref}` would eliminate these. Conservative:
-   only resolve when the ref resolves to a literal and the prefix is a
-   bare string (no nested interpolations).
+5. ✅ **DONE — GCP interpolated IAM member resolution** — eliminates the
+   `member = "serviceAccount:${google_service_account.default.email}"`
+   pattern (12 of 14 couldNotEvaluate on the
+   `terraform-google-kubernetes-engine` dogfood) via two conservative
+   changes:
+   - **Resolver** (`normalize.ts` `tryEvalConcat`): the form
+     `prefix${sole_ref}suffix` — exactly one interpolation that is a
+     sole `var.x`/`local.y`/`each.*` reference surrounded by bare literal
+     text — resolves to the concatenated literal when the ref resolves
+     through scope. Multi-interpolation strings, compound inner exprs
+     (ternaries, function calls), and resource-attribute refs (no scope
+     entry) stay unresolved honestly.
+   - **`denyValue` literal-prefix rule** (`evaluate.ts`
+     `denyValueExcludedByLiteral`): the change that actually eliminates
+     the GKE CNE. A resource-attribute ref (`google_service_account.x.email`)
+     is *not* resolvable statically, so the resolver cannot help — but the
+     resolved value always starts with `serviceAccount:` and so can never
+     equal a bare denylist scalar like `allUsers`. The evaluator now
+     returns a definite PASS (not couldNotEvaluate) when an unresolved
+     expr's single `${...}` block has literal prefix/suffix text that
+     rules out every denylist scalar (`D.startsWith(prefix) &&
+     D.endsWith(suffix) && D.length >= prefix.length + suffix.length`).
+     Conservative limits fall back to CNE: multiple interpolations, a
+     dynamic denylist scalar containing `${`, no literal text outside the
+     interpolation, or a prefix that is consistent with a denylist scalar
+     (e.g. `allUser${var.s}` could resolve to `allUsers`).
+     11 new `evaluate.compound.test.ts` cases + 10 new
+     `normalize.resolve.test.ts` cases pin both halves.
 
 6. ✅ **DONE — More rules for the governed surface (batches 2+3)** —
    batch 2 (v1.5.1): DynamoDB encryption + PITR, S3 access logging, ALB
@@ -627,5 +680,22 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    inline policies (needs "deny if associated" — inverse of
    `mustHaveAssociated`), WAFv2 Web ACL on ALB (needs ARN-based
    association matching — engine only does address-based), ECS container
-   insights (complex `setting` block with name/value pair — needs new
-   condition type). These are future engine enhancements.
+    insights (complex `setting` block with name/value pair — needs new
+    condition type). These are future engine enhancements.
+
+7. ✅ **DONE — `data.aws_iam_policy_document` policy resolution** — the
+   idiomatic Terraform pattern for composing an IAM policy (author
+   `statement {}` blocks on a `data "aws_iam_policy_document" "x" {}`
+   and wire it via `policy = data.aws_iam_policy_document.x.json`) now
+   resolves end-to-end. The normalize layer parses the data source's
+   statement blocks (data-source form: `effect`/`actions`/`not_actions`/
+   `principals { type, identifiers }`/`condition { test, variable,
+   values }`) into the same `PolicyInfo` a literal-JSON/jsonencode policy
+   produces. A cross-file index (`buildDataPolicies`, scoped per
+   directory — data sources are module-local) lets a consuming
+   resource's data-source ref resolve at normalize time. Engine
+   unchanged — `denyIamWildcard`/`denyPublicPrincipal`/
+   `requireSslOnlyPolicy` now fire on data-source-composed policies
+   instead of degrading to could-not-evaluate. 9 new
+   `normalize.datapolicy.test.ts` + 3 `evaluate.datapolicy.test.ts`
+   cases pin both halves.

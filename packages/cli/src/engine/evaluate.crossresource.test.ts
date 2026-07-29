@@ -208,3 +208,112 @@ describe('evaluate — denyIfAssociated (cross-resource absence)', () => {
     expect(r.couldNotEvaluate).toHaveLength(1)
   })
 })
+
+describe('evaluate — C6 literal-name association (child references parent by label)', () => {
+  // A child whose `via` attr is a LITERAL string matching the parent's
+  // Terraform label (the `name` in `type.name`) is now linked — closing the
+  // documented gap where `bucket = "data"` (literal) failed to associate
+  // with `aws_s3_bucket.data`. The match is on the resource label, keyed by
+  // `childType|viaAttr` so a literal in an unrelated attr/type cannot
+  // cross-link. (ROADMAP #4 — was "rare; documented in the evaluator".)
+
+  const sseRule: Rule = {
+    id: 's3-sse',
+    target: { kind: 'resource', types: [AwsResource.S3Bucket] },
+    conditions: [
+      {
+        kind: 'mustHaveAssociated',
+        childType: AwsResource.S3BucketServerSideEncryptionConfiguration,
+        via: AwsAttribute.Bucket,
+      },
+    ],
+    effect: Effect.Block,
+    message: 'bucket must have server-side encryption configured',
+  }
+
+  const noInlineRule: Rule = {
+    id: 'iam-user-no-inline',
+    target: { kind: 'resource', types: [AwsResource.IamUser] },
+    conditions: [
+      {
+        kind: 'denyIfAssociated',
+        childType: AwsResource.IamUserPolicy,
+        via: AwsAttribute.User,
+      },
+    ],
+    effect: Effect.Warn,
+    message: 'IAM user must not have an inline policy',
+  }
+
+  const lit = (v: string): NormalizedValue => ({ kind: 'literal', value: v })
+
+  it('mustHaveAssociated passes when a child references the parent by literal label', () => {
+    const bucket = base(AwsResource.S3Bucket, 'data')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'enc',
+      { bucket: lit('data') },
+    )
+    const r = evaluate([sseRule], [bucket, sse])
+    expect(r.violations).toHaveLength(0)
+    expect(r.passed).toBe(1)
+  })
+
+  it('mustHaveAssociated flags when the child literal does NOT match the parent label', () => {
+    const bucket = base(AwsResource.S3Bucket, 'data')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'enc',
+      { bucket: lit('some-other-bucket') },
+    )
+    const r = evaluate([sseRule], [bucket, sse])
+    expect(r.violations).toHaveLength(1)
+  })
+
+  it('denyIfAssociated flags a user referenced by an inline policy via literal label', () => {
+    const user = base(AwsResource.IamUser, 'app')
+    const policy = base(AwsResource.IamUserPolicy, 'p', {
+      user: lit('app'),
+    })
+    const r = evaluate([noInlineRule], [user, policy])
+    expect(r.violations).toHaveLength(1)
+    expect(r.violations[0]?.resource).toBe('aws_iam_user.app')
+  })
+
+  it('denyIfAssociated passes when the child literal references a DIFFERENT label', () => {
+    const user = base(AwsResource.IamUser, 'app')
+    const policy = base(AwsResource.IamUserPolicy, 'p', {
+      user: lit('other'),
+    })
+    const r = evaluate([noInlineRule], [user, policy])
+    expect(r.violations).toHaveLength(0)
+  })
+
+  it('does not cross-link a literal matching the label but on an unrelated attr/type', () => {
+    // A bucket labeled "data" and an SSE config with a literal
+    // `kms_key_id = "data"` — the literal matches the label but the rule
+    // queries `S3BucketEncryption|bucket`, not `...|kms_key_id`. No link.
+    const bucket = base(AwsResource.S3Bucket, 'data')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'enc',
+      { kms_key_id: lit('data') },
+    )
+    const r = evaluate([sseRule], [bucket, sse])
+    expect(r.violations).toHaveLength(1) // no bucket-link → still violates
+  })
+
+  it('does not cross-link a literal matching a label of a DIFFERENT resource type', () => {
+    // Two resources labeled "data": a bucket and an IAM user. The no-inline
+    // rule queries `IamUserPolicy|user`; an SSE config's literal `bucket`
+    // matches "data" but is not an IamUserPolicy. No false flag on the user.
+    const user = base(AwsResource.IamUser, 'data')
+    const sse = base(
+      AwsResource.S3BucketServerSideEncryptionConfiguration,
+      'enc',
+      { bucket: lit('data') },
+    )
+    const r = evaluate([noInlineRule], [user, sse])
+    expect(r.violations).toHaveLength(0) // SSE config is not an inline policy
+  })
+})

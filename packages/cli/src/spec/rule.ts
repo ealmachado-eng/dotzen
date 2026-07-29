@@ -179,6 +179,15 @@ export type Condition =
   // regions). A resource whose region is unknown (no provider block) degrades
   // to could-not-evaluate — never a false pass.
   | { readonly kind: 'denyNonApprovedRegion'; readonly regions: string[] }
+  // Project-level: at least one resource of `type` must exist anywhere in the
+  // scanned project (e.g. an `aws_accessanalyzer_analyzer` for CIS 1.20, or
+  // an `aws_cloudtrail` for an org that mandates one). NOT a per-resource
+  // check — evaluated once in the PROJECT pass. Violations carry a synthetic
+  // `<project>:0` location since absence has no resource to pin to. The
+  // rule's `.environment()`/`.providerAlias()`/`.region()` filters are
+  // ignored for this condition (it is about the project as a whole). Pair
+  // with `.allResources()`; combine freely with per-resource conditions.
+  | { readonly kind: 'requireResource'; readonly type: AnyResource }
 
 export interface Rule {
   readonly id: string
@@ -612,6 +621,23 @@ export class RuleBuilder {
    */
   denyNonApprovedRegion(...regions: (string & {})[]): this {
     this._conditions.push({ kind: 'denyNonApprovedRegion', regions })
+    return this
+  }
+
+  /**
+   * Require at least one resource of `type` to exist anywhere in the
+   * scanned project — a project-level presence check (CIS AWS 1.20 "ensure
+   * Access Analyzer is enabled" is the canonical case: an
+   * `aws_accessanalyzer_analyzer` must be declared). NOT a per-resource
+   * check; it runs once in the PROJECT pass. Violations carry a synthetic
+   * `<project>:0` location (absence has no resource to pin to). Use with
+   * `.allResources()`; the rule's `.environment()`/`.providerAlias()`/
+   * `.region()` filters are ignored for this condition. Combine freely with
+   * per-resource conditions on the same rule (each is evaluated in its own
+   * pass). Pass a data-source type to require a data source instead.
+   */
+  requireResource(type: AnyResource): this {
+    this._conditions.push({ kind: 'requireResource', type })
     return this
   }
 
