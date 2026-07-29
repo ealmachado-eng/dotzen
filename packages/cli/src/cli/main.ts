@@ -4,6 +4,7 @@ import { check } from './check'
 import {
   renderTerminal,
   renderJson,
+  renderSarif,
   renderError,
   reportExitCode,
   requiresApproval,
@@ -11,6 +12,11 @@ import {
 import { CheckReport } from '../engine/evaluate'
 import { initProject } from './scaffold'
 import { CI_TEMPLATE_HINT } from '../templates/ci-templates'
+
+/** The output format for `dotzen check`. `sarif` emits the SARIF 2.1.0
+ *  interchange format for CI security dashboards (GitHub Code Scanning,
+ *  GitLab security report artifacts, Azure DevOps, VS Code). */
+type Format = 'terminal' | 'json' | 'sarif'
 
 /**
  * Emit the approval signal for CI (doc 04), so a later manual-approval job
@@ -30,29 +36,39 @@ function emitApprovalSignal(report: CheckReport): void {
   }
 }
 
-function engineVersion(): string {
+function engineInfo(): { version: string; informationUri: string } {
   const pkg = path.join(__dirname, '..', '..', 'package.json')
-  return (JSON.parse(fs.readFileSync(pkg, 'utf8')) as { version: string })
-    .version
+  const j = JSON.parse(fs.readFileSync(pkg, 'utf8')) as {
+    version: string
+    homepage?: string
+  }
+  return {
+    version: j.version,
+    // homepage points at the canonical docs/repo page (package.json homepage).
+    informationUri: j.homepage ?? 'https://gitlab.com/governance-tools/dotzen',
+  }
 }
 
 function parseArgs(argv: string[]): {
   command?: string
   root: string
-  json: boolean
+  format: Format
   terraform?: string
 } {
   const [command, ...rest] = argv
   let root = '.'
-  let json = false
+  let format: Format = 'terminal'
   let terraform: string | undefined
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
     if (a === '--format') {
-      json = rest[i + 1] === 'json'
+      const v = rest[i + 1]
+      format = v === 'json' ? 'json' : v === 'sarif' ? 'sarif' : 'terminal'
       i++
     } else if (a === '--format=json') {
-      json = true
+      format = 'json'
+    } else if (a === '--format=sarif') {
+      format = 'sarif'
     } else if (a === '--terraform') {
       terraform = rest[i + 1]
       i++
@@ -62,11 +78,11 @@ function parseArgs(argv: string[]): {
       root = a
     }
   }
-  return { command, root, json, terraform }
+  return { command, root, format, terraform }
 }
 
 function runInit(dir: string, terraform?: string): number {
-  const res = initProject(dir, engineVersion(), { terraform })
+  const res = initProject(dir, engineInfo().version, { terraform })
   for (const c of res.created) process.stdout.write(`  created  ${c}\n`)
   for (const s of res.skipped)
     process.stdout.write(`  skipped  ${s} (already exists)\n`)
@@ -100,29 +116,38 @@ function runInit(dir: string, terraform?: string): number {
 }
 
 export async function run(argv: string[]): Promise<number> {
-  const { command, root, json, terraform } = parseArgs(argv)
+  const { command, root, format, terraform } = parseArgs(argv)
 
   if (command === 'init') return runInit(root, terraform)
 
   if (command !== 'check') {
     process.stderr.write(
-      'usage: dotzen <check|init> [projectRoot] [--format json]\n',
+      'usage: dotzen <check|init> [projectRoot] [--format json|sarif]\n',
     )
     return 2
   }
 
-  const result = await check(root, engineVersion())
+  const info = engineInfo()
+  const result = await check(root, info.version)
   if (!result.ok) {
     process.stderr.write(renderError(result.error) + '\n')
     return 2
   }
 
-  // Color only a real terminal; honor NO_COLOR. Never color JSON or logs.
+  // SARIF + JSON are machine output — never color, no approval-signal file
+  // (those are for human terminal runs; a CI sarif upload reads stdout).
+  if (format === 'sarif') {
+    process.stdout.write(renderSarif(result.value, info) + '\n')
+    return reportExitCode(result.value)
+  }
+  if (format === 'json') {
+    process.stdout.write(renderJson(result.value) + '\n')
+    emitApprovalSignal(result.value)
+    return reportExitCode(result.value)
+  }
+  // Color only a real terminal; honor NO_COLOR.
   const color = process.stdout.isTTY === true && !process.env.NO_COLOR
-  const output = json
-    ? renderJson(result.value)
-    : renderTerminal(result.value, { color })
-  process.stdout.write(output + '\n')
+  process.stdout.write(renderTerminal(result.value, { color }) + '\n')
   emitApprovalSignal(result.value)
   return reportExitCode(result.value)
 }

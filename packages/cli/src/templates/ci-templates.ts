@@ -34,6 +34,16 @@ jobs:
           if [ -f dotzen.env ]; then
             cat dotzen.env >> "$GITHUB_ENV"
           fi
+
+      # Optional: surface findings in the GitHub Security tab (Code Scanning)
+      # with file:line PR annotations. Emits SARIF 2.1.0 and uploads it.
+      # - name: dotzen check (sarif for Security tab)
+      #   run: npx @dotzen/dotzen@1 check --format sarif > dotzen.sarif
+      # - uses: github/codeql-action/upload-sarif@v3
+      #   if: always()
+      #   with:
+      #     sarif_file: dotzen.sarif
+      #     category: dotzen
 `
 
 /** GitLab CI job — paste into `.gitlab-ci.yml` */
@@ -48,6 +58,10 @@ dotzen:check:
   artifacts:
     reports:
       dotenv: dotzen.env
+  # Optional SARIF: add \`npx @dotzen/dotzen@1 check --format sarif > dotzen.sarif\`
+  # to script and list \`dotzen.sarif\` under artifacts.paths for cross-tool
+  # security interchange. (GitLab's native security dashboard uses a different
+  # JSON shape — use a sarif->gitlab converter for dashboard ingestion.)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

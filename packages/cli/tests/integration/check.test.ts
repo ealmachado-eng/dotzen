@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as path from 'path'
 import { check } from '../../src/cli/check'
+import { renderSarif } from '../../src/report/report'
 
 const fixture = (name: string) => path.join(__dirname, 'fixtures', name)
 
@@ -764,5 +765,49 @@ describe('check (end-to-end)', () => {
     expect(cne?.reason).toMatch(/unresolved/i)
     expect(r.value.ungoverned).toHaveLength(1)
     expect(r.value.ungoverned[0]?.type).toBe('google_workflows_workflow')
+  })
+
+  it('renders a violating project as SARIF 2.1.0 (--format sarif path)', async () => {
+    // End-to-end: real parse → evaluate → renderSarif. The output must be a
+    // valid SARIF 2.1.0 doc the GitHub/GitLab security uploaders accept, with
+    // the SSH violation carried as an error-level result at file:line.
+    const r = await check(fixture('violating-project'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const doc = JSON.parse(
+      renderSarif(r.value, {
+        version: '0.0.1',
+        informationUri: 'https://gitlab.com/governance-tools/dotzen',
+      }),
+    ) as {
+      version: string
+      runs: Array<{
+        tool: { driver: { name: string; rules: unknown[] } }
+        results: Array<{
+          ruleId: string
+          level: string
+          locations: Array<{
+            physicalLocation: {
+              artifactLocation: { uri: string }
+              region: { startLine: number }
+            }
+          }>
+          properties: { resource: string }
+        }>
+      }>
+    }
+    expect(doc.version).toBe('2.1.0')
+    expect(doc.runs[0]!.tool.driver.name).toBe('@dotzen/dotzen')
+    const ssh = doc.runs[0]!.results.find(
+      (res) => res.properties.resource === 'aws_security_group.web',
+    )
+    expect(ssh).toBeDefined()
+    expect(ssh?.level).toBe('error')
+    expect(ssh?.locations[0]?.physicalLocation.region.startLine).toBe(2)
+    expect(ssh?.locations[0]?.physicalLocation.artifactLocation.uri).toMatch(
+      /main\.tf$/,
+    )
+    // The rule is registered in the tool driver's rules[].
+    expect(doc.runs[0]!.tool.driver.rules.length).toBeGreaterThan(0)
   })
 })

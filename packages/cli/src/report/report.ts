@@ -152,6 +152,137 @@ export function renderJson(report: CheckReport): string {
   )
 }
 
+/**
+ * Tool identity for the SARIF `runs[].tool.driver`. The renderer is pure
+ * (no fs/env reads) so it is unit-testable; the CLI passes the engine
+ * version (read from package.json) and the package informationUri.
+ */
+export interface SarifToolInfo {
+  readonly version: string
+  readonly informationUri: string
+}
+
+/** SARIF 2.1.0 schema URI (the OASIS standard). */
+const SARIF_SCHEMA =
+  'https://docs.oasis-open.org/sarif/sarif/v2.1.0/cs01/schemas/sarif-schema-2.1.0.json'
+
+/**
+ * Map a dotzen `Effect` to a SARIF result `level` (none | note | warning |
+ * error). `Block` → `error` (fails the build); `Warn` and `RequireApproval`
+ * → `warning` (RequireApproval needs human action, not a silent note). The
+ * could-not-evaluate / ungoverned informational entries use `note`.
+ */
+const effectToSarifLevel = (e: Effect): 'error' | 'warning' =>
+  e === Effect.Block ? 'error' : 'warning'
+
+/**
+ * Render the report as a SARIF 2.1.0 document — the OASIS-standard JSON
+ * schema consumed by GitHub Code Scanning (`github/codeql-action/upload-
+ * sarif`), GitLab's security report artifacts, Azure DevOps, and VS Code's
+ * SARIF viewer. Makes dotzen a first-class CI security stage: findings land
+ * in the Security tab / MR widgets with file:line deep-links, alongside
+ * semgrep/gitleaks, instead of a CI log.
+ *
+ * Maps:
+ *  - Each violation → a `results[]` entry with ruleId, level (effect→error/
+ *    warning), message, file:line `locations`, and a `properties` bag that
+ *    round-trips dotzen-specific data (resource, effect, rationale,
+ *    approvers) so consumers can filter/group beyond the SARIF baseline.
+ *  - Each could-not-evaluate / ungoverned entry → a `note`-level result so
+ *    the engine's "gaps must be visible" discipline carries through (they
+ *    surface in the dashboard but do NOT gate like violations).
+ *  - The deduplicated rule set → `tool.driver.rules[]` (id, message, default
+ *    level) so dashboards can group/suppress by rule.
+ *
+ * Pure function over CheckReport; the engine version + informationUri come
+ * from the caller (the CLI reads package.json; tests pass a stub). Output
+ * contract per the engine-dev skill is preserved: every violation carries
+ * rule/message/resource/file:line/severity/rationale.
+ */
+export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
+  // Deduplicate rules by id across violations + could-not-evaluate. A rule
+  // that fires as a violation sets its default level from the effect; a rule
+  // seen ONLY as could-not-evaluate defaults to note.
+  const ruleMeta = new Map<
+    string,
+    { message: string; level: 'error' | 'warning' | 'note' }
+  >()
+  for (const v of report.violations) {
+    if (!ruleMeta.has(v.ruleId))
+      ruleMeta.set(v.ruleId, {
+        message: v.message,
+        level: effectToSarifLevel(v.effect),
+      })
+  }
+  for (const c of report.couldNotEvaluate) {
+    if (!ruleMeta.has(c.ruleId))
+      ruleMeta.set(c.ruleId, { message: `rule ${c.ruleId}`, level: 'note' })
+  }
+  const rules = [...ruleMeta.entries()].map(([id, m]) => ({
+    id,
+    shortDescription: { text: m.message },
+    defaultConfiguration: { level: m.level },
+  }))
+
+  const location = (file: string, line: number) => ({
+    physicalLocation: {
+      artifactLocation: { uri: file },
+      region: { startLine: line },
+    },
+  })
+
+  const violationResults = report.violations.map((v) => ({
+    ruleId: v.ruleId,
+    level: effectToSarifLevel(v.effect),
+    message: { text: v.message },
+    locations: [location(v.file, v.line)],
+    properties: {
+      resource: v.resource,
+      effect: v.effect,
+      ...(v.rationale ? { rationale: v.rationale } : {}),
+      ...(v.approvers ? { approvers: v.approvers } : {}),
+    },
+  }))
+
+  const cneResults = report.couldNotEvaluate.map((c) => ({
+    ruleId: c.ruleId,
+    level: 'note' as const,
+    message: { text: `could not evaluate: ${c.reason}` },
+    locations: [location(c.file, c.line)],
+    properties: { resource: c.resource, kind: 'couldNotEvaluate' },
+  }))
+
+  const ungovernedResults = report.ungoverned.map((u) => ({
+    ruleId: 'dotzen.ungoverned',
+    level: 'note' as const,
+    message: { text: `resource type not governed by any rule: ${u.type}` },
+    locations: [location(u.file, u.line)],
+    properties: { resource: `${u.type}.${u.name}`, kind: 'ungoverned' },
+  }))
+
+  return JSON.stringify(
+    {
+      $schema: SARIF_SCHEMA,
+      version: '2.1.0',
+      runs: [
+        {
+          tool: {
+            driver: {
+              name: '@dotzen/dotzen',
+              version: tool.version,
+              informationUri: tool.informationUri,
+              rules,
+            },
+          },
+          results: [...violationResults, ...cneResults, ...ungovernedResults],
+        },
+      ],
+    },
+    null,
+    2,
+  )
+}
+
 /** Exhaustive over DotzenError.kind (doc 06). */
 export function renderError(error: DotzenError): string {
   switch (error.kind) {

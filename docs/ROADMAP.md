@@ -856,13 +856,14 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 
 ---
 
-## Current state (post-v1.9.21) & still-open
+## Current state (post-v1.9.22) & still-open
 
-Engine feature-complete for static HCL governance: 738 unit + 38 integration
-tests (87 unit files), 0 false positives since dogfood round 6 across 35+ real
+Engine feature-complete for static HCL governance: 748 unit + 39 integration
+tests (89 unit files), 0 false positives since dogfood round 6 across 35+ real
 module repos (a fresh 10-repo round in v1.9.21 closed 2 pre-existing FP
 classes: conditional-dynamic-block presence + cross-module association
-aliasing), ~3200 resource/data types recognized across AWS/Azure/GCP.
+aliasing), ~3200 resource/data types recognized across AWS/Azure/GCP, three
+output formats (terminal, JSON, SARIF 2.1.0).
 `examples/ai-generated/.zen/spec.ts` is the canonical comprehensive spec
 reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
 
@@ -946,7 +947,17 @@ a strategic pivot — listed by category, not priority.
 
 ### Adoption — output & integration (cheap, high-leverage)
 
-- **SARIF output (`--format sarif`).** The terminal + JSON formats exist; SARIF is the lingua franca of security dashboards (GitHub Security tab, GitLab DevSecOps, Azure DevOps). Small addition (a `report/renderSarif.ts` mapping `CheckReport` → SARIF run/results); large adoption ROI — makes dotzen a first-class CI security stage alongside semgrep/gitleaks. Preserve the per-violation output contract (rule, resource, file:line, severity, rationale).
+- **SARIF output (`--format sarif`).** ✅ **DONE (v1.9.22).** The terminal +
+  JSON formats are joined by SARIF 2.1.0 — the OASIS-standard JSON schema
+  consumed by GitHub Code Scanning (`github/codeql-action/upload-sarif@v3`),
+  GitLab security report artifacts, Azure DevOps, and VS Code's SARIF viewer.
+  A new `renderSarif` maps `CheckReport` → SARIF: each violation → an
+  error/warning result at file:line with a `properties` bag round-tripping
+  resource/effect/rationale/approvers; could-not-evaluate + ungoverned entries
+  surface as `note`-level results (visible gaps, not gating); rules
+  deduplicated into `tool.driver.rules[]`. CI templates ship optional
+  upload-sarif steps (GitHub native; GitLab as artifact). Output contract
+  preserved per the engine-dev skill.
 - **VS Code extension (inline `.tf` findings).** Larger lift; surfaces violations in-editor as the author writes Terraform — the highest-friction-reduction lever for spec adoption. Reuses the engine's JSON output; the work is the extension shell (diagnostics provider, debounce, `.zen/` detection). Consider only if SARIF + adoption traction warrants the investment.
 
 ### Adoption — ecosystem (non-code)

@@ -6,6 +6,62 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.22
+
+Feature — `--format sarif`. The terminal and JSON formats are joined by
+**SARIF 2.1.0** (OASIS-standard JSON for static-analysis findings), making
+dotzen a first-class CI security stage: findings land in the GitHub Security
+tab / GitLab security artifacts / Azure DevOps / VS Code SARIF viewer with
+file:line deep-links, alongside semgrep/gitleaks, instead of a CI log.
+
+```bash
+npx @dotzen/dotzen check --format sarif > dotzen.sarif
+# GitHub: upload via github/codeql-action/upload-sarif@v3
+# GitLab: store dotzen.sarif as a job artifact
+```
+
+### Added — `renderSarif`
+
+A new pure renderer maps `CheckReport` → SARIF 2.1.0:
+
+- Each violation → a `results[]` entry with `ruleId`, `level` (Block→`error`,
+  Warn/RequireApproval→`warning`), `message`, file:line `locations`, and a
+  `properties` bag round-tripping dotzen-specific data (resource, effect,
+  rationale, approvers) for filtering/grouping beyond the SARIF baseline.
+- Each could-not-evaluate + ungoverned entry → a `note`-level result so the
+  engine's "gaps must be visible" discipline carries through (they surface in
+  the dashboard but do NOT gate like violations).
+- The deduplicated rule set → `tool.driver.rules[]` (id, message, default
+  level) so dashboards can group/suppress by rule.
+
+The per-violation output contract is preserved (rule/message/resource/
+file:line/severity/rationale). Operational errors (`DotzenError`) stay on the
+existing `renderError` + exit-2 path (SARIF is for the success track).
+
+### Changed — `--format` generalized
+
+The binary `--format json` flag is now a `terminal | json | sarif` enum
+(`--format sarif` / `--format=sarif`). SARIF + JSON are machine output — no
+color, no approval-signal dotenv file (those are for human terminal runs; a
+CI sarif upload reads stdout). The exit-code semantics are unchanged
+(0 clean / 1 violations / 2 operational error).
+
+### CI templates
+
+`src/templates/ci-templates.ts` ships optional SARIF-upload steps: GitHub
+Actions uses `github/codeql-action/upload-sarif@v3` (native); GitLab stores
+`dotzen.sarif` as an artifact (the native GitLab security dashboard uses a
+different JSON shape — a sarif→gitlab converter is needed for dashboard
+ingestion; SARIF remains the cross-tool interchange format).
+
+### Tests
+
+10 new `report.sarif.test.ts` cases (SARIF envelope, tool driver, rule
+dedup, effect→level, location+properties, CNE/ungoverned as notes,
+require_approval→warning, clean-report) + 1 end-to-end integration test
+(real fixture → valid SARIF with file:line). Gate: 748 unit + 39 integration,
+0 regressions.
+
 ## 1.9.21
 
 Fix — close two **pre-existing false-positive** classes surfaced by a fresh
