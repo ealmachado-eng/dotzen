@@ -204,6 +204,17 @@ describe('evaluate (denyInsensitiveVariable) — #10', () => {
       const r = evaluate([sensVarRule], [], [], bs)
       expect(r.violations).toHaveLength(1)
     })
+
+    it('skips _strategy suffix (dogfood round 7 — auth_token_update_strategy)', () => {
+      const parsed = {
+        variable: {
+          auth_token_update_strategy: [{ type: '${string}' }],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
   })
 })
 

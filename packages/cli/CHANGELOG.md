@@ -6,6 +6,33 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.7
+
+Dogfood round 7 — one config-flag suffix fix. Running v1.9.6 against 3 fresh
+module repos (BigQuery, ElastiCache, GCP Memorystore) surfaced 0 false
+positives except one config-flag name.
+
+### Fixed — `denyInsensitiveVariable` `_strategy` suffix
+
+Added `_strategy` to the config-flag suffix list (e.g.
+`auth_token_update_strategy` — a config method string "ROTATE"/"SET"/"DELETE",
+not a secret value). 13 FPs eliminated on the ElastiCache module. The module's
+`auth_token` variable (a REAL Redis AUTH password, `string`-typed) is still
+correctly flagged.
+
+### Dogfood round 7 summary
+
+| Repo | V | P | CNE | Ungov |
+|---|---|---|---|---|
+| GCP BigQuery | 0 | 80 | 17 | 1 |
+| AWS ElastiCache | 26 | 1338 | 23 | 15 |
+| GCP Memorystore | 0 | 58 | 19 | 8 |
+
+BigQuery + Memorystore **fully clean** (0 violations). ElastiCache: 13 real
+(`auth_token` not sensitive) + 13 tags. 0 FPs after the fix. 13 CNE = variable-
+driven SG ports (honest). The v1.9 BigQuery public-access rule passes correctly
+on the BigQuery module.
+
 ## 1.9.6
 
 Dogfood round 5 precision + coverage fixes. Running v1.9.5 against 3 fresh
