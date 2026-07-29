@@ -40,3 +40,32 @@ describe('normalize — nested-block attributes', () => {
     expect(web?.attributes['tags.team']).toBeUndefined()
   })
 })
+
+describe('normalize — 2-level nested-block attribute (MSK client_broker)', () => {
+  // The MSK `encryption_info.encryption_in_transit.client_broker` attribute
+  // is two nested blocks deep. Locks that the flattener recurses past one
+  // level (the v1.9.16 MSK rule depends on this path resolving).
+  const rawMsk = `resource "aws_msk_cluster" "k" {}`
+  const parsedMsk = {
+    resource: {
+      aws_msk_cluster: {
+        k: [
+          {
+            encryption_info: [
+              {
+                encryption_in_transit: [{ client_broker: 'PLAINTEXT' }],
+              },
+            ],
+          },
+        ],
+      },
+    },
+  }
+  const k = normalize(parsedMsk, 'main.tf', rawMsk).find((r) => r.name === 'k')
+
+  it('flattens a 2-deep nested block to a dotted attribute', () => {
+    expect(
+      k?.attributes['encryption_info.encryption_in_transit.client_broker'],
+    ).toEqual({ kind: 'literal', value: 'PLAINTEXT' })
+  })
+})
