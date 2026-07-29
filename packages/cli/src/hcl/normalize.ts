@@ -1806,6 +1806,11 @@ export function buildModuleOutputPolicies(
   roots: Hcl2JsonRoot[],
   childDataPolicies: Map<string, PolicyInfo>,
   label: string,
+  /** Index of `<grandchildLabel>.<output>` → PolicyInfo for the child's OWN
+   *  followed sub-modules (built by the recursive `followModules` call BEFORE
+   *  this). Lets a passthrough output (`output x = module.inner.y`) resolve
+   *  transitively — the child re-exports a nested module's policy. */
+  grandchildPolicies?: Map<string, PolicyInfo>,
 ): Map<string, PolicyInfo> {
   const idx = new Map<string, PolicyInfo>()
   for (const root of roots) {
@@ -1816,10 +1821,22 @@ export function buildModuleOutputPolicies(
         Record<string, unknown> | undefined
       const value = block?.value
       if (typeof value !== 'string') continue
-      const m = DATA_POLICY_REF.exec(value)
-      if (!m) continue
-      const dp = childDataPolicies.get(m[1]!)
-      if (dp?.kind === 'parsed') idx.set(`${label}.${outName}`, dp)
+      // Base case: the output IS a data-source policy ref.
+      const dm = DATA_POLICY_REF.exec(value)
+      if (dm) {
+        const dp = childDataPolicies.get(dm[1]!)
+        if (dp?.kind === 'parsed') idx.set(`${label}.${outName}`, dp)
+        continue
+      }
+      // Recursive case: a passthrough — the output re-exports a NESTED
+      // module's policy output (`output x = module.inner.y`).
+      if (grandchildPolicies) {
+        const mm = MODULE_POLICY_REF.exec(value)
+        if (mm) {
+          const gp = grandchildPolicies.get(`${mm[1]!}.${mm[2]!}`)
+          if (gp) idx.set(`${label}.${outName}`, gp)
+        }
+      }
     }
   }
   return idx

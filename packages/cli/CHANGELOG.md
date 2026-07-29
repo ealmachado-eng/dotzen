@@ -6,6 +6,51 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.18
+
+Capability — resolve IAM policies re-exported through **nested module
+outputs** (passthrough). v1.9.17 resolved a parent consuming a _direct_
+child's policy output; this closes the remaining gap where an intermediate
+module re-exports a deeper module's policy:
+
+```hcl
+# root
+resource "aws_iam_policy" "p" { policy = module.outer.policy_json }
+# modules/outer — re-exports the inner module's output
+output "policy_json" { value = module.inner.policy_json }
+# modules/inner — owns the data doc
+data "aws_iam_policy_document" "p" { … }
+output "policy_json" { value = data.aws_iam_policy_document.p.json }
+```
+
+Previously the root's `module.outer.policy_json` degraded to
+could-not-evaluate. Now it resolves transitively to the grandchild's parsed
+statements (and a child resource's `policy = module.inner.x` resolves too).
+
+### Changed — `followModules` recurses before the child normalizes
+
+The child module's resources are now normalized AFTER its own nested modules
+are followed, so the grandchild `moduleOutputPolicies` index is available
+when the child normalizes (a child resource can consume a nested module's
+output) AND when the child's output index is built (a passthrough re-export
+resolves transitively). Works at arbitrary nesting depth. Resource-array
+order and trace labels are unchanged; evaluate builds its indexes from all
+resources, so verdicts are unaffected. 32 `parse.test.ts` cases (incl. all
+prior module-following tests) pass unchanged — no regressions.
+
+### Changed — `buildModuleOutputPolicies` resolves passthrough outputs
+
+Added a `grandchildPolicies` param: an output whose value is a
+`module.<label>.<output>` ref (not a data-source ref) now resolves through
+the grandchild index — the recursive case complementing the base-case
+`data.aws_iam_policy_document.<n>.json` resolution.
+
+### Tests
+
+1 new `parse.test.ts` case (TDD red→green): three-deep passthrough
+(root → outer → inner) resolving to `Action "*"`. Gate: 679 unit + 38
+integration, 0 regressions.
+
 ## 1.9.17
 
 Capability — resolve IAM policies consumed via a **module output**. A common

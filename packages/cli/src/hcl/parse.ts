@@ -422,18 +422,56 @@ async function followModules(
           const childDataPolicies = buildDataPolicies(
             parsedModule.value.map((f) => f.parsed),
           )
-          // Index the child's `output`s whose value is a data-source policy
-          // ref, keyed `<label>.<output>`, so a PARENT resource's
-          // `policy = module.<label>.<output>` resolves to the child's policy.
+          // Compute the trace prefix for nested recursion BEFORE normalizing
+          // the child. We recurse into nested modules FIRST so that a child
+          // resource's `policy = module.inner.x` AND a child output passthrough
+          // (`output y = module.inner.x`) can both resolve against the
+          // grandchild moduleOutputPolicies.
+          let childTraceRoot = ''
+          for (const m of parsedModule.value) {
+            const modRel = toPosix(path.relative(projectRoot, m.file))
+            const base = traceRoot ? `${traceRoot} › ${modRel}` : modRel
+            if (!childTraceRoot) childTraceRoot = base
+          }
+          if (!childTraceRoot) {
+            const modRel = toPosix(path.relative(projectRoot, moduleDir))
+            childTraceRoot = traceRoot ? `${traceRoot} › ${modRel}` : modRel
+          }
+          childTraceRoot = `${childTraceRoot} (${label}${keyTag})`
+
+          // Recurse: the child's OWN `module {}` calls (nested modules) — FIRST,
+          // so the child can consume / re-export their outputs.
+          const nested = await followModules(
+            parsedModule.value,
+            childTraceRoot,
+            projectRoot,
+            moduleScope,
+            environmentOverride,
+            new Set([...pathStack, moduleDir]),
+            childPd,
+            childRegions,
+          )
+          if (!nested.ok) return nested
+          // Grandchild `<label>.<output>` → PolicyInfo (built while following
+          // the child's sub-modules). Feeds BOTH the child's normalize
+          // (resource-side `policy = module.inner.x`) and the child's output
+          // index (passthrough re-export).
+          const grandchildPolicies = nested.value.moduleOutputPolicies
+
+          // Index the child's `output`s (keyed `<label>.<output>`) so a PARENT
+          // resource's `policy = module.<label>.<output>` resolves. Resolves a
+          // data-source ref (base case) AND a passthrough
+          // (`output x = module.inner.y`) via the grandchild index above.
           for (const [k, v] of buildModuleOutputPolicies(
             parsedModule.value.map((f) => f.parsed),
             childDataPolicies,
             label,
+            grandchildPolicies,
           ))
             moduleOutputPolicies.set(k, v)
-          // Trace prefix handed to nested recursion — accumulates the full
-          // call chain so a finding on a deep module names every hop.
-          let childTraceRoot = ''
+
+          // Normalize the child's resources — grandchildPolicies lets a child
+          // resource consume a nested module's policy output.
           for (const m of parsedModule.value) {
             const modRel = toPosix(path.relative(projectRoot, m.file))
             const base = traceRoot ? `${traceRoot} › ${modRel}` : modRel
@@ -449,6 +487,7 @@ async function followModules(
                 providerAliasRemap,
                 childRegions,
                 childDataPolicies,
+                grandchildPolicies,
               ),
             )
             // Outputs declared in the followed module — normalize with the
@@ -466,30 +505,8 @@ async function followModules(
             ignores.push(...scanIgnores(m.text, modRel))
             // Ungoverned resources in the followed module file.
             ungoverned.push(...collectUngoverned(m.parsed, trace, m.text))
-            if (!childTraceRoot) childTraceRoot = base
           }
-          // When the module has NO direct files (edge case), fall back to
-          // traceRoot + the label so nested traces still chain.
-          if (!childTraceRoot) {
-            const modRel = toPosix(path.relative(projectRoot, moduleDir))
-            childTraceRoot = traceRoot ? `${traceRoot} › ${modRel}` : modRel
-          }
-          // Stash the current instance's label onto childTraceRoot so nested
-          // resources chain the parent instantiation explicitly.
-          childTraceRoot = `${childTraceRoot} (${label}${keyTag})`
 
-          // Recurse: the module's own `module {}` calls (nested modules).
-          const nested = await followModules(
-            parsedModule.value,
-            childTraceRoot,
-            projectRoot,
-            moduleScope,
-            environmentOverride,
-            new Set([...pathStack, moduleDir]),
-            childPd,
-            childRegions,
-          )
-          if (!nested.ok) return nested
           out.push(...nested.value.resources)
           skips.push(...nested.value.skips)
           outputs.push(...nested.value.outputs)

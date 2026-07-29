@@ -267,6 +267,55 @@ output "not_a_policy" {
     expect(parent?.policy?.kind).toBe('unresolved')
   })
 
+  it('resolves a policy re-exported through a NESTED module output (passthrough)', async () => {
+    // outer re-exports inner's policy output; the ROOT consumes
+    // module.outer.policy_json. The grandchild (inner) owns the data doc.
+    // Requires followModules to recurse into nested modules BEFORE the child
+    // (outer) normalizes, so outer's `output = module.inner.x` resolves.
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "outer" {
+  source = "../../modules/outer"
+}
+
+resource "aws_iam_policy" "parent" {
+  name   = "parent"
+  policy = module.outer.policy_json
+}`),
+      'modules/outer/main.tf': `
+module "inner" {
+  source = "../inner"
+}
+
+output "policy_json" {
+  value = module.inner.policy_json
+}
+`,
+      'modules/inner/main.tf': `
+data "aws_iam_policy_document" "p" {
+  statement {
+    effect  = "Allow"
+    actions = ["*"]
+  }
+}
+
+output "policy_json" {
+  value = data.aws_iam_policy_document.p.json
+}
+`,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const parent = r.value.resources.find(
+      (x) => x.type === 'aws_iam_policy' && x.name === 'parent',
+    )
+    const pol = parent?.policy
+    expect(pol?.kind).toBe('parsed')
+    if (pol?.kind === 'parsed') {
+      expect(pol.statements[0]?.actions).toContain('*')
+    }
+  })
+
   it('per-instantiation isolation: two calls keep separate scopes AND distinct trace labels', async () => {
     const dir = scratch({
       [`${ENV}/main.tf`]: caller(`module "good" {
