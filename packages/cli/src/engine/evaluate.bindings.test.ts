@@ -86,6 +86,78 @@ describe('evaluate (denyInsensitiveVariable) — #10', () => {
     const bs = normalizeBindings(parsed as never, 'main.tf', raw)
     expect(bs[0]?.line).toBe(2)
   })
+
+  describe('config-flag precision (dogfood round 2 — Finding #3)', () => {
+    it('skips a bool-typed secret-named variable (a flag, not a value)', () => {
+      // `create_password_policy = true` is a boolean feature flag, not a
+      // secret. hcl2json emits `type = bool` as `'${bool}'`.
+      const parsed = {
+        variable: {
+          create_account_password_policy: [{ type: '${bool}', default: false }],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+      expect(r.passed).toBe(1)
+    })
+
+    it('skips a number-typed secret-named variable (a config value)', () => {
+      // `max_password_age = 90` is a number, not a secret.
+      const parsed = {
+        variable: { max_password_age: [{ type: '${number}', default: 90 }] },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+
+    it('still flags a string-typed secret-named variable', () => {
+      const parsed = {
+        variable: { db_password: [{ type: '${string}', default: 'x' }] },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(1)
+    })
+
+    it('still flags a secret-named variable with no type declared (conservative)', () => {
+      const parsed = { variable: { api_key: [{}] } }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(1)
+    })
+
+    it('skips verb-prefixed flags (allow_/create_/attach_/enable_/disable_)', () => {
+      const parsed = {
+        variable: {
+          allow_users_to_change_password: [{ type: '${bool}' }],
+          create_access_key: [{ type: '${bool}' }],
+          attach_external_secrets_policy: [{ type: '${bool}' }],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+
+    it('skips extended config-flag suffixes (_status/_policy/_arns/_age/_length/_required/_prevention)', () => {
+      const parsed = {
+        variable: {
+          access_key_status: [{ type: '${string}' }],
+          password_policy: [{ type: '${string}' }],
+          secrets_kms_key_arns: [{ type: '${list(string)}' }],
+          max_password_age: [{ type: '${number}' }],
+          password_length: [{ type: '${number}' }],
+          password_reset_required: [{ type: '${bool}' }],
+          password_reuse_prevention: [{ type: '${number}' }],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+  })
 })
 
 describe('evaluate (denyPlaintextLocalSecret) — #12', () => {

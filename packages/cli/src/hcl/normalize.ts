@@ -2407,6 +2407,7 @@ export function normalizeBindings(
       line: findVariableLine(rawText, name),
       sensitive,
       isLiteral: isScalarLiteral(block.default),
+      type: typeof block.type === 'string' ? block.type : undefined,
     })
   }
   if (Array.isArray(parsed.locals)) {

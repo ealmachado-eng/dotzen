@@ -753,3 +753,17 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    module (was 12 of 14 in v1.5.0); the v1.7 `data.aws_iam_policy_document`
    resolution kept the IAM module at 2 total CNE; NACL governance produced
    no false violations on the VPC module.
+
+10. ✅ **DONE (v1.9.3) — `denyInsensitiveVariable` config-flag precision**
+    (dogfood round 2, Finding #3) — the rule over-fired on config-flag
+    variables whose names contain a secret-like word (the AWS IAM module
+    produced 129 false positives on names like `max_password_age`,
+    `create_access_key`). Three-pronged fix: (1) **type-based skip** — a
+    `bool`/`number`-typed variable is definitionally not a secret (the
+    `type` constraint is now threaded through `NormalizedBinding`); (2)
+    **verb-prefix skip** — `allow_*`/`create_*`/`attach_*`/`enable_*`/
+    `disable_*`; (3) **extended config-flag suffix list** — added `_status`,
+    `_policy`, `_arns`, `_permission`, `_age`, `_length`, `_required`,
+    `_prevention`. The IAM module dropped from 159 → 30 violations (0
+    secret-variable false positives remain; all 30 are legitimate inline-
+    policy findings).

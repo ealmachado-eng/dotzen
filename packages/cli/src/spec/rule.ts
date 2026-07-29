@@ -524,6 +524,14 @@ export class RuleBuilder {
    * (binding rules target every variable). A `sensitive = true` variable
    * passes; a `sensitive` flag that is itself an unresolvable var degrades to
    * could-not-evaluate.
+   *
+   * **Config-flag precision:** a variable is SKIPPED (not flagged) when its
+   * name contains a secret word but it is clearly a configuration parameter,
+   * not a secret value: (1) `type = bool` or `type = number` (a secret is
+   * always a string); (2) a verb prefix (`allow_*`, `create_*`, `attach_*`,
+   * `enable_*`, `disable_*`); (3) a config-flag suffix (`_enabled`,
+   * `_disabled`, `_policy`, `_arns`, `_age`, `_length`, `_required`, etc.).
+   * A `string`-typed variable (e.g. `db_password`) is still flagged.
    */
   denyInsensitiveVariable(): this {
     this._conditions.push({ kind: 'denyInsensitiveVariable' })

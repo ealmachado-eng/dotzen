@@ -1228,7 +1228,23 @@ function evalInsensitiveSecretOutput(
  * a local named `secret_rotation_enabled = "my-password"` IS suspicious).
  */
 const CONFIG_FLAG_SUFFIX =
-  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length)$/i
+  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length|_status|_policy|_arns|_permission|_age|_length|_required|_prevention)$/i
+
+/**
+ * Config-flag verb prefixes — `allow_*`, `create_*`, `attach_*`, `enable_*`,
+ * `disable_*` describe an action/permission toggle, not a secret value.
+ * (Dogfood round 2: `allow_users_to_change_password`, `create_access_key`,
+ * `attach_external_secrets_policy` all false-positive'd on the IAM module.)
+ */
+const CONFIG_FLAG_PREFIX = /^(allow|create|attach|enable|disable)_/i
+
+/**
+ * A variable whose `type` constraint is `bool` or `number` is definitionally
+ * not a secret value (a secret is always a string). hcl2json emits types as
+ * `'${bool}'` / `'${number}'` / `'${string}'` / `'${list(string)}'` etc.
+ */
+const isNonSecretType = (type: string | undefined): boolean =>
+  typeof type === 'string' && /\b(bool|number)\b/.test(type)
 
 /**
  * Binding-surface: a `variable` whose name looks like a secret must be marked
@@ -1244,7 +1260,13 @@ function evalInsensitiveVariable(
 ): ConditionOutcome {
   if (b.kind !== 'variable') return { kind: 'pass' }
   if (!SECRET_NAME_PATTERN.test(b.name)) return { kind: 'pass' }
+  // Config-flag precision: a bool/number-typed variable, or one whose name
+  // carries a config-flag suffix/prefix, is a configuration parameter — not
+  // a secret value. (Dogfood round 2: the IAM module had 129 false positives
+  // on names like `max_password_age`, `create_access_key`.)
+  if (isNonSecretType(b.type)) return { kind: 'pass' }
   if (CONFIG_FLAG_SUFFIX.test(b.name)) return { kind: 'pass' }
+  if (CONFIG_FLAG_PREFIX.test(b.name)) return { kind: 'pass' }
   if (b.sensitive === true) return { kind: 'pass' }
   if (b.sensitive === 'unresolved')
     return {

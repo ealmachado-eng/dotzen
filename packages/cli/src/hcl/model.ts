@@ -228,6 +228,12 @@ export interface NormalizedBinding {
   /** true when the value is a plaintext literal (a scalar, not a `${ref}`).
    *  For `denyPlaintextLocalSecret` — a referenced secret is the safe pattern. */
   readonly isLiteral: boolean
+  /** variable: the raw `type` constraint (e.g. `'${bool}'`, `'${number}'`,
+   *  `'${string}'`, `'${list(string)}'`), or undefined when no type is
+   *  declared. Used by `denyInsensitiveVariable` to skip `bool`/`number`
+   *  variables (a boolean/numeric config flag is definitionally not a
+   *  secret value). local: always undefined. */
+  readonly type?: string
 }
 
 /**

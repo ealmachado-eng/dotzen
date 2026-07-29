@@ -6,6 +6,47 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.3
+
+### Fixed — `denyInsensitiveVariable` config-flag precision (dogfood round 2, Finding #3)
+
+The rule over-fired on config-flag variables whose names contain a secret-like
+word (PASSWORD/SECRET/KEY/TOKEN) but are actually configuration parameters —
+not secret values. The AWS IAM module dogfood produced 129 false positives on
+names like `max_password_age`, `create_access_key`, `password_reuse_prevention`.
+
+**Three-pronged precision fix** (all skip only `denyInsensitiveVariable`, not
+`denyPlaintextLocalSecret` — a hardcoded value in a secret-named local IS
+suspicious regardless):
+
+- **Type-based skip** (most principled): a variable whose `type` constraint is
+  `bool` or `number` is definitionally not a secret (a secret is always a
+  string). The variable's `type` is now threaded through `NormalizedBinding`.
+  `string` / `list` / `map` / object-typed variables are still evaluated; a
+  variable with no type declared is still flagged (conservative).
+- **Verb-prefix skip**: `allow_*`, `create_*`, `attach_*`, `enable_*`,
+  `disable_*` describe action/permission toggles, not secret values.
+- **Extended config-flag suffix list**: added `_status`, `_policy`, `_arns`,
+  `_permission`, `_age`, `_length`, `_required`, `_prevention` to the existing
+  `_enabled`/`_disabled`/`_interval`/etc.
+
+**Result:** the AWS IAM module dogfood dropped from 159 → 30 violations (0
+secret-variable false positives remain; all 30 are legitimate inline-policy
+findings — the module's core purpose is to create IAM roles with inline
+policies).
+
+### Added — vocabulary
+
+- `NormalizedBinding.type` (the raw variable `type` constraint, for the
+  type-based skip above).
+
+### Migration notes
+
+Backward-compatible. Consumers will see FEWER `denyInsensitiveVariable`
+violations — specifically, bool/number-typed variables and verb-prefixed /
+extended-suffix config flags are no longer flagged. A `string`-typed secret
+variable (e.g. `db_password`) is still flagged exactly as before.
+
 ## 1.9.2
 
 Dogfood round 2 fixes. Two issues surfaced running v1.9.1 against real module
