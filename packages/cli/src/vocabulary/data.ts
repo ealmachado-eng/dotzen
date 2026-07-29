@@ -22,6 +22,7 @@ export enum DataResource {
   AwsIamPolicyDocument = 'data.aws_iam_policy_document',
   AwsIamPolicy = 'data.aws_iam_policy',
   AwsCloudwatchLogGroup = 'data.aws_cloudwatch_log_group',
+  AwsCanonicalUserId = 'data.aws_canonical_user_id',
   AwsEksCluster = 'data.aws_eks_cluster',
   AwsSsmParameter = 'data.aws_ssm_parameter',
   AwsSnsTopic = 'data.aws_sns_topic',

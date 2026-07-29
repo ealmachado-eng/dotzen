@@ -1247,12 +1247,16 @@ const CONFIG_FLAG_SUFFIX =
 const CONFIG_FLAG_PREFIX = /^(allow|create|attach|enable|disable)_/i
 
 /**
- * A variable whose `type` constraint is `bool` or `number` is definitionally
- * not a secret value (a secret is always a string). hcl2json emits types as
- * `'${bool}'` / `'${number}'` / `'${string}'` / `'${list(string)}'` etc.
+ * A variable whose `type` constraint is `bool`, `number`, OR any collection
+ * type (`list`/`set`/`map`/`object`/`tuple`) is not a single secret value.
+ * A secret is always a scalar `string`; a collection named `secrets` holds
+ * references/config (ARNs, secret-name mappings), not plaintext values.
+ * hcl2json emits types as `'${bool}'` / `'${list(string)}'` / `'${list(object({...}))}'` etc.
+ * A bare `string`-typed variable (e.g. `db_password`) is still evaluated.
  */
 const isNonSecretType = (type: string | undefined): boolean =>
-  typeof type === 'string' && /\b(bool|number)\b/.test(type)
+  typeof type === 'string' &&
+  /\b(bool|number|list|set|map|object|tuple)\b/.test(type)
 
 /**
  * Binding-surface: a `variable` whose name looks like a secret must be marked

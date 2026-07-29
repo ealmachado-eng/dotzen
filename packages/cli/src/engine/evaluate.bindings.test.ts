@@ -157,6 +157,53 @@ describe('evaluate (denyInsensitiveVariable) — #10', () => {
       const r = evaluate([sensVarRule], [], [], bs)
       expect(r.violations).toHaveLength(0)
     })
+
+    // Dogfood round 5: complex-typed variables (list/object/map) named
+    // `secrets`, `repositoryCredentials`, etc. hold collections of REFERENCES
+    // (ARNs, secret-name configs), not scalar secret values.
+    it('skips a list(object(...))-typed secret-named variable (ECS pattern)', () => {
+      const parsed = {
+        variable: {
+          secrets: [
+            { type: '${list(object({ name = string, valueFrom = string }))}' },
+          ],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+
+    it('skips a list(string)-typed secret-named variable (a collection)', () => {
+      const parsed = {
+        variable: { credentialSpecs: [{ type: '${list(string)}' }] },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+
+    it('skips an object({...})-typed secret-named variable', () => {
+      const parsed = {
+        variable: {
+          repositoryCredentials: [
+            { type: '${object({ credentialsParameter = string })}' },
+          ],
+        },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(0)
+    })
+
+    it('still flags a string-typed secret-named variable (a scalar secret)', () => {
+      const parsed = {
+        variable: { db_password: [{ type: '${string}', default: 'hunter2' }] },
+      }
+      const bs = normalizeBindings(parsed as never, 'main.tf', '')
+      const r = evaluate([sensVarRule], [], [], bs)
+      expect(r.violations).toHaveLength(1)
+    })
   })
 })
 

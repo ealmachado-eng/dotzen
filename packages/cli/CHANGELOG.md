@@ -6,6 +6,54 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.6
+
+Dogfood round 5 precision + coverage fixes. Running v1.9.5 against 3 fresh
+module repos (ECS, S3, Azure VM) surfaced 0 false positives on governed
+resources + one complex-type secret-variable precision gap.
+
+### Fixed — `denyInsensitiveVariable` complex-type skip
+
+Extended the type-based skip from `bool`/`number` only to ALL collection
+types (`list`/`set`/`map`/`object`/`tuple`). A collection-typed variable named
+`secrets` or `repositoryCredentials` holds a collection of REFERENCES (ARNs,
+secret-name mappings, ECS secret configs), not scalar secret values. A secret
+is always a `string`; a `list(object({...}))` or `list(string)` named `secrets`
+is a config/reference container. The ECS module had 30 FPs (`secrets` =
+`list(object(...))`, `repositoryCredentials` = `object(...)`, `credentialSpecs`
+= `list(string)`); the Azure VM module had 8 FPs (`secrets` =
+`list(object(...))`). All eliminated. A bare `string`-typed variable
+(`db_password`) is still evaluated exactly as before.
+
+### Added — vocabulary (S3 companion + data source coverage)
+
+The S3 bucket module surfaced 133 ungoverned on companion resources. Added:
+
+- `AwsResource.S3DirectoryBucket`, `S3BucketAccelerateConfiguration`,
+  `S3BucketAnalyticsConfiguration`, `S3BucketMetadataConfiguration`,
+  `S3BucketObjectLockConfiguration` — S3 companion resources (no security
+  rules yet, but recognized so they don't surface as coverage noise).
+- `DataResource.AwsCanonicalUserId` (`data.aws_canonical_user_id`) — common
+  read-only data source for S3 ACL configurations.
+- S3 module: 147 → 14 ungoverned.
+
+### Dogfood round 5 summary
+
+| Repo     | V   | P    | CNE | Ungov |
+| -------- | --- | ---- | --- | ----- |
+| AWS ECS  | 11  | 3358 | 36  | 35    |
+| AWS S3   | 22  | 2962 | 28  | 14    |
+| Azure VM | 0   | 675  | 5   | 19    |
+
+All violations legitimate (tags on example resources). Azure VM: **0
+violations** (fully clean). 0 false positives on any repo.
+
+### Migration notes
+
+Backward-compatible. Consumers will see fewer `denyInsensitiveVariable`
+violations — complex-typed variables (lists/objects/maps) named `secrets` etc.
+are now skipped. A `string`-typed secret variable is still flagged.
+
 ## 1.9.5
 
 Dogfood round 4 precision + coverage fixes. Running v1.9.4 against 4 fresh

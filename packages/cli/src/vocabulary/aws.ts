@@ -23,6 +23,13 @@ export enum AwsResource {
   SecurityGroupRule = 'aws_security_group_rule',
   DbInstance = 'aws_db_instance',
   S3Bucket = 'aws_s3_bucket',
+  S3DirectoryBucket = 'aws_s3_directory_bucket',
+  // S3 companion configuration resources (no security rules yet, but
+  // recognized so they don't surface as ungoverned noise on the S3 module).
+  S3BucketAccelerateConfiguration = 'aws_s3_bucket_accelerate_configuration',
+  S3BucketAnalyticsConfiguration = 'aws_s3_bucket_analytics_configuration',
+  S3BucketMetadataConfiguration = 'aws_s3_bucket_metadata_configuration',
+  S3BucketObjectLockConfiguration = 'aws_s3_bucket_object_lock_configuration',
   // The modern decomposed form of an S3 bucket ACL (inline `acl` was
   // deprecated in AWS provider v4).
   S3BucketAcl = 'aws_s3_bucket_acl',
