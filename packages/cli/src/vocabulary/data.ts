@@ -23,6 +23,12 @@ export enum DataResource {
   AwsIamPolicy = 'data.aws_iam_policy',
   AwsCloudwatchLogGroup = 'data.aws_cloudwatch_log_group',
   AwsCanonicalUserId = 'data.aws_canonical_user_id',
+  // Dogfood round 8: common read-only data sources on the EKS Blueprints.
+  AwsSecretsmanagerSecret = 'data.aws_secretsmanager_secret',
+  AwsSecretsmanagerSecretVersion = 'data.aws_secretsmanager_secret_version',
+  AwsSubnets = 'data.aws_subnets',
+  AwsRoute53Zone = 'data.aws_route53_zone',
+  AwsEcrpublicAuthorizationToken = 'data.aws_ecrpublic_authorization_token',
   AwsEksCluster = 'data.aws_eks_cluster',
   AwsSsmParameter = 'data.aws_ssm_parameter',
   AwsSnsTopic = 'data.aws_sns_topic',

@@ -6,6 +6,52 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.9
+
+Dogfood round 8 — precision + coverage fixes. Running v1.9.8 against 4 fresh
+repos (CloudFront, GCP KMS, EKS Blueprints, Auto Scaling Groups) surfaced
+local-secret identifier FPs + Kubernetes-provider coverage noise.
+
+### Fixed — local-secret identifier-suffix skip
+
+`denyPlaintextLocalSecret` now skips locals whose name ends in an identifier
+suffix (`_name`/`_arn`/`_sa`/`_suffix`/etc.) — a local like
+`secretstore_name = "my-store"` is a resource identifier, not a hardcoded
+secret, even though the name contains "secret" (inside "secretstore"). The
+config-flag suffixes (`_enabled`/`_disabled`/etc.) do NOT apply to locals —
+a hardcoded value in a config-flag-named local is still suspicious. (4 FPs
+eliminated on the EKS Blueprints.)
+
+### Fixed — `denyInsensitiveVariable` identifier suffixes
+
+Added `_name` and `_suffix` to the config-flag suffix list (e.g.
+`aws_secret_manager_git_private_ssh_key_name` — an identifier, not a secret
+value; `argocd_secret_manager_name_suffix` — a name suffix). (9 FPs
+eliminated.)
+
+### Added — Kubernetes provider + data source coverage
+
+The EKS Blueprints repo uses Kubernetes-provider resources (`helm_release`,
+`kubectl_manifest`, `kubernetes_*`) extensively — these are not cloud IaC
+(dotzen governs cloud infrastructure, not K8s manifests). Added 40+
+Kubernetes provider types to `UTILITY_TYPES` for silent skipping, plus 5
+common data sources to `DataResource` (`data.aws_secretsmanager_secret`,
+`data.aws_subnets`, `data.aws_route53_zone`, etc.). EKS Blueprints:
+111 → 45 ungoverned.
+
+### Dogfood round 8 summary
+
+| Repo               | V   | P    | CNE | Ungov |
+| ------------------ | --- | ---- | --- | ----- |
+| AWS CloudFront     | 0   | 189  | 11  | 28    |
+| GCP KMS            | 0   | 98   | 14  | 6     |
+| AWS EKS Blueprints | 6   | 644  | 146 | 45    |
+| AWS Auto Scaling   | 1   | 1398 | 5   | 13    |
+
+CloudFront + KMS **fully clean** (0 V). EKS Blueprints: 5 tags + 1 real
+(`kubecost_token` not sensitive). Auto Scaling: 1 real (provisioner use).
+0 FPs after the fixes.
+
 ## 1.9.8
 
 Re-publish of v1.9.7 (the v1.9.7 tag pipeline failed on a CHANGELOG.md

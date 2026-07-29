@@ -1236,7 +1236,18 @@ function evalInsensitiveSecretOutput(
  * a local named `secret_rotation_enabled = "my-password"` IS suspicious).
  */
 const CONFIG_FLAG_SUFFIX =
-  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length|_status|_policy|_arns|_arn|_permission|_age|_length|_required|_prevention|_duration|_expression|_key_id|_strategy)$/i
+  /(_enabled|_disabled|_interval|_timeout|_count|_mode|_provider|_addon|_via_dns|_max_length|_min_length|_status|_policy|_arns|_arn|_permission|_age|_length|_required|_prevention|_duration|_expression|_key_id|_strategy|_name|_suffix)$/i
+
+/**
+ * Identifier suffixes — names ending in these are structural IDENTIFIERS
+ * (resource names, ARNs, service-account names), not secret values. Applied
+ * to BOTH `denyInsensitiveVariable` (via CONFIG_FLAG_SUFFIX above) AND
+ * `denyPlaintextLocalSecret` — a local like `secretstore_name = "my-store"`
+ * is a resource identifier, not a hardcoded secret, even though the name
+ * contains "secret" (as part of "secretstore"). (Dogfood round 8.)
+ */
+const IDENTIFIER_SUFFIX =
+  /(_name|_arn|_arns|_id|_key_id|_suffix|_sa|_account)$/i
 
 /**
  * Config-flag verb prefixes — `allow_*`, `create_*`, `attach_*`, `enable_*`,
@@ -1302,6 +1313,12 @@ function evalPlaintextLocalSecret(
 ): ConditionOutcome {
   if (b.kind !== 'local') return { kind: 'pass' }
   if (!SECRET_NAME_PATTERN.test(b.name)) return { kind: 'pass' }
+  // Identifier-suffix skip: a local ending in `_name`/`_arn`/`_sa` etc. is a
+  // resource identifier, not a secret value — even if the name contains a
+  // secret word (e.g. `secretstore_name` contains "secret" inside
+  // "secretstore"). Config-flag suffixes (`_enabled` etc.) do NOT apply here
+  // — a hardcoded value in a config-flag-named local IS suspicious.
+  if (IDENTIFIER_SUFFIX.test(b.name)) return { kind: 'pass' }
   if (!b.isLiteral) return { kind: 'pass' } // a reference — the safe pattern
   return {
     kind: 'violation',
