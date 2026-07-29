@@ -66,10 +66,13 @@ Running v0.0.x on real AWS module repos surfaced these, in priority order:
   Per-instance isolation preserved at every depth: each call's scope and
   trace label are independent.
   **Remaining (harder, lower-frequency):** caller inputs that are
-  themselves unresolved compound expressions beyond sole refs; `count`
-  per-index expansion; more than the current sole-ref `each.*` substitution
-  inside module resources (e.g. `each.value.field` on objects — currently
-  left unresolved).
+  themselves unresolved compound expressions beyond sole refs — would
+  require modeling Terraform built-in functions (`concat()`, `flatten()`,
+  `toset()` for non-empty collections) across all attrs. Only `merge()`
+  is partially handled (for tags). Deferred (broad effort, diminishing
+  returns — the common case is sole-ref caller inputs, which already work).
+  ✅ **DONE (v1.9.1):** `count` per-index expansion and `each.value.field`
+  on objects — see below.
 - ✅ **DONE (v0.1.3)** `mustHaveAssociated` through `local`/`var` indirection.
   Real modules route the parent ref through a local
   (`bucket = local.bucket_id`, where `local.bucket_id = aws_s3_bucket.main.id`).
@@ -707,3 +710,26 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    instead of degrading to could-not-evaluate. 9 new
    `normalize.datapolicy.test.ts` + 3 `evaluate.datapolicy.test.ts`
    cases pin both halves.
+
+8. ✅ **DONE (v1.9.1) — `count` per-index expansion + `each.value.<field>`
+   resolution** — two module-following resolver improvements that convert
+   could-not-evaluate findings to definite verdicts:
+   - **`count = N` (literal N > 0) expansion**: the resource loop now
+     expands into N instances (was: followed once). Each instance gets
+     `count.index` threaded into its scope and `instanceKey = "<i>"`. A
+     `count = var.n` that resolves to a literal expands too; an
+     unresolvable count is still followed once honestly (count.index refs
+     degrade to CNE — never a false verdict). `count = 0` skip and
+     `count = 1` single-instance behavior unchanged.
+   - **`each.value.<field>` field access**: a `for_each` over a MAP of
+     objects now resolves dotted field access on the element
+     (`each.value.port`, `each.value.cidr`). A new `EACH_VALUE_FIELD`
+     regex + resolver branch extracts the named field from the `each.value`
+     scope entry; a for_each over SCALARS has a non-object element → field
+     access degrades to unresolved (honest). The `tryEvalConcat` helper was
+     generalized to delegate inner resolution to `resolveValue` (handles
+     sole refs, `each.value.<field>`, and conservative ternaries), so
+     compound interpolations like `name-${each.value.env}` resolve too.
+   `SOLE_REF` now also matches `count.index` (so `resolveRaw` handles it
+   for association linking too). 10 new `normalize.count.test.ts` cases
+   pin both behaviors.

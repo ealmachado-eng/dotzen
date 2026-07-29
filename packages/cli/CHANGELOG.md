@@ -6,6 +6,41 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.1
+
+Two module-following resolver improvements (ROADMAP #8 + #9) that convert
+could-not-evaluate findings to definite verdicts. Engine internals — no new
+spec DSL vocabulary.
+
+### Changed — engine resolution
+
+- **`count = N` per-index expansion** — a resource with a literal `count = N`
+  (N > 0) now expands into N instances (was: followed once). Each instance
+  gets `count.index` threaded into its scope (resolves to the instance
+  number) and `instanceKey = "<i>"`. A `count = var.n` that resolves to a
+  literal expands too; an unresolvable count is still followed once honestly
+  (`count.index` refs degrade to could-not-evaluate — never a false verdict).
+  `count = 0` skip and `count = 1` single-instance behavior are unchanged.
+- **`each.value.<field>` field access** — a `for_each` over a MAP of objects
+  now resolves dotted field access on the element (`each.value.port`,
+  `each.value.cidr`). A for_each over SCALARS has a non-object element, so
+  field access degrades to unresolved (honest — a scalar has no fields).
+  Compound interpolations like `name-${each.value.env}` resolve too (the
+  `tryEvalConcat` helper was generalized to delegate inner resolution to
+  `resolveValue`, which handles sole refs, `each.value.<field>`, and
+  conservative ternaries).
+- `SOLE_REF` now matches `count.index` (so `resolveRaw` handles it for
+  association linking too, not just `resolveValue`).
+
+### Migration notes
+
+Backward-compatible. Resources using `count = N` (N > 1) or
+`each.value.<field>` that previously produced could-not-evaluate findings
+will now produce definite verdicts (pass or violation) where the indexed/
+field value is statically resolvable. No new false positives — the
+expansion only fires on resolvable literal counts, and unresolved counts/
+fields degrade honestly as before.
+
 ## 1.9.0
 
 Closes the optional GCP niche remainder (ROADMAP #6): three `cisGcp` rules +

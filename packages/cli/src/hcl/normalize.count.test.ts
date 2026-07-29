@@ -237,6 +237,206 @@ describe('normalize — resource for_each per-element expansion', () => {
     })
   })
 
+  describe('count = N → per-index expansion (ROADMAP #8)', () => {
+    it('expands count = 2 into two instances with count.index threaded', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [{ count: 2, bucket: 'b-${count.index}' }],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res).toHaveLength(2)
+      expect(res.map((r) => r.instanceKey)).toEqual(['0', '1'])
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 'b-0',
+      })
+      expect(res[1]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 'b-1',
+      })
+    })
+
+    it('resolves a sole count.index reference', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [{ count: 3, bucket: '${count.index}' }],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res).toHaveLength(3)
+      expect(res[1]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 1,
+      })
+    })
+
+    it('resolves count.index via a var-typed count resolving to a literal', () => {
+      const parsed = {
+        variable: { n: [{ default: 2 }] },
+        resource: {
+          aws_s3_bucket: {
+            a: [{ count: '${var.n}', bucket: 'b-${count.index}' }],
+          },
+        },
+      }
+      const scope = buildScope([parsed])
+      const res = normalize(parsed, 'main.tf', raw, scope)
+      expect(res).toHaveLength(2)
+      expect(res[0]?.instanceKey).toBe('0')
+      expect(res[1]?.instanceKey).toBe('1')
+    })
+
+    it('follows an UNRESOLVABLE count once honestly (no count.index)', () => {
+      // count = var.unknown (no default) → cannot expand → one instance,
+      // count.index stays unresolved (could-not-evaluate, not a false verdict).
+      const parsed = {
+        variable: { n: [{}] },
+        resource: {
+          aws_s3_bucket: {
+            a: [{ count: '${var.n}', bucket: '${count.index}' }],
+          },
+        },
+      }
+      const scope = buildScope([parsed])
+      const res = normalize(parsed, 'main.tf', raw, scope)
+      expect(res).toHaveLength(1)
+      expect(res[0]?.instanceKey).toBeUndefined()
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'unresolved',
+        expr: '${count.index}',
+      })
+    })
+
+    it('count = 1 expands to a single instance with count.index = 0', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [{ count: 1, bucket: 'b-${count.index}' }],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res).toHaveLength(1)
+      expect(res[0]?.instanceKey).toBe('0')
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 'b-0',
+      })
+    })
+  })
+
+  describe('each.value.<field> — object element field access (ROADMAP #9)', () => {
+    it('resolves each.value.<field> to the object element field value', () => {
+      // for_each over a map of objects: each.value is the object; a field
+      // access `each.value.port` resolves to the object's `port` field.
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [
+              {
+                for_each: { dev: { suffix: '-dev', enc: true } },
+                bucket: '${each.value.suffix}',
+              },
+            ],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      const dev = res.find((r) => r.instanceKey === 'dev')
+      expect(dev?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: '-dev',
+      })
+    })
+
+    it('resolves a numeric each.value.<field>', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [
+              {
+                for_each: { x: { port: 22 } },
+                bucket: '${each.value.port}',
+              },
+            ],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 22,
+      })
+    })
+
+    it('resolves each.value.<field> inside a compound interpolation (via tryEvalConcat)', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [
+              {
+                for_each: { x: { env: 'prd' } },
+                bucket: 'name-${each.value.env}',
+              },
+            ],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'literal',
+        value: 'name-prd',
+      })
+    })
+
+    it('leaves each.value.<field> unresolved when the field is absent on the object', () => {
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [
+              {
+                for_each: { x: { env: 'prd' } },
+                bucket: '${each.value.missing}',
+              },
+            ],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'unresolved',
+        expr: '${each.value.missing}',
+      })
+    })
+
+    it('leaves each.value.<field> unresolved when for_each elements are scalars', () => {
+      // A for_each over a LIST of scalars: each.value is a string. Field
+      // access on a scalar makes no sense → unresolved (honest).
+      const parsed = {
+        resource: {
+          aws_s3_bucket: {
+            a: [
+              {
+                for_each: ['dev', 'prd'],
+                bucket: '${each.value.port}',
+              },
+            ],
+          },
+        },
+      }
+      const res = normalize(parsed, 'main.tf', raw)
+      expect(res[0]?.attributes.bucket).toEqual({
+        kind: 'unresolved',
+        expr: '${each.value.port}',
+      })
+    })
+  })
+
   it('does not leak for_each/count as attributes on expanded instances', () => {
     const parsed = {
       resource: {

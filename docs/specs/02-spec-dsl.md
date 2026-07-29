@@ -658,6 +658,16 @@ builds the engine:
 > `GcpAttribute.ShieldedNodesEnabled`, `GcpAttribute.SpecialGroup`,
 > `GcpAttribute.AccessSpecialGroup`.
 
+> **v1.9.1 — module-following resolver improvements (ROADMAP #8 + #9).**
+> Two engine-internal changes that convert could-not-evaluate findings to
+> definite verdicts (no new spec DSL vocabulary): `count = N` (literal N >
+> 0) now expands into N instances with `count.index` threaded per instance
+> (was: followed once); and `each.value.<field>` dotted field access on a
+> `for_each` map-of-objects element now resolves (a for_each over scalars
+> degrades honestly — a scalar has no fields). An unresolvable count or a
+> compound caller input still degrades to could-not-evaluate — never a
+> false verdict.
+
 ## Deferred (documented for continuity, not v1 work)
 
 - `ts-pattern` exhaustive matching in the **engine** (Layer 4) — do this

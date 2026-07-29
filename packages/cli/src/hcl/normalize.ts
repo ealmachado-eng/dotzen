@@ -150,15 +150,30 @@ function toValue(raw: unknown): NormalizedValue {
 }
 
 // A value that is *exactly* one `var.x` / `local.y` / `each.value` /
-// `each.key` reference — the only forms we resolve. Compound interpolations
-// (`"a-${var.x}"`) stay unresolved. `each.*` is set on the module scope by
-// `followModules` when expanding a module `for_each` (doc 08 tranche 5).
+// `each.key` / `count.index` reference — the only forms we resolve. Compound
+// interpolations (`"a-${var.x}"`) stay unresolved. `each.*` is set on the
+// module scope by `followModules` when expanding a module `for_each`
+// (doc 08 tranche 5); `count.index` is set on the per-instance scope by the
+// resource `count = N` expansion.
 const SOLE_REF =
-  /^\$\{(var|local)\.([A-Za-z0-9_-]+)\}$|^\$\{each\.([A-Za-z0-9_-]+)\}$/
+  /^\$\{(var|local)\.([A-Za-z0-9_-]+)\}$|^\$\{each\.([A-Za-z0-9_-]+)\}$|^\$\{count\.index\}$/
 
-/** Build the scope key from a SOLE_REF match (`var.x`, `local.y`, `each.v`). */
-const soleRefKey = (m: RegExpMatchArray): string =>
-  m[1] ? `${m[1]}.${m[2]}` : `each.${m[3]}`
+/**
+ * A sole `each.value.<field>` reference — field access on a `for_each`
+ * OBJECT element (ROADMAP #9). SOLE_REF matches only `each.value` /
+ * `each.key` exactly (the field-access form has a dotted suffix the
+ * `[A-Za-z0-9_-]+` class rejects). Handled in `resolveValue` by extracting
+ * the named field from the `each.value` scope entry (the element object).
+ */
+const EACH_VALUE_FIELD = /^\$\{each\.value\.([A-Za-z0-9_-]+)\}$/
+
+/** Build the scope key from a SOLE_REF match (`var.x`, `local.y`, `each.v`,
+ *  or `count.index`). */
+const soleRefKey = (m: RegExpMatchArray): string => {
+  if (m[1]) return `${m[1]}.${m[2]}`
+  if (m[3]) return `each.${m[3]}`
+  return 'count.index' // the third alternative matched
+}
 
 /**
  * Resolve a raw value against the scope. A sole `var`/`local`/`each`
@@ -348,13 +363,11 @@ function tryEvalConcat(
   // single-interp; multi-interp concat order/segment count is ambiguous).
   if (raw.indexOf('${', firstClose + 1) !== -1) return undefined
   const inner = raw.slice(firstOpen + 2, firstClose).trim()
-  // Inner must be a sole ref (var/local/each). Reuse the SOLE_REF shape but
-  // unanchored — the surrounding literal text is the whole point. (A pure
-  // `${ref}` never reaches here; SOLE_REF handles it earlier in resolveValue.)
-  const im = SOLE_REF.exec(`\${${inner}}`)
-  if (!im) return undefined
-  const refKey = soleRefKey(im)
-  const innerValue = resolveValue(`\${${refKey}}`, scope, depth - 1)
+  // Resolve the inner expression through `resolveValue` (handles sole refs,
+  // `each.value.<field>`, and conservative ternaries — any single-interp
+  // inner that resolves to a literal). A pure `${ref}` never reaches here;
+  // SOLE_REF/EACH_VALUE_FIELD handle it earlier in resolveValue.
+  const innerValue = resolveValue(`\${${inner}}`, scope, depth - 1)
   if (innerValue.kind !== 'literal') return undefined
   const prefix = raw.slice(0, firstOpen)
   const suffix = raw.slice(firstClose + 1)
@@ -366,6 +379,28 @@ function tryEvalConcat(
 
 function resolveValue(raw: unknown, scope: Scope, depth = 8): NormalizedValue {
   if (typeof raw === 'string') {
+    // each.value.<field> — field access on a for_each OBJECT element
+    // (ROADMAP #9). SOLE_REF matches only `each.value`/`each.key` exactly;
+    // the dotted-field form is handled here by extracting the named field
+    // from the `each.value` scope entry (set by for_each expansion). A
+    // for_each over SCALARS has a non-object each.value → field access
+    // degrades to unresolved (honest — a scalar has no fields).
+    const ef = EACH_VALUE_FIELD.exec(raw)
+    if (ef) {
+      if (depth <= 0) return { kind: 'unresolved', expr: raw }
+      const eachVal = scope.get('each.value')
+      if (
+        eachVal !== null &&
+        eachVal !== undefined &&
+        typeof eachVal === 'object' &&
+        !Array.isArray(eachVal)
+      ) {
+        const fieldVal = (eachVal as Record<string, unknown>)[ef[1]!]
+        if (fieldVal !== undefined)
+          return resolveValue(fieldVal, scope, depth - 1)
+      }
+      return { kind: 'unresolved', expr: raw }
+    }
     const m = SOLE_REF.exec(raw)
     if (m) {
       const key = soleRefKey(m)
@@ -2079,8 +2114,45 @@ export function normalize(
       )
         continue
 
-      // No for_each → a single instance (the common case).
+      // No for_each → check count = N expansion (ROADMAP #8), else single.
       if (block?.for_each === undefined) {
+        const countRaw = block?.count
+        if (countRaw !== undefined) {
+          // Resolve count: a literal number (`count = 3`) directly; a
+          // var/local ref (`count = var.n`) via resolveRaw. count = 0 was
+          // already skipped above, so a resolved count > 0 expands.
+          const countVal =
+            typeof countRaw === 'number'
+              ? countRaw
+              : resolveRaw(countRaw, scope)
+          if (typeof countVal === 'number' && countVal > 0) {
+            for (let i = 0; i < countVal; i++) {
+              // Per-instance scope: copy so count.index is isolated (do NOT
+              // mutate the shared scope). instanceKey = the index string.
+              const instScope = new Map(scope)
+              instScope.set('count.index', i)
+              out.push(
+                normalizeOne(
+                  type,
+                  name,
+                  block,
+                  file,
+                  findLine(rawText, type, name),
+                  instScope,
+                  environmentOverride,
+                  pd,
+                  String(i),
+                  aliasFor(type, block),
+                  regionFor(aliasFor(type, block)),
+                  dataPolicies,
+                ),
+              )
+            }
+            continue
+          }
+          // count unresolvable (var.x ?: N, a compound expr) → fall through
+          // to a single instance, honestly (count.index refs degrade to CNE).
+        }
         out.push(
           normalizeOne(
             type,
