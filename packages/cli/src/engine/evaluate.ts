@@ -269,6 +269,14 @@ function inScope(
       r.type === AwsResource.SecurityGroupRule)
   )
     return true
+  // denyEgress reaches the decomposed egress-rule resource (the modern
+  // standalone aws_vpc_security_group_egress_rule, parallel to the ingress).
+  if (
+    condition.kind === 'denyEgress' &&
+    target.types.includes(AwsResource.SecurityGroup) &&
+    r.type === AwsResource.VpcSecurityGroupEgressRule
+  )
+    return true
   return (
     condition.kind === 'denyAcl' &&
     target.types.includes(AwsResource.S3Bucket) &&

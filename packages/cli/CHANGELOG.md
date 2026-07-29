@@ -6,6 +6,54 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.4
+
+Dogfood round 3 coverage fixes. Running v1.9.3 against 4 fresh module repos
+(terraform-aws-modules/alb, terraform-aws-modules/eks,
+Azure/terraform-azurerm-storage, terraform-google-modules/sql-db) surfaced
+two coverage gaps. Zero false positives on any repo.
+
+### Added — `aws_vpc_security_group_egress_rule` governance
+
+The modern decomposed egress-rule resource (the egress counterpart of the
+already-governed `aws_vpc_security_group_ingress_rule`) was ungoverned —
+26x on the EKS module. It is now in `AwsResource` and mapped to the
+cloud-neutral `egress` field (same field shape as the ingress rule:
+`cidr_ipv4`/`cidr_ipv6`/`from_port`/`to_port`). The existing `denyEgress`
+condition governs it unchanged, and the `inScope` special-case lets a
+`denyEgress` rule on `aws_security_group` cover it.
+
+### Fixed — utility-type noise on `data.cloudinit_config` + `local_file`
+
+`data.cloudinit_config` (112x) and `local_file` (33x) were surfaced as
+ungoverned on the EKS module. Both are utility types with no security surface
+(cloud-init config generation; local file writing). Added to `UTILITY_TYPES`
+for silent skipping (neither governed nor surfaced as a coverage gap). The
+EKS module dropped from 318 → 147 ungoverned.
+
+### Dogfood round 3 summary
+
+| Repo          | V   | P    | CNE | Ungov |
+| ------------- | --- | ---- | --- | ----- |
+| AWS ALB       | 5   | 408  | 20  | 14    |
+| AWS EKS       | 85  | 8053 | 107 | 147   |
+| Azure storage | 0   | 54   | 5   | 1     |
+| GCP Cloud SQL | 2   | 232  | 31  | 11    |
+
+All violations legitimate (tags, inline-policy, secret-variables). All CNE
+legitimate (module-following + unresolved variable-driven values). Zero false
+positives. The Azure storage module — exercising the v1.8 niche rules
+(infra-encryption, TLS, public access) — passed cleanly (0 violations).
+
+### Added — vocabulary
+
+- `AwsResource.VpcSecurityGroupEgressRule` (`aws_vpc_security_group_egress_rule`)
+
+### Migration notes
+
+Backward-compatible. The egress-rule resource is now governed (was a coverage
+gap). Two utility types are silently skipped (were noise). No new violations.
+
 ## 1.9.3
 
 ### Fixed — `denyInsensitiveVariable` config-flag precision (dogfood round 2, Finding #3)

@@ -109,4 +109,32 @@ describe('normalize — additional ingress sources', () => {
     )
     expect(out?.ingress).toHaveLength(0)
   })
+
+  it('models aws_vpc_security_group_egress_rule as an egress source', () => {
+    const parsed = {
+      resource: {
+        aws_vpc_security_group_egress_rule: {
+          out: [
+            {
+              from_port: 443,
+              to_port: 443,
+              ip_protocol: 'tcp',
+              cidr_ipv4: '0.0.0.0/0',
+              security_group_id: '${aws_security_group.dyn.id}',
+            },
+          ],
+        },
+      },
+    }
+    const out = normalize(parsed as never, 'main.tf', raw).find(
+      (r) => r.name === 'out',
+    )
+    expect(out?.type).toBe(AwsResource.VpcSecurityGroupEgressRule)
+    expect(out?.egress).toHaveLength(1)
+    expect(out?.egress?.[0]?.fromPort).toEqual({ kind: 'literal', value: 443 })
+    expect(out?.egress?.[0]?.cidrBlocks[0]).toEqual({
+      kind: 'literal',
+      value: '0.0.0.0/0',
+    })
+  })
 })

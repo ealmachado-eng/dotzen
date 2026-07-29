@@ -109,6 +109,11 @@ const UTILITY_TYPES = new Set<string>([
   'tls_private_key',
   'tls_self_signed_cert',
   'tls_locally_signed_cert',
+  // `local_file` (writes files locally — no security surface) and
+  // `data.cloudinit_config` (cloud-init config generation — a utility data
+  // source). Dogfood round 3: 145 combined on the EKS module.
+  'local_file',
+  'cloudinit_config',
 ])
 
 const isInterpolated = (s: string): boolean => s.includes('${')
@@ -1017,10 +1022,15 @@ function ingressFor(
 }
 
 function egressFor(
+  type: string,
   block: Record<string, unknown> | undefined,
   scope: Scope,
 ): IngressRule[] {
   if (!block) return []
+  // The modern decomposed egress-rule resource (same field shape as the
+  // ingress rule: cidr_ipv4/cidr_ipv6/from_port/to_port).
+  if (type === AwsResource.VpcSecurityGroupEgressRule)
+    return ruleResourceIngress(block, scope)
   return [
     ...inlineBlocks(block, 'egress', scope),
     ...dynamicBlocks(block, 'egress', scope),
@@ -2026,7 +2036,7 @@ function normalizeOne(
     providerAlias,
     providerRegion,
     ingress: ingressFor(type, block, scope),
-    egress: egressFor(block, scope),
+    egress: egressFor(type, block, scope),
     tags: tagsOf(type, block, scope, pd),
     attributes: extracted.attributes,
     lists: extracted.lists,
