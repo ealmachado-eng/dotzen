@@ -6,6 +6,38 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.23
+
+Fix — correct two SARIF schema-validity bugs in v1.9.22's `--format sarif`
+that would have **broken GitHub/GitLab ingestion** on module-followed repos
+and project-level rules. Caught by running the published output through the
+official `@microsoft/sarif-multitool` validator (an adoption/dogfood round).
+
+### Fixed — module-trace suffix in `artifactLocation.uri` (SARIF1002)
+
+dotzen embeds the `followModules` trace annotation in its `file` field as
+`modules/rds/main.tf (db_bad)`. v1.9.22 emitted that string verbatim as the
+SARIF `artifactLocation.uri` — but the `(label)` suffix (spaces, parens) is
+not a valid RFC 3986 URI reference, and code-scanning dashboards deep-link by
+`uri`, so the annotation would 404. Now the `uri` is the clean filesystem
+path (`modules/rds/main.tf`) and the full trace round-trips through
+`properties.moduleTrace`.
+
+### Fixed — project-level findings emitted `startLine: 0` (SARIF1007)
+
+`requireResource` findings (e.g. the IAM Access Analyzer presence check) carry
+the synthetic location `<project>:0`. SARIF requires `region.startLine >= 1`,
+so v1.9.22's `startLine: 0` failed validation. These findings now emit zero
+`locations` (SARIF §3.27.5 permits it) and carry their context in the message
++ `properties` — they appear in the dashboard without a bogus file:line.
+
+### Validation
+
+The fixed output passes `sarif-multitool validate` clean on every shape
+exercised: root resources, followed-module resources (trace-suffixed paths),
+and project-level findings. 2 new renderer tests pin the trace-stripping and
+project-level cases. Gate: 750 unit + 39 integration, 0 regressions.
+
 ## 1.9.22
 
 Feature — `--format sarif`. The terminal and JSON formats are joined by

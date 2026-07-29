@@ -167,6 +167,33 @@ const SARIF_SCHEMA =
   'https://docs.oasis-open.org/sarif/sarif/v2.1.0/cs01/schemas/sarif-schema-2.1.0.json'
 
 /**
+ * The raw `file` dotzen carries may embed a module-trace annotation from
+ * `followModules` — e.g. `modules/rds/main.tf (db_bad)`. That suffix (spaces,
+ * parens) is NOT a valid RFC 3986 URI reference, and GitHub/GitLab code-
+ * scanning deep-links by `uri`, so a trace-laden uri would 404 the annotation.
+ * Strip the annotation for the SARIF `artifactLocation.uri` (the clean
+ * filesystem path — what a dashboard opens) and surface the full trace via
+ * `properties.moduleTrace` so the dotzen-specific context round-trips.
+ */
+const TRACE_SUFFIX = /\s*\([^)]*\)\s*$/
+const cleanUri = (file: string): string => file.replace(TRACE_SUFFIX, '')
+const moduleTraceOf = (file: string): string | undefined => {
+  const m = TRACE_SUFFIX.exec(file)
+  return m ? file : undefined
+}
+
+/**
+ * Project-level findings (`requireResource` conditions like the IAM Access
+ * Analyzer presence check) carry the synthetic location `<project>:0` — there
+ * is no real file or line. SARIF requires `region.startLine >= 1` and a valid
+ * URI, so emitting a physical location would fail schema validation (and a
+ * bogus deep-link). SARIF permits a result with zero locations (§3.27.5), so
+ * these findings carry their context in the message + properties instead.
+ */
+const isProjectFinding = (file: string, line: number): boolean =>
+  file === '<project>' || line <= 0
+
+/**
  * Map a dotzen `Effect` to a SARIF result `level` (none | note | warning |
  * error). `Block` → `error` (fails the build); `Warn` and `RequireApproval`
  * → `warning` (RequireApproval needs human action, not a silent note). The
@@ -224,23 +251,44 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
     defaultConfiguration: { level: m.level },
   }))
 
-  const location = (file: string, line: number) => ({
+  /**
+   * Build a SARIF location array for a finding. Returns `[]` for project-level
+   * findings (no valid file:line) so the result carries no physical location
+   * (SARIF-permitted) instead of a schema-invalid one. Otherwise emits a
+   * clean URI (trace suffix stripped) + startLine, with the dotzen trace
+   * annotation surfaced separately via `properties.moduleTrace` by the caller.
+   */
+  const locationsFor = (
+    file: string,
+    line: number,
+  ): Array<{
     physicalLocation: {
-      artifactLocation: { uri: file },
-      region: { startLine: line },
-    },
-  })
+      artifactLocation: { uri: string }
+      region: { startLine: number }
+    }
+  }> => {
+    if (isProjectFinding(file, line)) return []
+    return [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: cleanUri(file) },
+          region: { startLine: line },
+        },
+      },
+    ]
+  }
 
   const violationResults = report.violations.map((v) => ({
     ruleId: v.ruleId,
     level: effectToSarifLevel(v.effect),
     message: { text: v.message },
-    locations: [location(v.file, v.line)],
+    locations: locationsFor(v.file, v.line),
     properties: {
       resource: v.resource,
       effect: v.effect,
       ...(v.rationale ? { rationale: v.rationale } : {}),
       ...(v.approvers ? { approvers: v.approvers } : {}),
+      ...(moduleTraceOf(v.file) ? { moduleTrace: v.file } : {}),
     },
   }))
 
@@ -248,16 +296,24 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
     ruleId: c.ruleId,
     level: 'note' as const,
     message: { text: `could not evaluate: ${c.reason}` },
-    locations: [location(c.file, c.line)],
-    properties: { resource: c.resource, kind: 'couldNotEvaluate' },
+    locations: locationsFor(c.file, c.line),
+    properties: {
+      resource: c.resource,
+      kind: 'couldNotEvaluate',
+      ...(moduleTraceOf(c.file) ? { moduleTrace: c.file } : {}),
+    },
   }))
 
   const ungovernedResults = report.ungoverned.map((u) => ({
     ruleId: 'dotzen.ungoverned',
     level: 'note' as const,
     message: { text: `resource type not governed by any rule: ${u.type}` },
-    locations: [location(u.file, u.line)],
-    properties: { resource: `${u.type}.${u.name}`, kind: 'ungoverned' },
+    locations: locationsFor(u.file, u.line),
+    properties: {
+      resource: `${u.type}.${u.name}`,
+      kind: 'ungoverned',
+      ...(moduleTraceOf(u.file) ? { moduleTrace: u.file } : {}),
+    },
   }))
 
   return JSON.stringify(

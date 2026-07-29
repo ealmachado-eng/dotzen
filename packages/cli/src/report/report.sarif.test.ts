@@ -200,4 +200,65 @@ describe('renderSarif — SARIF 2.1.0 output', () => {
     expect(doc.runs[0]!.results).toEqual([])
     expect(doc.runs[0]!.tool.driver.rules).toEqual([])
   })
+
+  it('strips the module-trace annotation from the uri (RFC 3986 validity)', () => {
+    // dotzen embeds the followModules trace in `file` as `path (label)`. The
+    // SARIF uri must be a clean path (GitHub deep-links by uri → a trace-laden
+    // uri would 404); the full trace round-trips via properties.moduleTrace.
+    const doc = JSON.parse(
+      renderSarif(
+        {
+          violations: [
+            {
+              ruleId: 'x',
+              message: 'm',
+              effect: Effect.Block,
+              resource: 'aws_iam_role.this',
+              file: 'modules/rds/main.tf (db_bad)',
+              line: 7,
+            },
+          ],
+          passed: 0,
+          couldNotEvaluate: [],
+          ungoverned: [],
+        },
+        TOOL,
+      ),
+    ) as SarifDoc
+    const r = doc.runs[0]!.results[0]!
+    expect(r.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
+      'modules/rds/main.tf',
+    )
+    expect(r.properties?.moduleTrace).toBe('modules/rds/main.tf (db_bad)')
+  })
+
+  it('omits locations for project-level findings (no valid file:line)', () => {
+    // requireResource findings carry the synthetic <project>:0 location.
+    // SARIF requires startLine >= 1 and a valid uri; emit zero locations
+    // (SARIF-permitted) and carry context in message/properties.
+    const doc = JSON.parse(
+      renderSarif(
+        {
+          violations: [
+            {
+              ruleId: 'require-access-analyzer',
+              message: 'An IAM Access Analyzer must be declared in the project',
+              effect: Effect.Block,
+              resource: 'aws_accessanalyzer_analyzer',
+              file: '<project>',
+              line: 0,
+            },
+          ],
+          passed: 0,
+          couldNotEvaluate: [],
+          ungoverned: [],
+        },
+        TOOL,
+      ),
+    ) as SarifDoc
+    const r = doc.runs[0]!.results[0]!
+    expect(r.locations).toEqual([])
+    expect(r.properties?.resource).toBe('aws_accessanalyzer_analyzer')
+    expect(r.message.text).toMatch(/Access Analyzer/)
+  })
 })
