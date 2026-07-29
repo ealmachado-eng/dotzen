@@ -6,6 +6,46 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.2
+
+Dogfood round 2 fixes. Two issues surfaced running v1.9.1 against real module
+repos (terraform-aws-modules/vpc, terraform-google-modules/kubernetes-engine,
+Azure/terraform-azurerm-aks, terraform-aws-modules/iam).
+
+### Fixed — `requireEncryptedBackend` false-positive storm on module repos
+
+The rule previously fired a violation on EVERY `.tf` file with no `backend`
+block — but module repos intentionally declare no backend (the backend is the
+env/layer consumer's concern). This produced 40–63 false "State backend must
+be encrypted" violations per module repo (the #1 noise source, an adoption
+blocker).
+
+**Changed:** `requireEncryptedBackend` now PASSES when no backend is declared
+(absence = pass). It fires only when a backend IS declared but unencrypted
+(including `local`, which has no encrypt concept). The "must declare a
+backend" concern is `denyLocalBackend`'s job (opt-in, not in `coreSecurity`).
+The two rules are now cleanly complementary.
+
+### Added — `aws_security_group_rule` (legacy standalone SG rule) governance
+
+The legacy `aws_security_group_rule` resource (which handles both ingress and
+egress via `type = "ingress" | "egress"`) was ungoverned — surfaced as a
+coverage gap on the AWS VPC module dogfood. It is now in `AwsResource` and
+mapped to the cloud-neutral `ingress` field (filtering on `type = "ingress"`;
+egress rules are skipped). The existing `denyIngress` condition governs it
+unchanged, and the `inScope` special-case lets a `denyIngress` rule on
+`aws_security_group` cover it (same as the modern `aws_vpc_security_group_
+ingress_rule`).
+
+### Migration notes
+
+**Behavior change:** consumers composing `coreSecurity` will see FEWER
+`requireEncryptedBackend` violations — specifically, the "no backend declared"
+violations on module repos are gone (absence is now pass). Users who relied on
+`requireEncryptedBackend` to enforce "must declare a backend" should compose
+`denyLocalBackend` (which still flags absence/local). Declared-but-unencrypted
+backends are still flagged exactly as before.
+
 ## 1.9.1
 
 Two module-following resolver improvements (ROADMAP #8 + #9) that convert

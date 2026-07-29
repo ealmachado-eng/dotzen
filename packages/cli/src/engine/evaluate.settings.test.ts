@@ -204,7 +204,9 @@ describe('settings pass — no terraform block (synthetic default)', () => {
         .message('must pin tf version'),
     )
     const r = evaluate([encRule, verRule], [], [], [], synthetic as never)
-    expect(r.violations).toHaveLength(2)
+    // requireEncryptedBackend passes on absence (module-repo semantic); only
+    // requireExactTerraformVersion fires (no required_version pinned).
+    expect(r.violations).toHaveLength(1)
     expect(r.violations.every((v) => v.resource === 'terraform')).toBe(true)
   })
 })
@@ -272,14 +274,20 @@ describe('evaluate (requireEncryptedBackend) — #17', () => {
     expect(r.couldNotEvaluate).toHaveLength(1)
   })
 
-  it('flags when no backend is declared (local default)', () => {
+  it('passes when no backend is declared (module repo — absence is pass)', () => {
+    // A module repo intentionally declares no backend — the backend is the
+    // env/layer consumer's concern, not the module's. requireEncryptedBackend
+    // fires only when a backend IS declared but unencrypted; the "must
+    // declare a backend" concern is denyLocalBackend's job (opt-in).
+    // (Dogfood round 2: the old absence=violation semantic caused a 40-60x
+    // false-positive storm on every module repo's versions.tf files.)
     const s = settingsWith(undefined)
     const r = evaluate([encRule], [], [], [], s)
-    expect(r.violations).toHaveLength(1)
-    expect(r.violations[0]?.resource).toBe('terraform')
+    expect(r.violations).toHaveLength(0)
+    expect(r.passed).toBe(1)
   })
 
-  it('flags a local backend (no encrypt concept)', () => {
+  it('flags a local backend (declared, no encrypt concept)', () => {
     const s = settingsWith({ type: 'local' })
     const r = evaluate([encRule], [], [], [], s)
     expect(r.violations).toHaveLength(1)

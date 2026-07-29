@@ -59,4 +59,54 @@ describe('normalize — additional ingress sources', () => {
       value: '0.0.0.0/0',
     })
   })
+
+  it('models the legacy aws_security_group_rule (type=ingress) as ingress', () => {
+    const parsed = {
+      resource: {
+        aws_security_group_rule: {
+          ssh: [
+            {
+              type: 'ingress',
+              from_port: 22,
+              to_port: 22,
+              protocol: 'tcp',
+              cidr_blocks: ['0.0.0.0/0'],
+            },
+          ],
+        },
+      },
+    }
+    const ssh = normalize(parsed as never, 'main.tf', raw).find(
+      (r) => r.name === 'ssh',
+    )
+    expect(ssh?.type).toBe(AwsResource.SecurityGroupRule)
+    expect(ssh?.ingress).toHaveLength(1)
+    expect(ssh?.ingress[0]?.fromPort).toEqual({ kind: 'literal', value: 22 })
+    expect(ssh?.ingress[0]?.cidrBlocks[0]).toEqual({
+      kind: 'literal',
+      value: '0.0.0.0/0',
+    })
+  })
+
+  it('skips a legacy aws_security_group_rule with type = egress', () => {
+    const parsed = {
+      resource: {
+        aws_security_group_rule: {
+          out: [
+            {
+              type: 'egress',
+              from_port: 0,
+              to_port: 0,
+              protocol: '-1',
+              cidr_blocks: ['0.0.0.0/0'],
+            },
+          ],
+        },
+      },
+    }
+    const out = normalize(parsed as never, 'main.tf', raw).find(
+      (r) => r.name === 'out',
+    )
+    expect(out?.ingress).toHaveLength(0)
+  })
 })

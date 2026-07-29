@@ -649,9 +649,10 @@ describe('check (end-to-end)', () => {
     //     key; spec requires Tag.Team = 'team' lowercase — case-sensitive key
     //     match, real semantic mismatch).
     //   - required-ownership-tags on the SG (same tag-shape issue).
-    //   - encrypted-state on the synthetic `terraform` resource (no
-    //     `terraform {}` block → local default backend).
-    expect(r.value.violations).toHaveLength(3)
+    //   (The former encrypted-state violation on the synthetic `terraform`
+    //   resource is gone — requireEncryptedBackend now passes on absence,
+    //   the module-repo-correct semantic per dogfood round 2.)
+    expect(r.value.violations).toHaveLength(2)
     const rdsTagViol = r.value.violations.find(
       (v) =>
         v.ruleId === 'required-ownership-tags' &&
@@ -666,11 +667,8 @@ describe('check (end-to-end)', () => {
     )
     expect(sgTagViol).toBeDefined()
     expect(sgTagViol?.line).toBe(145)
-    const stateViol = r.value.violations.find(
-      (v) => v.ruleId === 'encrypted-state',
-    )
-    expect(stateViol?.resource).toBe('terraform')
-    expect(stateViol?.line).toBe(1)
+    // The former encrypted-state violation is gone (requireEncryptedBackend
+    // passes on absence — module-repo-correct per dogfood round 2).
     // Passed counts: rules × resources that evaluated cleanly. The exact
     // number shifts with vocabulary; assert a sane floor plus that it stays
     // >= current (regression guard).
@@ -692,12 +690,10 @@ describe('check (end-to-end)', () => {
     const r = await check(fixture('realistic-aws'), '1.3.0')
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.value.violations).toHaveLength(1)
-    const stateViol = r.value.violations.find(
-      (v) => v.ruleId === 'encrypted-state',
-    )
-    expect(stateViol?.resource).toBe('terraform')
-    expect(stateViol?.line).toBe(1)
+    // Zero violations: the former encrypted-state violation is gone
+    // (requireEncryptedBackend passes on absence — module-repo-correct per
+    // dogfood round 2). This is now a clean fixture.
+    expect(r.value.violations).toHaveLength(0)
     expect(r.value.passed).toBeGreaterThanOrEqual(50)
     // Zero could-not-evaluate: the ternary
     // `backup_retention_period = local.is_production ? 30 : var.db_backup_retention_days`
@@ -712,7 +708,7 @@ describe('check (end-to-end)', () => {
     const r = await check(fixture('realistic-azure'), '1.3.0')
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.value.violations).toHaveLength(4)
+    expect(r.value.violations).toHaveLength(3)
     const nsgViol = r.value.violations.find(
       (v) => v.ruleId === 'nsg-no-public-ssh',
     )
@@ -728,11 +724,8 @@ describe('check (end-to-end)', () => {
     )
     expect(rbacViol?.resource).toBe('azurerm_role_assignment.contributor')
     expect(rbacViol?.line).toBe(328)
-    const stateViol = r.value.violations.find(
-      (v) => v.ruleId === 'encrypted-state',
-    )
-    expect(stateViol?.resource).toBe('terraform')
-    expect(stateViol?.line).toBe(1)
+    // The former encrypted-state violation is gone (requireEncryptedBackend
+    // passes on absence — module-repo-correct per dogfood round 2).
     expect(r.value.passed).toBeGreaterThanOrEqual(12)
     expect(r.value.couldNotEvaluate).toHaveLength(1)
     const cne = r.value.couldNotEvaluate[0]
@@ -747,7 +740,7 @@ describe('check (end-to-end)', () => {
     const r = await check(fixture('realistic-gcp'), '1.3.0')
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(r.value.violations).toHaveLength(4)
+    expect(r.value.violations).toHaveLength(3)
     const sshViol = r.value.violations.find((v) => v.ruleId === 'no-public-ssh')
     expect(sshViol?.resource).toBe('google_compute_firewall.ssh')
     expect(sshViol?.line).toBe(85)
@@ -761,11 +754,8 @@ describe('check (end-to-end)', () => {
     )
     expect(ipViol?.resource).toBe('google_compute_instance.bastion')
     expect(ipViol?.line).toBe(206)
-    const stateViol = r.value.violations.find(
-      (v) => v.ruleId === 'encrypted-state',
-    )
-    expect(stateViol?.resource).toBe('terraform')
-    expect(stateViol?.line).toBe(1)
+    // The former encrypted-state violation is gone (requireEncryptedBackend
+    // passes on absence — module-repo-correct per dogfood round 2).
     expect(r.value.passed).toBeGreaterThanOrEqual(8)
     expect(r.value.couldNotEvaluate).toHaveLength(1)
     const cne = r.value.couldNotEvaluate[0]

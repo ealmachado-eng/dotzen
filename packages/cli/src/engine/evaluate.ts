@@ -265,7 +265,8 @@ function inScope(
   if (
     condition.kind === 'denyIngress' &&
     target.types.includes(AwsResource.SecurityGroup) &&
-    r.type === AwsResource.VpcSecurityGroupIngressRule
+    (r.type === AwsResource.VpcSecurityGroupIngressRule ||
+      r.type === AwsResource.SecurityGroupRule)
   )
     return true
   return (
@@ -1341,11 +1342,13 @@ function evalRequireEncryptedBackend(
   s: NormalizedTerraformSettings,
 ): ConditionOutcome {
   const be = s.backend
-  if (!be)
-    return {
-      kind: 'violation',
-      detail: 'no backend declared — Terraform uses unencrypted local state',
-    }
+  // Absence = pass (not a violation). A module repo intentionally declares
+  // no backend — the backend is the env/layer consumer's concern. The rule
+  // fires only when a backend IS declared but unencrypted. The "must declare
+  // a backend" concern is `denyLocalBackend`'s job (opt-in, not in the base
+  // coreSecurity preset). (Dogfood round 2: the old absence=violation semantic
+  // caused a 40-60x false-positive storm on every module repo's versions.tf.)
+  if (!be) return { kind: 'pass' }
   if (be.encrypted === 'unresolved')
     return {
       kind: 'cannotEvaluate',

@@ -16,6 +16,9 @@ export enum AwsResource {
   SecurityGroup = 'aws_security_group',
   // The modern decomposed form of security-group ingress.
   VpcSecurityGroupIngressRule = 'aws_vpc_security_group_ingress_rule',
+  // The legacy standalone SG rule (handles BOTH ingress and egress via
+  // `type = "ingress" | "egress"`). Older but still extremely common.
+  SecurityGroupRule = 'aws_security_group_rule',
   DbInstance = 'aws_db_instance',
   S3Bucket = 'aws_s3_bucket',
   // The modern decomposed form of an S3 bucket ACL (inline `acl` was

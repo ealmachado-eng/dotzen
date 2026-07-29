@@ -978,6 +978,26 @@ function ingressFor(
   if (!block) return []
   if (type === AwsResource.VpcSecurityGroupIngressRule)
     return ruleResourceIngress(block, scope)
+  if (type === AwsResource.SecurityGroupRule) {
+    // The legacy standalone rule handles BOTH ingress and egress via
+    // `type = "ingress" | "egress"`. Only map ingress rules (egress is
+    // outbound — a separate surface, not covered by denyIngress).
+    const t = resolveValue(block.type, scope)
+    if (t.kind === 'literal' && t.value === 'egress') return []
+    // Field names differ from the modern rule: `cidr_blocks` /
+    // `ipv6_cidr_blocks` (lists), not `cidr_ipv4` / `cidr_ipv6` (scalars).
+    const cidrs: unknown[] = []
+    if (Array.isArray(block.cidr_blocks)) cidrs.push(...block.cidr_blocks)
+    if (Array.isArray(block.ipv6_cidr_blocks))
+      cidrs.push(...block.ipv6_cidr_blocks)
+    return [
+      {
+        fromPort: resolveValue(block.from_port, scope),
+        toPort: resolveValue(block.to_port, scope),
+        cidrBlocks: cidrs.map((c) => resolveValue(c, scope)),
+      },
+    ]
+  }
   if (type === AwsResource.NetworkAclRule)
     return naclRuleToIngress(block, scope)
   if (type === AwsResource.NetworkAcl || type === AwsResource.DefaultNetworkAcl)

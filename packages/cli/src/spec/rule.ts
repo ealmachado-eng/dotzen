@@ -565,11 +565,14 @@ export class RuleBuilder {
   }
 
   /**
-   * Require the state backend to be declared AND encrypted (`encrypt = true`).
-   * Flags when no `backend` block exists (Terraform then defaults to a local
-   * unencrypted `terraform.tfstate`) or the backend's `encrypt` is not
-   * literally true. An unencrypted `encrypt` flag that is itself a var ref
-   * degrades to could-not-evaluate. Zero-arg; use with `.allResources()`.
+   * Require the state backend to be encrypted (`encrypt = true`) WHEN one is
+   * declared. Absence of a backend is a PASS (not a violation) — a module
+   * repo intentionally declares no backend (the backend is the env/layer
+   * consumer's concern); the "must declare a backend" concern is
+   * `denyLocalBackend`'s job. Fires on a declared backend whose `encrypt`
+   * is not literally true (including `local`, which has no encrypt concept).
+   * An `encrypt` that is itself a var ref degrades to could-not-evaluate.
+   * Zero-arg; use with `.allResources()`.
    */
   requireEncryptedBackend(): this {
     this._conditions.push({ kind: 'requireEncryptedBackend' })

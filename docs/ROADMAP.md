@@ -733,3 +733,23 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
    `SOLE_REF` now also matches `count.index` (so `resolveRaw` handles it
    for association linking too). 10 new `normalize.count.test.ts` cases
    pin both behaviors.
+
+9. ✅ **DONE (v1.9.2) — Dogfood round 2 fixes** — running v1.9.1 against 4
+   real module repos (terraform-aws-modules/vpc,
+   terraform-google-modules/kubernetes-engine, Azure/terraform-azurerm-aks,
+   terraform-aws-modules/iam) surfaced two issues:
+   - **`requireEncryptedBackend` false-positive storm**: fired 40–63x per
+     module repo (every `versions.tf` with no backend). Module repos
+     intentionally declare no backend — the backend is the env/layer
+     consumer's concern. Fixed: absence is now a PASS; the rule fires only
+     on a declared-but-unencrypted backend. The "must declare a backend"
+     concern is `denyLocalBackend`'s job.
+   - **`aws_security_group_rule` ungoverned**: the legacy standalone SG rule
+     (handles both ingress/egress via `type`) was not in the vocabulary.
+     Added + mapped to the cloud-neutral `ingress` field (filtering on
+     `type = "ingress"`); `denyIngress` governs it unchanged.
+   **Confirmed wins** (v1.7–v1.9 features working in production): the v1.7
+   GCP IAM member fix eliminated all `serviceAccount:${...}` CNE on the GKE
+   module (was 12 of 14 in v1.5.0); the v1.7 `data.aws_iam_policy_document`
+   resolution kept the IAM module at 2 total CNE; NACL governance produced
+   no false violations on the VPC module.
