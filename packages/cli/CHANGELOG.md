@@ -6,6 +6,68 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.12
+
+Dogfood round 10 — fresh-repo verification follow-up. Ran v1.9.11 against 4
+previously-untested module repos (`terraform-aws-rds-aurora`,
+`terraform-aws-cloudwatch`, `terraform-aws-route53`,
+`terraform-google-cloud-storage`): **zero false positives** (convergence
+holds — 0 FPs since round 6). This release closes the 18 vocabulary/utility
+gaps surfaced as `ungoverned`.
+
+### Fixed — `data.archive_file` moved to UTILITY_TYPES
+
+`data.archive_file` zips a directory/file at build time (Lambda/ECS
+artifacts) — a pure build utility with no security surface. It was surfacing
+as ungoverned on `terraform-aws-cloudwatch`. Added to `UTILITY_TYPES` for
+silent skipping (matches `local_file` / `cloudinit_config`).
+
+### Added — AWS resource vocabulary (14)
+
+Surfaced on the Aurora, CloudWatch, and Route53 modules:
+
+**Aurora / RDS-cluster / autoscaling / DSQL** (`terraform-aws-rds-aurora`):
+
+- `aws_rds_cluster_activity_stream`, `aws_rds_cluster_parameter_group`, `aws_rds_shard_group`
+- `aws_appautoscaling_policy`, `aws_appautoscaling_target` (Aurora auto-scaling)
+- `aws_dsql_cluster`, `aws_dsql_cluster_peering` (Aurora DSQL)
+
+**CloudWatch Logs** (`terraform-aws-cloudwatch`):
+
+- `aws_cloudwatch_log_account_policy`, `aws_cloudwatch_log_anomaly_detector`
+- `aws_cloudwatch_log_data_protection_policy`, `aws_cloudwatch_log_subscription_filter`
+
+**Route53 DNSSEC / firewall** (`terraform-aws-route53`):
+
+- `aws_route53_hosted_zone_dnssec`, `aws_route53_key_signing_key`, `aws_route53_resolver_firewall_rule`
+
+### Added — Data source vocabulary (3)
+
+- `data.aws_service_principal`, `data.aws_rds_engine_version`, `data.aws_cloudwatch_log_data_protection_policy_document`
+
+### Note — Aurora encryption is already governed
+
+The round-10 dogfood spec (an ad-hoc AWS spec copied from round 9) targeted
+only `aws_db_instance` for storage encryption, so Aurora
+(`aws_rds_cluster`) showed **no** encryption finding. This is a spec-authoring
+choice, **not** an engine gap: the shipped `coreSecurity` preset already
+governs Aurora via the `rds-cluster-encryption` rule
+(`aws_rds_cluster` → `storage_encrypted`, `core-security.ts:261`). Real
+consumers using `[...coreSecurity]` are protected.
+
+### Dogfood round 10 summary
+
+| Repo              | Blocking V | Warn | Passed | CNE | FP  |
+| ----------------- | ---------- | ---- | ------ | --- | --- |
+| aws-rds-aurora    | 13         | 1    | 1874   | 25  | 0   |
+| aws-cloudwatch    | 0          | 5    | 685    | 10  | 0   |
+| aws-route53       | 3          | 0    | 287    | 11  | 0   |
+| gcp-cloud-storage | 0          | 0    | 60     | 2   | 0   |
+
+All 19 findings real (15 tag-policy, 1 provisioner, 3+ inline-policy warns);
+CNE = remote-module-following + var-driven SG ports. With v1.9.12 all four
+repos should report **zero ungoverned**.
+
 ## 1.9.11
 
 Dogfood round 9 follow-up — close the remaining ungoverned vocabulary gaps

@@ -112,8 +112,11 @@ const UTILITY_TYPES = new Set<string>([
   // `local_file` (writes files locally — no security surface) and
   // `data.cloudinit_config` (cloud-init config generation — a utility data
   // source). Dogfood round 3: 145 combined on the EKS module.
+  // Dogfood round 10: `data.archive_file` (zips a dir/file at build time for
+  // Lambda/ECS artifacts — pure build utility, no security surface).
   'local_file',
   'cloudinit_config',
+  'archive_file',
   // Dogfood round 4: data sources + docker provider types with no security
   // surface (ARN parsing, external-provider queries, container builds).
   'aws_arn',

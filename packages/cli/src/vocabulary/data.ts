@@ -38,6 +38,10 @@ export enum DataResource {
   // EventBridge / Organizations — read-only data sources.
   AwsCloudwatchEventBus = 'data.aws_cloudwatch_event_bus',
   AwsOrganizationsOrganization = 'data.aws_organizations_organization',
+  // Round 10: read-only Aurora/CloudWatch/service-principal data sources.
+  AwsServicePrincipal = 'data.aws_service_principal',
+  AwsRdsEngineVersion = 'data.aws_rds_engine_version',
+  AwsCloudwatchLogDataProtectionPolicyDocument = 'data.aws_cloudwatch_log_data_protection_policy_document',
   // Azure data sources — same rationale: read-only, no security surface.
   AzurermClientConfig = 'data.azurerm_client_config',
   AzurermResourceGroup = 'data.azurerm_resource_group',

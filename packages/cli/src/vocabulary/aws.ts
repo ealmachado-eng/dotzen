@@ -203,6 +203,13 @@ export enum AwsResource {
   CloudwatchLogDestinationPolicy = 'aws_cloudwatch_log_destination_policy',
   CloudwatchLogResourcePolicy = 'aws_cloudwatch_log_resource_policy',
   CloudwatchLogMetricFilter = 'aws_cloudwatch_log_metric_filter',
+  // CloudWatch Logs — account-level / data-protection / anomaly / subscription
+  // policies (dogfood round 10, terraform-aws-cloudwatch). Recognized-but-not-
+  // rule-bearing.
+  CloudwatchLogAccountPolicy = 'aws_cloudwatch_log_account_policy',
+  CloudwatchLogAnomalyDetector = 'aws_cloudwatch_log_anomaly_detector',
+  CloudwatchLogDataProtectionPolicy = 'aws_cloudwatch_log_data_protection_policy',
+  CloudwatchLogSubscriptionFilter = 'aws_cloudwatch_log_subscription_filter',
   CloudwatchDashboard = 'aws_cloudwatch_dashboard',
   CloudwatchCompositeAlarm = 'aws_cloudwatch_composite_alarm',
   CloudwatchEventBus = 'aws_cloudwatch_event_bus',
@@ -245,6 +252,11 @@ export enum AwsResource {
   Route53ResolverFirewallRuleGroup = 'aws_route53_resolver_firewall_rule_group',
   Route53ResolverFirewallRuleGroupAssociation = 'aws_route53_resolver_firewall_rule_group_association',
   Route53ResolverFirewallConfig = 'aws_route53_resolver_firewall_config',
+  // Route53 DNSSEC signing (zone-level) + resolver firewall rule (dogfood
+  // round 10, terraform-aws-route53). Recognized-but-not-rule-bearing.
+  Route53HostedZoneDnssec = 'aws_route53_hosted_zone_dnssec',
+  Route53KeySigningKey = 'aws_route53_key_signing_key',
+  Route53ResolverFirewallRule = 'aws_route53_resolver_firewall_rule',
   Route53VpcAssociationAuthorization = 'aws_route53_vpc_association_authorization',
   Route53DomainsRegisteredDomain = 'aws_route53domains_registered_domain',
   AcmCertificate = 'aws_acm_certificate',
@@ -262,6 +274,15 @@ export enum AwsResource {
   RdsGlobalCluster = 'aws_rds_global_cluster',
   RdsClusterEndpoint = 'aws_rds_cluster_endpoint',
   RdsClusterRoleAssociation = 'aws_rds_cluster_role_association',
+  // Aurora / RDS-cluster extras + Aurora autoscaling + DSQL (dogfood round
+  // 10, terraform-aws-rds-aurora). Recognized-but-not-rule-bearing.
+  RdsClusterActivityStream = 'aws_rds_cluster_activity_stream',
+  RdsClusterParameterGroup = 'aws_rds_cluster_parameter_group',
+  RdsShardGroup = 'aws_rds_shard_group',
+  AppAutoscalingPolicy = 'aws_appautoscaling_policy',
+  AppAutoscalingTarget = 'aws_appautoscaling_target',
+  DsqlCluster = 'aws_dsql_cluster',
+  DsqlClusterPeering = 'aws_dsql_cluster_peering',
   RedshiftClusterIamRoles = 'aws_redshift_cluster_iam_roles',
   RedshiftSnapshotSchedule = 'aws_redshift_snapshot_schedule',
   RedshiftSnapshotScheduleAssociation = 'aws_redshift_snapshot_schedule_association',
