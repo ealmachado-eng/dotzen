@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { evaluate } from './evaluate'
-import { NormalizedResource, NormalizedValue } from '../hcl/model'
+import { NormalizedResource, NormalizedValue, ListInfo } from '../hcl/model'
 import { GcpResource, IamMember } from '../vocabulary'
 import { cisGcp } from '../presets/cis-gcp'
 
@@ -8,15 +8,17 @@ import { cisGcp } from '../presets/cis-gcp'
  * Engine contract for the v1.9 GCP niche rules (ROADMAP #6):
  * Cloud Audit Logs config presence, GKE Shielded Nodes, BigQuery public
  * access. Each reuses an existing condition (`requireResource` /
- * `mustBeTrue` / `denyValue`) — no engine change. These tests import the
- * `cisGcp` preset, find each rule by id, and confirm it fires (violate) /
- * passes on hand-built NormalizedResources.
+ * `mustBeTrue` / `denyValue`) — the BigQuery multi-block case adds
+ * list-awareness to `denyValue`. These tests import the `cisGcp` preset,
+ * find each rule by id, and confirm it fires (violate) / passes on
+ * hand-built NormalizedResources.
  */
 
 const res = (
   type: GcpResource,
   name: string,
   attributes: Record<string, NormalizedValue> = {},
+  lists: Record<string, ListInfo> = {},
 ): NormalizedResource => ({
   type,
   name,
@@ -25,6 +27,7 @@ const res = (
   ingress: [],
   tags: { kind: 'resolved', keys: [] },
   attributes,
+  lists,
 })
 
 const lit = (v: string | number | boolean): NormalizedValue => ({
@@ -107,15 +110,89 @@ describe('evaluate — cisGcp v1.9 niche rules (ROADMAP #6)', () => {
       expect(r.violations).toHaveLength(0)
     })
     it('flags a dataset with an inline access block granting allAuthenticatedUsers', () => {
-      // The flattener captures the first access block's special_group as
-      // `access.special_group`. A multi-block dataset where a LATER block is
-      // public is a known gap (documented in the preset comment).
+      // Single inline block → flattened to a scalar `access.special_group`
+      // attribute; denyValue fires on it.
       const r = run('bigquery-no-public-access', [
         res(GcpResource.BigqueryDataset, 'ds', {
           'access.special_group': lit(IamMember.AllAuthenticatedUsers),
         }),
       ])
       expect(r.violations).toHaveLength(1)
+    })
+    it('flags a multi-block dataset whose PUBLIC grant is in a later block', () => {
+      // Repeated `access {}` blocks: each block uses a different field, so
+      // each flattened key is a scalar — the public `access.special_group`
+      // (from the 2nd block) is now captured (was dropped when the flattener
+      // took only v[0]).
+      const r = run('bigquery-no-public-access', [
+        res(GcpResource.BigqueryDataset, 'ds', {
+          'access.user_by_email': lit('owner@example.com'),
+          'access.special_group': lit(IamMember.AllAuthenticatedUsers),
+        }),
+      ])
+      expect(r.violations).toHaveLength(1)
+    })
+    it('flags a multi-block dataset where special_group recurs (list-aware denyValue)', () => {
+      // special_group appears in TWO blocks; the flattener aggregates them
+      // into `lists.access.special_group`. denyValue must inspect list items
+      // and fire if ANY matches the denylist (the public grant).
+      const r = run('bigquery-no-public-access', [
+        res(
+          GcpResource.BigqueryDataset,
+          'ds',
+          {},
+          {
+            'access.special_group': {
+              kind: 'resolved',
+              items: [
+                { kind: 'literal', value: 'projectOwners' },
+                { kind: 'literal', value: IamMember.AllAuthenticatedUsers },
+              ],
+            },
+          },
+        ),
+      ])
+      expect(r.violations).toHaveLength(1)
+    })
+    it('passes a multi-block dataset whose recurring special_group is never public', () => {
+      const r = run('bigquery-no-public-access', [
+        res(
+          GcpResource.BigqueryDataset,
+          'ds',
+          {},
+          {
+            'access.special_group': {
+              kind: 'resolved',
+              items: [
+                { kind: 'literal', value: 'projectOwners' },
+                { kind: 'literal', value: 'projectReaders' },
+              ],
+            },
+          },
+        ),
+      ])
+      expect(r.violations).toHaveLength(0)
+      expect(r.couldNotEvaluate).toHaveLength(0)
+    })
+    it('degrades to could-not-evaluate when a list item is unresolved', () => {
+      const r = run('bigquery-no-public-access', [
+        res(
+          GcpResource.BigqueryDataset,
+          'ds',
+          {},
+          {
+            'access.special_group': {
+              kind: 'resolved',
+              items: [
+                { kind: 'literal', value: 'projectOwners' },
+                { kind: 'unresolved', expr: '${var.grp}' },
+              ],
+            },
+          },
+        ),
+      ])
+      expect(r.violations).toHaveLength(0)
+      expect(r.couldNotEvaluate).toHaveLength(1)
     })
   })
 })

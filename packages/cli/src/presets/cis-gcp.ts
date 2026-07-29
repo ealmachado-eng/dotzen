@@ -194,11 +194,12 @@ export const cisGcp = [
 
   // ── BigQuery dataset public access (CIS GCP) ───────────────────────────
   // Flag a public grant via the standalone resource (`special_group`) OR the
-  // dataset's inline access block (`access.special_group`). Two conditions on
-  // one rule: each resource type trips only its own (the other attr is absent
-  // → pass). NOTE: the inline form catches the FIRST access block only (the
-  // flattener recurses into v[0]); a multi-block dataset where a later block
-  // is public is a known gap (needs the multi-block collect change).
+  // dataset's inline access block(s) (`access.special_group`). Two conditions
+  // on one rule: each resource type trips only its own (the other attr is
+  // absent → pass). The inline form now catches EVERY access block —
+  // `collect` aggregates repeated nested blocks, and `denyValue` is list-aware
+  // (fires if any block's grant matches the denylist), so a public grant in a
+  // LATER access block is no longer missed.
   rule()
     .id('bigquery-no-public-access')
     .resource(GcpResource.BigqueryDatasetAccess, GcpResource.BigqueryDataset)

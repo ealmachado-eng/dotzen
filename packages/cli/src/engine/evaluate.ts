@@ -817,19 +817,45 @@ function denyValueExcludedByLiteral(
 /** Flag a scalar attribute whose literal value is in a forbidden set. */
 function evalDenyValue(c: DenyValue, r: NormalizedResource): ConditionOutcome {
   const v = r.attributes[c.attr]
-  if (v === undefined) return { kind: 'pass' } // absent
-  if (v.kind === 'unresolved') {
-    // Compound interpolation whose literal prefix/suffix rules out every
-    // denylist scalar → definite PASS (ROADMAP #5). See helper for rationale.
-    if (denyValueExcludedByLiteral(v.expr, c.values)) return { kind: 'pass' }
-    return {
-      kind: 'cannotEvaluate',
-      reason: `${c.attr} is an unresolved reference`,
+  if (v !== undefined) {
+    if (v.kind === 'unresolved') {
+      // Compound interpolation whose literal prefix/suffix rules out every
+      // denylist scalar → definite PASS (ROADMAP #5). See helper for rationale.
+      if (denyValueExcludedByLiteral(v.expr, c.values)) return { kind: 'pass' }
+      return {
+        kind: 'cannotEvaluate',
+        reason: `${c.attr} is an unresolved reference`,
+      }
     }
+    if (!Array.isArray(v.value) && c.values.includes(String(v.value)))
+      return { kind: 'violation', detail: `${c.attr} is "${String(v.value)}"` }
+    return { kind: 'pass' }
   }
-  if (c.values.includes(String(v.value)))
-    return { kind: 'violation', detail: `${c.attr} is "${String(v.value)}"` }
-  return { kind: 'pass' }
+  // Absent as a scalar — may be a list aggregated from repeated nested blocks
+  // (e.g. a multi-`access{}` BigQuery dataset). Fire if ANY literal item is in
+  // the denylist; degrade to could-not-evaluate if any item is unresolved
+  // (cannot rule out a match); pass only if every item is literal and none
+  // matches. This is the list-aware mirror of the scalar path above.
+  const list = r.lists?.[c.attr]
+  if (list?.kind === 'resolved') {
+    for (const item of list.items) {
+      if (
+        item.kind === 'literal' &&
+        !Array.isArray(item.value) &&
+        c.values.includes(String(item.value))
+      )
+        return {
+          kind: 'violation',
+          detail: `${c.attr} includes "${String(item.value)}"`,
+        }
+    }
+    if (list.items.some((i) => i.kind === 'unresolved'))
+      return {
+        kind: 'cannotEvaluate',
+        reason: `${c.attr} has an unresolved item`,
+      }
+  }
+  return { kind: 'pass' } // absent entirely
 }
 
 /**

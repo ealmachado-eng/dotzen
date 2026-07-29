@@ -6,6 +6,52 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.20
+
+Fix — close the **BigQuery multi-`access{}` block** gap (the last documented
+"open" flattener bug). A `google_bigquery_dataset` declaring multiple inline
+`access {}` blocks previously had only the FIRST block's fields flattened; a
+public grant in a later block was silently invisible to
+`bigquery-no-public-access`.
+
+```hcl
+resource "google_bigquery_dataset" "ds" {
+  access { role = "OWNER"; user_by_email = "owner@example.com" }
+  access { special_group = "allAuthenticatedUsers" }  # was MISSED
+}
+```
+
+### Changed — verdicts (consumers: re-run `dotzen check`)
+
+A multi-block dataset with a public grant in a non-first `access {}` block now
+fires `bigquery-no-public-access` (was silently missed). This surfaces real
+violations previously hidden by the flattener limitation — expect potentially
+new findings on configs using repeated `access {}` blocks.
+
+### Changed — `collect` aggregates repeated nested blocks
+
+`collectNestedBlocks` collects EVERY element of a repeated nested block
+(was: `v[0]` only). A key unique to one block stays a scalar attribute
+(backward-compatible with single-block rules); a key that recurs across
+blocks is aggregated into `NormalizedResource.lists` (order preserved) so no
+block's value is lost. General — benefits any future repeated-block
+attribute, not just BigQuery `access`.
+
+### Changed — `denyValue` is list-aware
+
+`evalDenyValue` now also inspects `r.lists[attr]`: fires if ANY list item
+matches the denylist; degrades to could-not-evaluate if any item is
+unresolved (cannot rule out a match); passes only when every item is literal
+and none matches. The scalar path (single-block / scalar attribute) is
+unchanged — list-awareness activates only when the attr is a list.
+
+### Tests
+
+4 new `normalize.bigquery.test.ts` cases (multi-block capture,
+single-block no-regression, recurring-key aggregation, three-block) + 3 new
+`evaluate.gcp.test.ts` cases (public-in-later-block, recurring-key list,
+unresolved-item CNE). Gate: 731 unit + 38 integration, 0 regressions.
+
 ## 1.9.19
 
 Capability — close the **compound caller inputs** gap (the last

@@ -908,9 +908,14 @@ shipped baselines.
   transitively through the grandchild `moduleOutputPolicies` index (arbitrary
   depth). `policyOf` resolves `data.aws_iam_policy_document.x.json`,
   `module.<label>.<output>`, and transitive passthroughs.
-- **BigQuery multi-access-block inline flattener** — inline `access {}` blocks
-  resolve the first block only; a multi-block dataset where a later block is
-  public is a known gap (needs the multi-block collect change).
+- **BigQuery multi-access-block inline flattener** — ✅ **DONE (v1.9.20).**
+  Inline `access {}` blocks are all collected now (was: first block only via
+  `v[0]`). `collect` aggregates repeated nested blocks: a key unique to one
+  block stays a scalar attribute (backward-compatible), a key that recurs
+  across blocks is aggregated into `lists`. `denyValue` is list-aware — fires
+  if ANY block's value matches the denylist, degrades to could-not-evaluate
+  if any item is unresolved. A public grant in a later `access {}` block is
+  no longer missed.
 
 **Open — low priority:**
 

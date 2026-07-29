@@ -1698,6 +1698,51 @@ function expandDynamicInto(
  * ingress/egress are handled elsewhere; `dynamic "<name>"` blocks are
  * expanded by `expandDynamicInto` (for any name except ingress/egress/tags).
  */
+/**
+ * Collect a (possibly repeated) nested block: hcl2json represents N repeated
+ * `<name> {}` blocks as an array of N block objects. Every block is collected
+ * — a key that appears in only ONE block stays a scalar attribute (backward-
+ * compatible with single-block rules), while a key that recurs across multiple
+ * blocks is aggregated into `lists` so no block's value is lost (the BigQuery
+ * multi-`access{}` case: a public grant in a later block was previously
+ * dropped when the flattener took only v[0]).
+ */
+function collectNestedBlocks(
+  key: string,
+  blocks: readonly Record<string, unknown>[],
+  scope: Scope,
+  out: Extracted,
+): void {
+  if (blocks.length === 1) {
+    collect(key, blocks[0]!, scope, out)
+    return
+  }
+  // Multi-block: collect each into a temp, then merge. A key seen in multiple
+  // temps → lists (aggregated, order preserved); a key in one temp → scalar.
+  const temps: Extracted[] = blocks.map((b) => {
+    const t: Extracted = { attributes: {}, lists: {}, blocks: [] }
+    collect(key, b, scope, t)
+    return t
+  })
+  const occurrences = new Map<string, NormalizedValue[]>()
+  for (const t of temps) {
+    for (const [k, v] of Object.entries(t.attributes)) {
+      const arr = occurrences.get(k)
+      if (arr) arr.push(v)
+      else occurrences.set(k, [v])
+    }
+  }
+  for (const [k, arr] of occurrences) {
+    if (arr.length === 1) out.attributes[k] = arr[0]!
+    else out.lists[k] = { kind: 'resolved', items: arr }
+  }
+  // Lists/blocks inside repeated blocks are rare; last-wins / dedupe is fine.
+  for (const t of temps) {
+    for (const [k, l] of Object.entries(t.lists)) out.lists[k] = l
+    for (const b of t.blocks) if (!out.blocks.includes(b)) out.blocks.push(b)
+  }
+}
+
 function collect(
   prefix: string,
   obj: Record<string, unknown>,
@@ -1717,7 +1762,7 @@ function collect(
     const key = prefix ? `${prefix}.${k}` : k
     if (isNestedBlock(v)) {
       out.blocks.push(key) // record the block path (even if empty)
-      collect(key, v[0], scope, out)
+      collectNestedBlocks(key, v, scope, out)
     } else if (Array.isArray(v)) {
       out.lists[key] = {
         kind: 'resolved',
