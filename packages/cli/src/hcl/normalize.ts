@@ -1757,6 +1757,14 @@ const DATA_POLICY_REF =
   /^\$\{data\.aws_iam_policy_document\.([A-Za-z0-9_-]+)\.json\}$/
 
 /**
+ * A sole `${module.<label>.<output>}` reference — a policy JSON a followed
+ * child module exposes via an `output`. Resolved through the
+ * `moduleOutputPolicies` index built by `followModules` (keyed
+ * `<label>.<output>` → PolicyInfo).
+ */
+const MODULE_POLICY_REF = /^\$\{module\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\}$/
+
+/**
  * Build the cross-file index of `data.aws_iam_policy_document` policies:
  * data-source name → parsed `PolicyInfo`. Built once per directory (mirrors
  * `buildScope` / `providerDefaults` / `providerRegions`) and threaded into
@@ -1783,6 +1791,41 @@ export function buildDataPolicies(
 }
 
 /**
+ * Build the cross-level index of `<moduleLabel>.<outputName>` → parsed
+ * `PolicyInfo`, for a followed child module's `output`s whose value is a sole
+ * `data.aws_iam_policy_document.<name>.json` reference. Lets a PARENT
+ * resource's `policy = module.<label>.<output>` resolve to the child's
+ * composed policy. Built per direct module call in `followModules` (the
+ * child's own `childDataPolicies` index resolves the data-source ref).
+ *
+ * Scope: DIRECT child outputs only. A passthrough output
+ * (`output x = module.inner.y`) does NOT resolve here (would need nested
+ * reordering) — it degrades to unresolved → could-not-evaluate, honestly.
+ */
+export function buildModuleOutputPolicies(
+  roots: Hcl2JsonRoot[],
+  childDataPolicies: Map<string, PolicyInfo>,
+  label: string,
+): Map<string, PolicyInfo> {
+  const idx = new Map<string, PolicyInfo>()
+  for (const root of roots) {
+    const outs = root.output
+    if (!outs) continue
+    for (const [outName, blocks] of Object.entries(outs)) {
+      const block = (Array.isArray(blocks) ? blocks[0] : blocks) as
+        Record<string, unknown> | undefined
+      const value = block?.value
+      if (typeof value !== 'string') continue
+      const m = DATA_POLICY_REF.exec(value)
+      if (!m) continue
+      const dp = childDataPolicies.get(m[1]!)
+      if (dp?.kind === 'parsed') idx.set(`${label}.${outName}`, dp)
+    }
+  }
+  return idx
+}
+
+/**
  * Parse an IAM `policy` argument. A literal JSON document (heredoc/inline
  * string) OR a `jsonencode(<HCL literal>)` expression is parsed into
  * statements; a `jsonencode(var.x)` / `local.x` / bare variable, or malformed
@@ -1795,6 +1838,7 @@ export function buildDataPolicies(
 function policyOf(
   block: Record<string, unknown> | undefined,
   dataPolicies?: Map<string, PolicyInfo>,
+  moduleOutputPolicies?: Map<string, PolicyInfo>,
 ): PolicyInfo | undefined {
   const raw = block?.policy
   if (typeof raw !== 'string') {
@@ -1812,6 +1856,19 @@ function policyOf(
       if (dp) return dp
       // Ref to a data source not in the index (absent, or its statements
       // did not parse) — honestly unresolved.
+      return { kind: 'unresolved' }
+    }
+  }
+
+  // A module-output ref (`policy = module.m.policy_json`) — resolve through
+  // the moduleOutputPolicies index when available. Only DIRECT child outputs
+  // resolve (a passthrough `module.outer` re-exporting `module.inner`'s output
+  // degrades to unresolved — honest, documented gap).
+  if (moduleOutputPolicies && isInterpolated(raw)) {
+    const mm = MODULE_POLICY_REF.exec(raw)
+    if (mm) {
+      const mp = moduleOutputPolicies.get(`${mm[1]!}.${mm[2]!}`)
+      if (mp) return mp
       return { kind: 'unresolved' }
     }
   }
@@ -2091,6 +2148,7 @@ function normalizeOne(
   providerAlias?: string,
   providerRegion?: NormalizedValue,
   dataPolicies?: Map<string, PolicyInfo>,
+  moduleOutputPolicies?: Map<string, PolicyInfo>,
 ): NormalizedResource {
   const extracted = extractAttrs(block, scope)
   return {
@@ -2107,7 +2165,7 @@ function normalizeOne(
     attributes: extracted.attributes,
     lists: extracted.lists,
     blocks: extracted.blocks,
-    policy: policyOf(block, dataPolicies),
+    policy: policyOf(block, dataPolicies, moduleOutputPolicies),
     containers: containersOf(block),
     envVars: envVarsOf(type, block, scope),
     provisioners: provisionersOf(block),
@@ -2160,6 +2218,12 @@ export function normalize(
    *  source's parsed statements. Scoped per-directory (data sources are
    *  module-local in Terraform), mirroring `scope`/`pd`/`regionMap`. */
   dataPolicies?: Map<string, PolicyInfo>,
+  /** Cross-level index of `<moduleLabel>.<outputName>` → parsed PolicyInfo,
+   *  for child-module `output`s whose value bottoms out at a
+   *  `data.aws_iam_policy_document.<name>.json`. Lets a PARENT resource's
+   *  `policy = module.m.policy_json` resolve to the child's parsed statements.
+   *  Built by `followModules` (direct-child outputs only). */
+  moduleOutputPolicies?: Map<string, PolicyInfo>,
 ): NormalizedResource[] {
   const out: NormalizedResource[] = []
   const byType = parsed.resource ?? {}
@@ -2241,6 +2305,7 @@ export function normalize(
                   aliasFor(type, block),
                   regionFor(aliasFor(type, block)),
                   dataPolicies,
+                  moduleOutputPolicies,
                 ),
               )
             }
@@ -2263,6 +2328,7 @@ export function normalize(
             aliasFor(type, block),
             regionFor(aliasFor(type, block)),
             dataPolicies,
+            moduleOutputPolicies,
           ),
         )
         continue
@@ -2297,6 +2363,7 @@ export function normalize(
             aliasFor(type, block),
             regionFor(aliasFor(type, block)),
             dataPolicies,
+            moduleOutputPolicies,
           ),
         )
       }
@@ -2330,6 +2397,7 @@ export function normalize(
           aliasFor(dataType, block),
           regionFor(aliasFor(dataType, block)),
           dataPolicies,
+          moduleOutputPolicies,
         ),
       )
     }

@@ -9,6 +9,7 @@ import {
   NormalizedBinding,
   NormalizedTerraformSettings,
   NormalizedModuleCall,
+  PolicyInfo,
 } from './model'
 import {
   normalize,
@@ -25,6 +26,7 @@ import {
   providerRegions,
   mergeProviderRegions,
   buildDataPolicies,
+  buildModuleOutputPolicies,
   ProviderDefaults,
   ProviderRegionMap,
   Hcl2JsonRoot,
@@ -80,6 +82,13 @@ export interface ParseOutput {
    *  Surfaced as informational telemetry so users know what's NOT covered —
    *  a silent skip is worse than an honest gap. */
   readonly ungoverned: UngovernedResource[]
+  /** Cross-level index of `<moduleLabel>.<outputName>` → parsed PolicyInfo,
+   *  for followed DIRECT child modules' `output`s whose value bottoms out at
+   *  a `data.aws_iam_policy_document.<name>.json`. Consumed only at the root
+   *  level (threaded into root `normalize`) so a parent resource's
+   *  `policy = module.<label>.<output>` resolves. Parse-internal — the engine
+   *  ignores it. */
+  readonly moduleOutputPolicies: Map<string, PolicyInfo>
 }
 
 /**
@@ -271,6 +280,7 @@ async function followModules(
   const moduleCalls: NormalizedModuleCall[] = []
   const ignores: IgnoreDirective[] = []
   const ungoverned: UngovernedResource[] = []
+  const moduleOutputPolicies = new Map<string, PolicyInfo>()
 
   for (const { file, text, parsed } of callerFiles) {
     const fileRel = toPosix(path.relative(projectRoot, file))
@@ -412,6 +422,15 @@ async function followModules(
           const childDataPolicies = buildDataPolicies(
             parsedModule.value.map((f) => f.parsed),
           )
+          // Index the child's `output`s whose value is a data-source policy
+          // ref, keyed `<label>.<output>`, so a PARENT resource's
+          // `policy = module.<label>.<output>` resolves to the child's policy.
+          for (const [k, v] of buildModuleOutputPolicies(
+            parsedModule.value.map((f) => f.parsed),
+            childDataPolicies,
+            label,
+          ))
+            moduleOutputPolicies.set(k, v)
           // Trace prefix handed to nested recursion — accumulates the full
           // call chain so a finding on a deep module names every hop.
           let childTraceRoot = ''
@@ -492,6 +511,7 @@ async function followModules(
     moduleCalls,
     ignores,
     ungoverned,
+    moduleOutputPolicies,
   })
 }
 
@@ -534,6 +554,26 @@ export async function parseTf(
   // resolve to the data source's parsed statements. Scoped per-directory
   // (data sources are module-local in Terraform).
   const dataPolicies = buildDataPolicies(parsedFiles.value.map((p) => p.parsed))
+  const rootRel = toPosix(path.relative(projectRoot, dir))
+
+  // Follow local module calls FIRST. A root resource may consume a child
+  // module's exposed policy via `policy = module.<label>.<output>`, so the
+  // module-output policy index (built while following) must exist before root
+  // resources normalize. Order of the returned `resources` array is preserved
+  // (root resources appended AFTER followed ones — but evaluate builds its
+  // indexes from ALL resources, so order does not affect verdicts).
+  const followed = await followModules(
+    parsedFiles.value,
+    rootRel,
+    projectRoot,
+    scope,
+    environmentOverride,
+    new Set(),
+    pd,
+    regions,
+  )
+  if (!followed.ok) return followed
+
   const resources: NormalizedResource[] = []
   const outputs: NormalizedOutput[] = []
   const bindings: NormalizedBinding[] = []
@@ -554,6 +594,7 @@ export async function parseTf(
         undefined,
         regions,
         dataPolicies,
+        followed.value.moduleOutputPolicies,
       ),
     )
     // Ungoverned resources in this root file (type not in vocabulary).
@@ -569,19 +610,6 @@ export async function parseTf(
     ignores.push(...scanIgnores(text, rel))
   }
 
-  // Follow local module calls, threading caller inputs into their vars.
-  const rootRel = toPosix(path.relative(projectRoot, dir))
-  const followed = await followModules(
-    parsedFiles.value,
-    rootRel,
-    projectRoot,
-    scope,
-    environmentOverride,
-    new Set(),
-    pd,
-    regions,
-  )
-  if (!followed.ok) return followed
   resources.push(...followed.value.resources)
   outputs.push(...followed.value.outputs)
   bindings.push(...followed.value.bindings)
@@ -614,5 +642,6 @@ export async function parseTf(
     moduleCalls,
     ignores,
     ungoverned,
+    moduleOutputPolicies: followed.value.moduleOutputPolicies,
   })
 }

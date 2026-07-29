@@ -6,6 +6,56 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.17
+
+Capability — resolve IAM policies consumed via a **module output**. A common
+module pattern exposes a composed policy and the parent wires it in:
+
+```hcl
+# child module
+data "aws_iam_policy_document" "p" { statement { actions = ["*"] … } }
+output "policy_json" { value = data.aws_iam_policy_document.p.json }
+
+# parent
+resource "aws_iam_policy" "x" { policy = module.m.policy_json }
+```
+
+Previously the parent's `policy = module.<label>.<output>` degraded to
+**could-not-evaluate** (module outputs resolved to generic values, not
+`PolicyInfo`). Now it resolves to the child's parsed statements, so
+`denyIamWildcard` / `denyPublicPrincipal` / `requireSslOnlyPolicy` fire
+definitively instead of silently passing.
+
+### Added — module-output policy resolution
+
+- `buildModuleOutputPolicies(roots, childDataPolicies, label)` — indexes a
+  followed child's `output`s whose value is a sole
+  `data.aws_iam_policy_document.<name>.json`, keyed `<label>.<output>` →
+  `PolicyInfo` (the child's own `childDataPolicies` resolves the data ref).
+- `policyOf` resolves `${module.<label>.<output>}` refs via the new index,
+  parallel to the existing `${data.aws_iam_policy_document.x.json}` path.
+- `parseTf` reordered to follow modules **before** normalizing root resources
+  (the index must exist when the parent's resources normalize). Returned
+  `resources` order is preserved; evaluate builds its indexes from all
+  resources, so verdicts are unaffected.
+
+### Scope
+
+Handles **direct-child** outputs (the common case). A child consuming its own
+data doc already worked (data sources are module-local). A passthrough output
+(`output x = module.inner.y`, a module re-exporting a nested module's policy)
+still degrades to unresolved — would need reordering `followModules` to follow
+grandchildren before the child's resources normalize. Documented as the
+remaining narrow gap.
+
+### Tests
+
+3 new `parse.test.ts` cases (TDD red→green): module-output resolution
+(parent `policy = module.m.policy_json` → parsed, with `Action "*"` /
+`Principal "*"` assertions), a child-owns-doc regression lock, and a negative
+boundary (a non-policy output stays unresolved). Gate: 650 unit + 38
+integration, 0 regressions from the `parseTf` reorder.
+
 ## 1.9.16
 
 Preset audit complete — the last deferred gap (MSK) is closed. The earlier

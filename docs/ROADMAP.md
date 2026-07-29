@@ -870,10 +870,19 @@ shipped baselines.
   (`concat()` / `flatten()` / `toset()` for non-empty collections) across all
   attributes. Only `merge()` is partially handled (tags). Deferred — broad
   effort, diminishing returns (sole-ref caller inputs already work).
-- **`data.aws_iam_policy_document` through `followModules`** — policy
-  documents resolve root-level only today; a document defined in a followed
-  child module (or arriving via a module output) degrades to
-  could-not-evaluate.
+- **`data.aws_iam_policy_document` through `followModules`** — ✅ **DONE
+  (v1.9.17) for the direct-child cases.** A child module consuming its OWN
+  data doc (`policy = data.aws_iam_policy_document.x.json`) already resolved
+  (data sources are module-local — `childDataPolicies` in `followModules`).
+  v1.9.17 adds the **module-output** path: a PARENT resource consuming a
+  child's exposed policy (`policy = module.m.policy_json`) now resolves to
+  the child's parsed statements via a `<label>.<output>` index built while
+  following. `policyOf` resolves both `data.aws_iam_policy_document.x.json`
+  and `module.<label>.<output>` refs. **Remaining narrow gap:** nested
+  passthrough — `module.outer` re-exporting `module.inner`'s policy output
+  (`output x = module.inner.y`) still degrades to unresolved (would need
+  reordering `followModules` to follow grandchildren before the child's own
+  resources normalize).
 - **BigQuery multi-access-block inline flattener** — inline `access {}` blocks
   resolve the first block only; a multi-block dataset where a later block is
   public is a known gap (needs the multi-block collect change).

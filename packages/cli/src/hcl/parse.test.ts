@@ -163,6 +163,110 @@ resource "aws_security_group" "this" {
     })
   })
 
+  it('resolves an IAM policy consumed via a module output (data.aws_iam_policy_document in the child)', async () => {
+    // The child module composes a policy from a data.aws_iam_policy_document
+    // and exposes it via an output; the PARENT consumes `module.m.policy_json`.
+    // The parent's policy must resolve to the child's parsed statements
+    // (was: unresolved → could-not-evaluate).
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "m" {
+  source = "../../modules/mod"
+}
+
+resource "aws_iam_policy" "parent" {
+  name   = "parent"
+  policy = module.m.policy_json
+}`),
+      'modules/mod/main.tf': `
+data "aws_iam_policy_document" "p" {
+  statement {
+    effect  = "Allow"
+    actions = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+  }
+}
+
+output "policy_json" {
+  value = data.aws_iam_policy_document.p.json
+}
+`,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const parent = r.value.resources.find(
+      (x) => x.type === 'aws_iam_policy' && x.name === 'parent',
+    )
+    const pol = parent?.policy
+    expect(pol?.kind).toBe('parsed')
+    if (pol?.kind === 'parsed') {
+      expect(pol.statements[0]?.actions).toContain('*')
+      expect(pol.statements[0]?.principals).toContain('*')
+    }
+  })
+
+  it('resolves a policy a child module consumes from its OWN data.aws_iam_policy_document (regression)', async () => {
+    // The child composes + consumes its own data doc — this already worked
+    // (data sources are module-local). Pinned so the module-output threading
+    // change never regresses the direct-child case.
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "m" {
+  source = "../../modules/mod"
+}`),
+      'modules/mod/main.tf': `
+data "aws_iam_policy_document" "p" {
+  statement {
+    effect  = "Allow"
+    actions = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "child" {
+  name   = "child"
+  policy = data.aws_iam_policy_document.p.json
+}
+`,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const child = r.value.resources.find(
+      (x) => x.type === 'aws_iam_policy' && x.name === 'child',
+    )
+    expect(child?.policy?.kind).toBe('parsed')
+  })
+
+  it('a module output that is NOT a data-policy ref stays unresolved (conservative boundary)', async () => {
+    // Only outputs whose value is a sole data.aws_iam_policy_document.<n>.json
+    // feed the module-output index. A plain-string / jsonencode(var) output is
+    // NOT indexed → the consumer degrades to unresolved (no false resolve).
+    const dir = scratch({
+      [`${ENV}/main.tf`]: caller(`module "m" {
+  source = "../../modules/mod"
+}
+
+resource "aws_iam_policy" "parent" {
+  name   = "parent"
+  policy = module.m.not_a_policy
+}`),
+      'modules/mod/main.tf': `
+output "not_a_policy" {
+  value = "definitely-not-a-policy-doc"
+}
+`,
+    })
+    const r = await scan(dir)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const parent = r.value.resources.find(
+      (x) => x.type === 'aws_iam_policy' && x.name === 'parent',
+    )
+    expect(parent?.policy?.kind).toBe('unresolved')
+  })
+
   it('per-instantiation isolation: two calls keep separate scopes AND distinct trace labels', async () => {
     const dir = scratch({
       [`${ENV}/main.tf`]: caller(`module "good" {
