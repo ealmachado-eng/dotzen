@@ -290,6 +290,7 @@ export enum AwsResource {
   LambdaEventSourceMapping = 'aws_lambda_event_source_mapping',
   LambdaFunctionEventInvokeConfig = 'aws_lambda_function_event_invoke_config',
   LambdaFunctionUrl = 'aws_lambda_function_url',
+  LambdaFunctionRecursionConfig = 'aws_lambda_function_recursion_config',
   LambdaLayerVersion = 'aws_lambda_layer_version',
   LambdaPermission = 'aws_lambda_permission',
   LambdaAlias = 'aws_lambda_alias',

@@ -114,6 +114,12 @@ const UTILITY_TYPES = new Set<string>([
   // source). Dogfood round 3: 145 combined on the EKS module.
   'local_file',
   'cloudinit_config',
+  // Dogfood round 4: data sources + docker provider types with no security
+  // surface (ARN parsing, external-provider queries, container builds).
+  'aws_arn',
+  'external',
+  'docker_image',
+  'docker_registry_image',
 ])
 
 const isInterpolated = (s: string): boolean => s.includes('${')

@@ -6,6 +6,56 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.5
+
+Dogfood round 4 precision + coverage fixes. Running v1.9.4 against 4 fresh
+module repos (RDS, Lambda, GCP network, Azure Key Vault) surfaced 0 false
+positives on governed resources + one secret-variable precision gap.
+
+### Fixed — `denyInsensitiveVariable` identifier-suffix precision
+
+Extended the config-flag suffix list with identifier/config suffixes that
+caused 216 false positives on the RDS module (4 unique variable names repeated
+across 54 module instances): `_arn` (`domain_auth_secret_arn` — an ARN is a
+reference, not a secret value), `_duration` (`master_user_password_rotation_
+duration`), `_expression` (`..._rotation_schedule_expression`), `_key_id`
+(`master_user_secret_kms_key_id` — a KMS key ID is not a secret). All are
+metadata ABOUT secrets (rotation config, KMS key, ARN pointer), not the
+secret values themselves.
+
+### Added — vocabulary (coverage noise reduction)
+
+Dogfood round 4 surfaced 402 ungoverned on the Lambda module (mostly data
+sources + docker provider types). Added to reduce noise:
+
+- `DataResource.AwsIamPolicy` (`data.aws_iam_policy`) + `AwsCloudwatchLogGroup`
+  (`data.aws_cloudwatch_log_group`) — common read-only data sources.
+- `AwsResource.LambdaFunctionRecursionConfig` (`aws_lambda_function_recursion
+_config`) — Lambda config resource.
+- `UTILITY_TYPES`: `aws_arn`, `external`, `docker_image`,
+  `docker_registry_image` — utility types with no security surface (ARN
+  parsing, external-provider queries, container builds). Lambda module:
+  402 → 18 ungoverned.
+
+### Dogfood round 4 summary
+
+| Repo            | V   | P     | CNE | Ungov |
+| --------------- | --- | ----- | --- | ----- |
+| AWS RDS         | 32  | 7533  | 32  | 58    |
+| AWS Lambda      | 63  | 12301 | 12  | 18    |
+| GCP network     | 0   | 787   | 64  | 29    |
+| Azure Key Vault | 0   | 44    | 5   | 6     |
+
+All violations legitimate (tags, RDS encryption, inline-policy, provisioner).
+GCP network + Azure Key Vault: **0 violations** (both clean). 0 false positives
+on any repo.
+
+### Migration notes
+
+Backward-compatible. Consumers will see fewer `denyInsensitiveVariable`
+violations (identifier-named variables) and less ungoverned noise (data
+sources + utility types now covered).
+
 ## 1.9.4
 
 Dogfood round 3 coverage fixes. Running v1.9.3 against 4 fresh module repos

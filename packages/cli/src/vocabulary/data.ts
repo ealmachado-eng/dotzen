@@ -20,6 +20,8 @@ export enum DataResource {
   AwsRegion = 'data.aws_region',
   AwsAvailabilityZones = 'data.aws_availability_zones',
   AwsIamPolicyDocument = 'data.aws_iam_policy_document',
+  AwsIamPolicy = 'data.aws_iam_policy',
+  AwsCloudwatchLogGroup = 'data.aws_cloudwatch_log_group',
   AwsEksCluster = 'data.aws_eks_cluster',
   AwsSsmParameter = 'data.aws_ssm_parameter',
   AwsSnsTopic = 'data.aws_sns_topic',
