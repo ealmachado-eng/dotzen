@@ -104,7 +104,7 @@ The v2 graph layer (doc 10) adds **multi-hop dependency-graph** conditions — t
 
 `direction` defaults to `'both'` (forward + reverse traversal). Forward follows edges from this resource outward; reverse finds resources that reference this one. The "no DB in public subnet" chain alternates both.
 
-> **v1 limitation:** the graph treats ALL resource references as edges (untyped). Structural refs like `vpc_id` can over-connect resources in the same VPC. Phase 6 (doc 10) adds edge types to distinguish routing edges from structural ones. For now, the conditions are conservative — they may over-report on complex VPC topologies.
+> **Known edge case:** edges are classified by attribute name (`subnet_id` → routing, `vpc_id` → structural, etc.). `vpc_id` and other structural refs are filtered out of routing/security/encryption queries, preventing false positives. A remaining case: `subnet_id` on a NAT gateway is classified as `routing` (it IS a routing attr), but semantically it's a deployment ref — this can create a false chain through the NAT to the public subnet. Resource-type-aware classification will fix this in a future refinement.
 
 ### Same-resource blocks
 

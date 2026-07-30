@@ -6,6 +6,47 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.27
+
+Fix — **graph edge types**. The v1.9.26 graph layer treated ALL resource
+references as edges (untyped), causing false positives on real VPC topologies:
+every resource connected through the VPC node via `vpc_id`, making
+`denyIfReachable(InternetGateway)` fire on private resources.
+
+### Fixed — edge-type classification + filtering
+
+Each edge is now classified by its referencing attribute's semantic type:
+
+| Type         | Attributes                                                                             | Followed by                     |
+| ------------ | -------------------------------------------------------------------------------------- | ------------------------------- |
+| `routing`    | `subnet_id`, `route_table_id`, `gateway_id`, `nat_gateway_id`, `transit_gateway_id`, … | `denyIfReachable`               |
+| `security`   | `security_groups`, `vpc_security_group_ids`                                            | `denyIfSharedWith`              |
+| `encryption` | `kms_master_key_id`, `kms_key_id`                                                      | `denyIfReachableAttr`           |
+| `structural` | `vpc_id`, tags, everything else                                                        | **excluded** from typed queries |
+
+The integration fixture now includes realistic `vpc_id` refs. Before the fix:
+both DBs false-violated (connected via the VPC node). After: only the
+public-subnet DB violates; `vpc_id` edges are `structural` → filtered.
+
+### Known remaining edge case
+
+`subnet_id` on a NAT gateway is classified as `routing` (it IS a routing
+attr), but semantically it's a deployment ref. This can create a false chain
+through the NAT to the public subnet. Resource-type-aware classification (a
+future refinement) will distinguish these. The `vpc_id` fix covers the most
+common false-positive vector by far.
+
+### No preset or API changes
+
+The 143 rules are unchanged. The edge-type filtering is internal (evaluators
+pass the correct edge types to the graph queries). No condition signatures
+changed.
+
+### Tests
+
+769 unit + 40 integration (the graph fixture now exercises realistic `vpc_id`
+topology), 0 regressions.
+
 ## 1.9.26
 
 Feature — **v2 graph layer**: multi-hop dependency-graph rules. The first
