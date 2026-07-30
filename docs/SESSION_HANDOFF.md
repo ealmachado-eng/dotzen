@@ -8,7 +8,7 @@
 - **npm:** `@dotzen/dotzen@1.9.28` latest, published via GitHub OIDC + SLSA provenance.
 - **CI:** `.github/workflows/ci.yml` (Node 24, 769 unit + 40 integration + check-docs + semgrep + gitleaks) + `release.yml` (Node 24 / npm 11, trusted publishing, `--provenance`).
 - **Renovate:** onboarded, majors-gated (`dependencyDashboardApproval: false` + major-gate packageRule). **typescript major BLOCKED** (`enabled: false` — typescript-eslint doesn't support TS 7 yet; tracking issue typescript-eslint#10940). `.gitlab-ci.yml` removed (dead after migration).
-- **Branch protection:** `require-ci-on-main` ruleset (status checks required) + `v*` tag ruleset. Squash-merge only.
+- **Branch protection:** `require-ci-on-main` ruleset (status checks required) + `v*` tag ruleset. Squash-merge recommended (verify it's configured in Settings → General → Pull Requests).
 - **Docs:** full user docs in `docs/user/` (tutorial + 6 how-tos + DSL reference + auto-generated rule catalog via `npm run gen-docs`). Design spec for the graph layer at `docs/specs/10-graph-layer.md`.
 - **143 rules** across 8 presets (core-security + cis-aws/azure/gcp + pci-dss/soc2/nist-800-53/data-protection).
 
