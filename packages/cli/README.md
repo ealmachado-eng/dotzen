@@ -25,6 +25,11 @@ Every finding is **`block`** (fails the build), **`warn`**, or **`require_approv
 **`could not evaluate`** instead of guessing — for a governance tool, a false
 positive is worse than an honest gap.
 
+It runs wherever Terraform is written — pre-commit hook, CI pipeline, or **inside
+the AI coding agent's own loop**: the agent runs `npx @dotzen/dotzen@1 check`,
+reads the findings, and fixes them before you ever see the PR. Catch violations at
+the earliest, cheapest gate.
+
 > **v1.9.32** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
 > types recognized (3 clouds) · 801 unit + 40 integration tests · published to npm
 > with [SLSA provenance](https://docs.npmjs.com/generating-provenance-statements)
@@ -58,9 +63,39 @@ access. The same directness that creates the risk is what makes it detectable.
 | Topology-aware (multi-hop) rules | —                       | —                     | No                            | **Yes — graph layer**                     |
 | Vendor lock-in                   | No                      | Yes                   | No                            | **No**                                    |
 
+> **Same layer as tfsec/Checkov** (static HCL, no creds/state) — dotzen doesn't
+> claim a unique layer there. The differentiator vs them is the **readable DSL**,
+> the **topology graph**, and **zero-install `npx`**. The "different layer" claim
+> is vs **OPA/Sentinel**, which run at the _plan/policy_ layer and need
+> credentials + state (or Terraform Cloud).
+
 dotzen's claim isn't "better rule engine." It's **the governance layer designed
 for the failure mode of AI-generated infrastructure, with authoring non-engineers
 can actually review, at zero adoption friction.**
+
+### Where dotzen fits — defense in depth
+
+dotzen **complements, not replaces**. It occupies one layer in a stack, and the
+layers cover each other's blind spots:
+
+```mermaid
+flowchart LR
+  SECRETS["gitleaks / secret-scan"] --> CODE["dotzen<br/>static code + config"]
+  CODE --> PLAN["OPA / Sentinel<br/>plan + policy"]
+  PLAN --> DEPLOY["cloud config / CSPM"]
+  classDef dz fill:#eef,stroke:#40c,font-weight:bold
+  class CODE dz
+```
+
+- **Secrets** — gitleaks/CI secret-scanning (the plaintext key in a var).
+- **Code/config (dotzen)** — the `.tf` you're about to commit. No credentials,
+  no state, no `terraform plan` — runs in pre-commit, CI, or an agent loop.
+- **Plan/policy** — OPA/Sentinel evaluate the resolved plan (needs auth/state;
+  catches what static text can't).
+- **Deploy** — the running cloud (CSPM, Config).
+
+dotzen is the **fail-fast code layer** — the cheapest place to catch the literal
+mistakes AI-generated Terraform makes by default.
 
 ---
 

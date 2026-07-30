@@ -12,20 +12,31 @@ r/terraform skews practitioner/feature-curious. Both lead with the problem
 
 **Body:**
 
-Hi HN. We kept watching AI code-gen tools (Copilot, Claude, agentic coders) emit
-Terraform that's syntactically valid but quietly violates org policy — a
-`0.0.0.0/0` here, a missing `encrypted = true` there, a DB routed into a public
-subnet. The old strategy — "developers call our pre-approved modules" — stops
-working the moment the developer no longer routes through the module.
+The most interesting thing we do with AI coding agents lately is let them write
+Terraform directly — and the scariest part is that the output looks clean:
+`terraform plan` succeeds, the syntax is fine, and then someone notices the new
+security group is `0.0.0.0/0` or the RDS instance landed in a public subnet.
+The old guardrail ("just use our approved modules") stops working the moment the
+model writes the HCL itself.
 
-So I built dotzen: a static governance check for Terraform HCL that you run with
-zero install:
+I open-sourced dotzen to fix this — and the part I'm most excited about is that
+it's cheap and self-contained enough to run **inside the agent's own loop**: the
+agent writes Terraform, runs `npx @dotzen/dotzen@1 check`, reads the findings,
+and fixes them before it ever opens a PR. Fail at the cheapest gate, not at plan
+or in prod.
 
     npx @dotzen/dotzen@1 check ./terraform/
 
-Two things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
+Three things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
 
-1. **Rules are written for the security architect, not the Rego specialist.** The
+1. **It's the fail-fast code layer — no credentials, no state, no `terraform plan`.**
+   Static analysis of the HCL text. That puts it next to tfsec/Checkov (same
+   layer), not OPA/Sentinel (which run at plan/policy time and need auth + state).
+   The bet: AI-generated Terraform is *literal* — violations show up as explicit
+   values, so static text catches the large majority without needing a plan. The
+   same directness that creates the risk makes it detectable.
+
+2. **Rules are written for the security architect, not the Rego specialist.** The
    spec is TypeScript constrained to read like prose, so the person accountable
    for a rule can read and approve it in a PR diff without trusting an engineer's
    unreviewable policy code:
@@ -35,7 +46,7 @@ Two things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
          .denyIngress(Port.SSH, Port.RDP)
          .message('SSH and RDP must not be open to the internet')
 
-2. **It's the only one with topology-aware rules.** "No database in a public
+3. **It's the only one with topology-aware rules.** "No database in a public
    subnet" isn't a per-resource check — it's a 5-hop walk
    (db → subnet → route_table_association → route_table → internet_gateway),
    forward and reverse. dotzen's graph layer does this as an authorable rule:
@@ -44,11 +55,6 @@ Two things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
          .resource(AwsResource.DbInstance)
          .denyIfReachable(AwsResource.InternetGateway)
          .message('Database instances must not be in a public subnet')
-
-The bet that makes this all work without `terraform plan` or cloud credentials:
-AI-generated Terraform is *literal* — violations show up as explicit values in
-the HCL text far more often than in hand-written, parameterized code. The same
-directness that creates the risk makes it statically detectable.
 
 One discipline I care about: when the engine can't resolve a value (a
 `var`-supplied CIDR, an opaque `for_each`), it reports **could not evaluate**
