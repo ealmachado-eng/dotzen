@@ -1,14 +1,23 @@
-# A topology fixture for the v2 graph layer (denyIfReachable).
+# A realistic VPC topology exercising the v2 graph layer with edge types.
 #
-# A DB in a PUBLIC subnet (violates — chain reaches an IGW).
-# A DB in a PRIVATE subnet (passes — no route to any gateway).
+# vpc_id references are present (realistic). The edge-type filter classifies
+# vpc_id as 'structural' → excluded from routing queries. So a private DB
+# (whose route table has no route to an IGW) does NOT false-positive through
+# the VPC node.
 #
-# NOTE: vpc_id references are intentionally omitted. In the v1 untyped graph,
-# vpc_id is a structural edge that over-connects every VPC resource through
-# the VPC node (subnet → vpc ← igw), creating false positives. Edge types
-# (Phase 6, doc 10) will filter structural vs routing edges. This fixture
-# tests the routing-chain traversal in isolation — the real-world behavior
-# improves when edge types land.
+# Public DB: violates (routing chain reaches IGW).
+# Private DB: passes (no routing edge to an IGW; vpc_id is structural/filtered).
+
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+}
+
+# ── Public subnet ───────────────────────────────────────────────────────
+
+resource "aws_subnet" "public" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+}
 
 resource "aws_db_instance" "public_db" {
   engine         = "postgres"
@@ -16,16 +25,14 @@ resource "aws_db_instance" "public_db" {
   subnet_id      = aws_subnet.public.id
 }
 
-resource "aws_subnet" "public" {
-  cidr_block = "10.0.1.0/24"
-}
-
 resource "aws_route_table_association" "public_rta" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public_rt.id
 }
 
-resource "aws_route_table" "public_rt" {}
+resource "aws_route_table" "public_rt" {
+  vpc_id = aws_vpc.main.id
+}
 
 resource "aws_route" "public_igw" {
   route_table_id         = aws_route_table.public_rt.id
@@ -33,7 +40,16 @@ resource "aws_route" "public_igw" {
   gateway_id             = aws_internet_gateway.igw.id
 }
 
-resource "aws_internet_gateway" "igw" {}
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+}
+
+# ── Private subnet ─────────────────────────────────────────────────────
+
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.2.0/24"
+}
 
 resource "aws_db_instance" "private_db" {
   engine         = "postgres"
@@ -41,13 +57,11 @@ resource "aws_db_instance" "private_db" {
   subnet_id      = aws_subnet.private.id
 }
 
-resource "aws_subnet" "private" {
-  cidr_block = "10.0.2.0/24"
-}
-
 resource "aws_route_table_association" "private_rta" {
   subnet_id      = aws_subnet.private.id
   route_table_id = aws_route_table.private_rt.id
 }
 
-resource "aws_route_table" "private_rt" {}
+resource "aws_route_table" "private_rt" {
+  vpc_id = aws_vpc.main.id
+}

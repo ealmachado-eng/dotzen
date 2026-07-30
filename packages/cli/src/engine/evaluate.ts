@@ -267,11 +267,56 @@ function buildAssociations(resources: NormalizedResource[]): EvalContext {
 
 // ── v2 graph layer (doc 10) ──────────────────────────────────────────────
 
+/** Semantic category of a graph edge, derived from the referencing attribute.
+ *  Prevents false-positive over-connection (e.g. `vpc_id` links every VPC
+ *  resource through the VPC node — a structural dependency, not a routing path). */
+type EdgeType = 'routing' | 'security' | 'encryption' | 'structural'
+
+/** Attributes whose reference edges represent NETWORK ROUTING paths
+ *  (subnet membership, route-table association, gateway/nat targeting). */
+const ROUTING_ATTRS = new Set([
+  'subnet_id',
+  'route_table_id',
+  'gateway_id',
+  'nat_gateway_id',
+  'transit_gateway_id',
+  'vpc_peering_connection_id',
+  'egress_only_gateway_id',
+  'network_interface_id',
+  'vpc_endpoint_id',
+])
+
+/** Attributes whose reference edges represent SECURITY-GROUP attachments. */
+const SECURITY_ATTRS = new Set([
+  'security_groups',
+  'vpc_security_group_ids',
+  'security_group_ids',
+])
+
+/** Attributes whose reference edges represent KMS/encryption configuration. */
+const ENCRYPTION_ATTRS = new Set([
+  'kms_master_key_id',
+  'kms_key_id',
+  'server_side_encryption',
+])
+
+/** Classify an attribute name (or its last dotted segment) into an edge type.
+ *  Unclassified attrs → 'structural' (safe default — excluded from routing/
+ *  security/encryption-specific queries). */
+const classifyEdge = (via: string): EdgeType => {
+  const last = via.split('.').pop() ?? via
+  if (ROUTING_ATTRS.has(last)) return 'routing'
+  if (SECURITY_ATTRS.has(last)) return 'security'
+  if (ENCRYPTION_ATTRS.has(last)) return 'encryption'
+  return 'structural'
+}
+
 /** A directed reference edge in the resource dependency graph. */
 export interface GraphEdge {
   readonly from: string
   readonly to: string
   readonly via: string
+  readonly edgeType: EdgeType
 }
 
 /** Result of a graph reachability query. */
@@ -291,18 +336,17 @@ export interface ReachResult {
  * separately (same pattern as the association index). See doc 10.
  */
 export interface ResourceGraph {
-  /** BFS: can `start` reach any resource of `targetType`? */
+  /** BFS: can `start` reach any resource of `targetType`?
+   *  `edgeTypes` filters which edges to follow (default: all). */
   canReach(
     start: string,
     targetType: string,
     direction: 'forward' | 'reverse' | 'both',
+    edgeTypes?: readonly EdgeType[],
   ): ReachResult
-  /** Does `start` share a `sharedType` resource with any `otherType` resource?
-   *  Traverses: start → forward → sharedType → reverse → otherType.
-   *  Use case: "a DB's security group is also attached to a public LB." */
+  /** Does `start` share a `sharedType` resource with any `otherType` resource? */
   sharedWith(start: string, sharedType: string, otherType: string): ReachResult
-  /** BFS: can `start` reach a `targetType` whose `attr` is in `values`?
-   *  Use case: "bucket → kms_key → key_manager must not be 'AWS'." */
+  /** BFS: can `start` reach a `targetType` whose `attr` is in `values`? */
   reachableAttr(
     start: string,
     targetType: string,
@@ -335,13 +379,19 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     nodeResources.set(addr, res)
     for (const [attr, value] of Object.entries(res.attributes)) {
       if (value.kind !== 'unresolved') continue
+      const et = classifyEdge(attr)
       // Prefer resolvedRef (structured — covers var/local chains).
       if (value.resolvedRef) {
         const toAddr = assocKey(
           res.file,
           `${value.resolvedRef.type}.${value.resolvedRef.name}`,
         )
-        const edge: GraphEdge = { from: addr, to: toAddr, via: attr }
+        const edge: GraphEdge = {
+          from: addr,
+          to: toAddr,
+          via: attr,
+          edgeType: et,
+        }
         addEdge(forward, addr, edge)
         addEdge(reverse, toAddr, edge)
         continue
@@ -351,19 +401,27 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
       if (!m || m[1] === undefined || m[2] === undefined) continue
       if (m[1] === 'var' || m[1] === 'local' || m[1] === 'data') continue
       const toAddr = assocKey(res.file, `${m[1]}.${m[2]}`)
-      const edge: GraphEdge = { from: addr, to: toAddr, via: attr }
+      const edge: GraphEdge = {
+        from: addr,
+        to: toAddr,
+        via: attr,
+        edgeType: et,
+      }
       addEdge(forward, addr, edge)
       addEdge(reverse, toAddr, edge)
     }
   }
 
   /** BFS from `start` in the given direction, checking each visited node's
-   *  type against `targetType`. Returns reachable=true on first match. */
+   *  type against `targetType`. Returns reachable=true on first match.
+   *  `edgeTypes` filters which edges to follow (default: all types). */
   const canReach = (
     start: string,
     targetType: string,
     direction: 'forward' | 'reverse' | 'both',
+    edgeTypes?: readonly EdgeType[],
   ): ReachResult => {
+    const allow = (et: EdgeType) => !edgeTypes || edgeTypes.includes(et)
     const visited = new Set<string>([start])
     if (nodeTypes.get(start) === targetType) return { reachable: true }
     const queue: string[] = [start]
@@ -371,10 +429,12 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
       const addr = queue.shift()!
       const neighbors: string[] = []
       if (direction !== 'reverse') {
-        for (const e of forward.get(addr) ?? []) neighbors.push(e.to)
+        for (const e of forward.get(addr) ?? [])
+          if (allow(e.edgeType)) neighbors.push(e.to)
       }
       if (direction !== 'forward') {
-        for (const e of reverse.get(addr) ?? []) neighbors.push(e.from)
+        for (const e of reverse.get(addr) ?? [])
+          if (allow(e.edgeType)) neighbors.push(e.from)
       }
       for (const n of neighbors) {
         if (visited.has(n)) continue
@@ -396,7 +456,8 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
   ): ReachResult => {
     const sharedAddrs: string[] = []
     for (const e of forward.get(start) ?? []) {
-      if (nodeTypes.get(e.to) === sharedType) sharedAddrs.push(e.to)
+      if (e.edgeType === 'security' && nodeTypes.get(e.to) === sharedType)
+        sharedAddrs.push(e.to)
     }
     if (sharedAddrs.length === 0) return { reachable: false }
     for (const sharedAddr of sharedAddrs) {
@@ -1798,7 +1859,12 @@ function evalDenyIfReachable(
   ctx: EvalContext,
 ): ConditionOutcome {
   const start = assocKey(r.file, `${r.type}.${r.name}`)
-  const result = ctx.graph.canReach(start, c.targetType, c.direction ?? 'both')
+  const result = ctx.graph.canReach(
+    start,
+    c.targetType,
+    c.direction ?? 'both',
+    ['routing'],
+  )
   if (result.reachable) {
     return {
       kind: 'violation',
