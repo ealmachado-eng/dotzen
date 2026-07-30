@@ -54,6 +54,7 @@ package (which blocks consumers).
    npm run test:integration # vitest run tests  (end-to-end fixtures)
    npm run build          # tsc -p tsconfig.build.json  (produces dist/)
    npm pack --dry-run     # verify the tarball payload is dist/ + bin/ only
+   npm run check-docs     # rule-doc freshness: gen-docs output must match committed docs/user/reference/rules/
    ```
    The `format:check` step is the one that bit the v0.2.0 release:
    running `prettier --check` from the repo root (or on a hand-picked
@@ -61,7 +62,11 @@ package (which blocks consumers).
    — finds unformatted files. **Always run it from `packages/cli/`** so
    local and CI see the same relative paths. If it fails, run
    `npm run format` (prettier --write) from that directory, re-stage,
-   and re-run the gate.
+   and re-run the gate. The `check-docs` step (added with the v1.9.23
+   user-docs set) fails if a preset changed without regenerating the
+   rule catalog — fix with `npm run gen-docs`, stage the result, re-run.
+   It is also wired into `.gitlab-ci.yml` `.test` so CI is the
+   non-bypassable backstop.
 7. **Commit the release prep** (version bump + CHANGELOG + ROADMAP +
    any formatting fixes). If formatting fixes land in a *separate*
    commit on top of the feature commit (as happened in v0.2.0), that is

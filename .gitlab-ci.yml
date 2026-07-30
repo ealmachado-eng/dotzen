@@ -74,6 +74,11 @@ variables:
     - npm test
     - npm run test:integration
     - npm run coverage
+    # Rule-doc freshness: the auto-generated docs/user/reference/rules/ must
+    # match `npm run gen-docs` output. A preset change without regenerating →
+    # fail here (blocks the publish job). The catalog is the single source of
+    # truth for the user docs; it must never ship stale.
+    - npm run check-docs
 
 # Linux is the guaranteed gate.
 test:linux:
