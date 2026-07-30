@@ -9,7 +9,7 @@ import { coreSecurity, cisAws } from '@dotzen/dotzen'
 export const spec = [...coreSecurity, ...cisAws]
 ```
 
-**17 rules.**
+**19 rules.**
 
 ---
 
@@ -182,4 +182,23 @@ export const spec = [...coreSecurity, ...cisAws]
   - Deny `Principal: "*"` on an Allow statement (public access)
 - **Message:** Secret resource policies must not grant Principal "*" (public access)
 - **Rationale:** A secret with a public resource policy is a catastrophic leak — restrict to a specific role/account instead
+
+### `no-db-in-public-subnet`
+
+- **Severity:** ✗ block
+- **Resources:** `aws_db_instance`
+- **Conditions:**
+  - Deny if this resource can reach a `aws_internet_gateway` via any reference chain (direction: both)
+- **Message:** Database instances must not be in a public subnet (reachable to an Internet Gateway)
+- **Rationale:** CIS AWS — isolate data stores from direct internet access. A DB reachable to an IGW is exposed to the internet.
+- **Framework mapping (derived):** CIS AWS — isolate data stores from direct internet access. A DB reachable to an IGW is exposed to the internet.
+
+### `no-sg-shared-lb-db`
+
+- **Severity:** ‼ warn
+- **Resources:** `aws_db_instance`
+- **Conditions:**
+  - Deny if this resource shares a `aws_security_group` with a `aws_lb` (lateral-movement prevention)
+- **Message:** DB security groups should not be shared with load balancers
+- **Rationale:** Trust-boundary isolation — a shared SG enables lateral movement between a public LB and a private DB tier
 

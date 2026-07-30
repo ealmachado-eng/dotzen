@@ -4,7 +4,7 @@
 
 Data-protection additions on top of `coreSecurity` (encryption + retention breadth beyond the core baseline).
 
-**11 rules.**
+**12 rules.**
 
 ---
 
@@ -108,4 +108,14 @@ Data-protection additions on top of `coreSecurity` (encryption + retention bread
   - Deny `lifecycle.ignore_changes` listing: tags, acl, server_side_encryption
 - **Message:** Must not hide drift on data-protection attrs via ignore_changes
 - **Rationale:** GDPR Art. 32 — security configurations must be auditable
+
+### `no-aws-managed-kms`
+
+- **Severity:** ‼ warn
+- **Resources:** `aws_s3_bucket`
+- **Conditions:**
+  - Deny if this resource can reach a `aws_kms_key` whose `key_manager` is in [AWS] (direction: both)
+- **Message:** Buckets should use customer-managed KMS keys, not AWS-managed defaults
+- **Rationale:** Customer-managed keys give full control over key rotation, access policies, and audit trail — required for GDPR Art. 32 / PCI 3.6
+- **Framework mapping (derived):** PCI 3.6
 

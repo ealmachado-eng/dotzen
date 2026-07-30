@@ -18,7 +18,7 @@
  *   rule().resource(...).mustHaveTags(DataClass.Classification)
  */
 import { rule } from '../spec/rule'
-import { AwsResource, AwsAttribute } from '../vocabulary'
+import { AwsResource, AwsAttribute, Effect } from '../vocabulary'
 
 /** A data-classification tag key — org-defined (replace with your own enum). */
 const DataClassificationTag = 'data_classification'
@@ -147,4 +147,21 @@ export const dataProtection = [
   //   .denyNonApprovedRegion('sa-east-1', 'southamerica-east1')
   //   .message('Dados pessoais devem permanecer em regiões brasileiras (LGPD Art. 11)')
   //   .rationale('LGPD Art. 11 — dados pessoais de titulares brasileiros devem ser processados no Brasil'),
+
+  // ── Graph-layer rule (doc 10): KMS key provenance ─────────────────────
+  // The graph traverses bucket → kms_key and checks key_manager. AWS-managed
+  // keys ARE encrypted-at-rest; this rule is for orgs that require full key
+  // control (rotation, access policies, audit trail).
+  rule()
+    .id('no-aws-managed-kms')
+    .resource(AwsResource.S3Bucket)
+    .denyIfReachableAttr(AwsResource.KmsKey, AwsAttribute.KeyManager, 'AWS')
+    .onViolation(Effect.Warn)
+    .message(
+      'Buckets should use customer-managed KMS keys, not AWS-managed defaults',
+    )
+    .rationale(
+      'Customer-managed keys give full control over key rotation, access ' +
+        'policies, and audit trail — required for GDPR Art. 32 / PCI 3.6',
+    ),
 ] as const

@@ -636,6 +636,7 @@ export enum AwsAttribute {
   Encrypted = 'encrypted',
   // aws_kms_key
   EnableKeyRotation = 'enable_key_rotation',
+  KeyManager = 'key_manager',
   // aws_s3_bucket_public_access_block
   BlockPublicAcls = 'block_public_acls',
   BlockPublicPolicy = 'block_public_policy',

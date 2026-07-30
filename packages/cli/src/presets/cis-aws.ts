@@ -189,4 +189,36 @@ export const cisAws = [
       'A secret with a public resource policy is a catastrophic leak — ' +
         'restrict to a specific role/account instead',
     ),
+
+  // ── Graph-layer rules (doc 10): topology-aware controls ───────────────
+  // These use the v2 dependency-graph (multi-hop reference traversal) to
+  // catch controls that per-resource evaluation cannot express.
+
+  // No database in a public subnet — the #1 cloud misconfig. The graph
+  // traverses: db → subnet → route_table_association → route_table → route
+  // → internet_gateway. If that chain reaches an IGW, the DB is public.
+  rule()
+    .id('no-db-in-public-subnet')
+    .resource(AwsResource.DbInstance)
+    .denyIfReachable(AwsResource.InternetGateway)
+    .message(
+      'Database instances must not be in a public subnet (reachable to an Internet Gateway)',
+    )
+    .rationale(
+      'CIS AWS — isolate data stores from direct internet access. ' +
+        'A DB reachable to an IGW is exposed to the internet.',
+    ),
+
+  // No shared security group between a DB and a public load balancer.
+  // Lateral-movement prevention — a shared SG bridges trust boundaries.
+  rule()
+    .id('no-sg-shared-lb-db')
+    .resource(AwsResource.DbInstance)
+    .denyIfSharedWith(AwsResource.SecurityGroup, AwsResource.Lb)
+    .onViolation(Effect.Warn)
+    .message('DB security groups should not be shared with load balancers')
+    .rationale(
+      'Trust-boundary isolation — a shared SG enables lateral movement ' +
+        'between a public LB and a private DB tier',
+    ),
 ] as const

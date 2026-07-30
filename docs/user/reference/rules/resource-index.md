@@ -11,7 +11,7 @@ not do"). ~60-70 of ~3200 recognized types carry rules today.
 
 - `aws_cloudtrail` — `rule-1` (cis-aws, ✗ block); `rule-11` (core-security, ✗ block); `rule-12` (core-security, ✗ block); `rule-7` (soc2, ✗ block)
 - `aws_cloudwatch_log_group` — `cloudwatch-log-retention` (core-security, ‼ warn)
-- `aws_db_instance` — `no-hardcoded-db-password` (core-security, ✗ block); `rule-10` (pci-dss, ✗ block); `rule-11` (nist-800-53, ✗ block); `rule-19` (core-security, ✗ block); `rule-20` (core-security, ✗ block); `rule-3` (core-security, ✗ block); `rule-7` (cis-aws, ✗ block); `rule-7` (data-protection, ✗ block); `rule-8` (data-protection, ✗ block); `rule-9` (pci-dss, ✗ block)
+- `aws_db_instance` — `no-db-in-public-subnet` (cis-aws, ✗ block); `no-hardcoded-db-password` (core-security, ✗ block); `no-sg-shared-lb-db` (cis-aws, ‼ warn); `rule-10` (pci-dss, ✗ block); `rule-11` (nist-800-53, ✗ block); `rule-19` (core-security, ✗ block); `rule-20` (core-security, ✗ block); `rule-3` (core-security, ✗ block); `rule-7` (cis-aws, ✗ block); `rule-7` (data-protection, ✗ block); `rule-8` (data-protection, ✗ block); `rule-9` (pci-dss, ✗ block)
 - `aws_docdb_cluster` — `no-hardcoded-cluster-password` (core-security, ✗ block); `rds-cluster-encryption` (core-security, ✗ block)
 - `aws_docdb_cluster_instance` — `rule-10` (pci-dss, ✗ block); `rule-7` (cis-aws, ✗ block); `rule-7` (data-protection, ✗ block)
 - `aws_dynamodb_table` — `dynamodb-encryption` (core-security, ✗ block); `dynamodb-pitr` (core-security, ‼ warn); `rule-4` (pci-dss, ✗ block); `rule-4` (data-protection, ✗ block); `rule-8` (data-protection, ✗ block); `rule-9` (nist-800-53, ✗ block)
@@ -38,7 +38,7 @@ not do"). ~60-70 of ~3200 recognized types carry rules today.
 - `aws_rds_cluster` — `no-hardcoded-cluster-password` (core-security, ✗ block); `rds-cluster-encryption` (core-security, ✗ block); `rule-20` (core-security, ✗ block); `rule-9` (pci-dss, ✗ block)
 - `aws_rds_cluster_instance` — `rule-10` (pci-dss, ✗ block); `rule-7` (cis-aws, ✗ block); `rule-7` (data-protection, ✗ block)
 - `aws_redshift_cluster` — `no-hardcoded-cluster-password` (core-security, ✗ block); `rule-1` (pci-dss, ✗ block); `rule-1` (data-protection, ✗ block); `rule-2` (cis-aws, ✗ block); `rule-8` (nist-800-53, ✗ block); `rule-8` (data-protection, ✗ block)
-- `aws_s3_bucket` — `rule-10` (nist-800-53, ✗ block); `rule-11` (pci-dss, ✗ block); `rule-11` (data-protection, ✗ block); `rule-13` (core-security, ✗ block); `rule-19` (core-security, ✗ block); `rule-6` (cis-aws, ✗ block); `rule-8` (data-protection, ✗ block); `s3-access-logging` (cis-aws, ‼ warn); `s3-versioning` (cis-aws, ‼ warn)
+- `aws_s3_bucket` — `no-aws-managed-kms` (data-protection, ‼ warn); `rule-10` (nist-800-53, ✗ block); `rule-11` (pci-dss, ✗ block); `rule-11` (data-protection, ✗ block); `rule-13` (core-security, ✗ block); `rule-19` (core-security, ✗ block); `rule-6` (cis-aws, ✗ block); `rule-8` (data-protection, ✗ block); `s3-access-logging` (cis-aws, ‼ warn); `s3-versioning` (cis-aws, ‼ warn)
 - `aws_s3_bucket_public_access_block` — `rule-5` (pci-dss, ✗ block); `rule-5` (data-protection, ✗ block); `rule-6` (pci-dss, ✗ block); `rule-6` (data-protection, ✗ block); `rule-7` (pci-dss, ✗ block); `rule-8` (pci-dss, ✗ block)
 - `aws_secretsmanager_secret_policy` — `no-public-secret-policy` (cis-aws, ✗ block)
 - `aws_secretsmanager_secret_version` — `no-hardcoded-secret-string` (core-security, ‼ warn)
