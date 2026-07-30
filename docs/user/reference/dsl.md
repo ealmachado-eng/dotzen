@@ -92,6 +92,20 @@ Accepts your own enum (a closed org taxonomy). `merge()` tag maps resolve; an un
 
 Associations follow resource refs and `var`/`local` chains; **module-scoped** so a submodule's child can't alias onto a same-named root parent.
 
+### Graph (topology-aware)
+
+The v2 graph layer (doc 10) adds **multi-hop dependency-graph** conditions — the only static Terraform rules that traverse chains of references. These catch controls no per-resource tool can express.
+
+| Method | Fires when |
+|---|---|
+| `.denyIfReachable(targetType, direction?)` | This resource can reach a `targetType` through any chain of references (bidirectional BFS). The "no DB in a public subnet" rule = `.denyIfReachable(AwsResource.InternetGateway)` — traverses `db → subnet → route_table → route → IGW`. |
+| `.denyIfSharedWith(sharedType, otherType)` | This resource shares a `sharedType` (e.g. a security group) with a resource of `otherType` (e.g. a public load balancer). Lateral-movement prevention. |
+| `.denyIfReachableAttr(targetType, attr, ...values)` | This resource can reach a `targetType` whose `attr` is in `values`. Combines traversal + attribute check. E.g. `.denyIfReachableAttr(AwsResource.KmsKey, AwsAttribute.KeyManager, 'AWS')` = "KMS key must be customer-managed." |
+
+`direction` defaults to `'both'` (forward + reverse traversal). Forward follows edges from this resource outward; reverse finds resources that reference this one. The "no DB in public subnet" chain alternates both.
+
+> **v1 limitation:** the graph treats ALL resource references as edges (untyped). Structural refs like `vpc_id` can over-connect resources in the same VPC. Phase 6 (doc 10) adds edge types to distinguish routing edges from structural ones. For now, the conditions are conservative — they may over-report on complex VPC topologies.
+
 ### Same-resource blocks
 
 | Method                      | Fires when                   |

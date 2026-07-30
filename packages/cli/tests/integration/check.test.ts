@@ -810,4 +810,19 @@ describe('check (end-to-end)', () => {
     // The rule is registered in the tool driver's rules[].
     expect(doc.runs[0]!.tool.driver.rules.length).toBeGreaterThan(0)
   })
+
+  it('flags a DB in a public subnet via graph traversal (denyIfReachable)', async () => {
+    // End-to-end: real HCL → normalize → buildGraph → evaluate. The fixture
+    // has a public-subnet DB (chain: db → subnet → rta → route_table → route
+    // → IGW) and a private-subnet DB (routes via NAT, not IGW). Only the
+    // public DB should violate.
+    const r = await check(fixture('graph-public-subnet'), '0.0.1')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const v = r.value.violations
+    // Exactly 1 violation — the public DB, not the private one.
+    expect(v).toHaveLength(1)
+    expect(v[0]?.resource).toBe('aws_db_instance.public_db')
+    expect(v[0]?.message).toMatch(/public subnet/)
+  })
 })
