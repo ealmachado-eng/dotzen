@@ -34,8 +34,8 @@ jobs:
       run:
         working-directory: packages/cli
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -65,8 +65,8 @@ jobs:
       run:
         working-directory: packages/cli
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
           cache: npm
@@ -77,7 +77,7 @@ jobs:
   semgrep:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Run the raw semgrep CLI (not the semgrep-action) so the command is
       # byte-for-byte identical to the local subagent invocation — the core
       # gate principle (local and CI never disagree).
@@ -92,11 +92,12 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # full history — gitleaks scans the whole repo
+      # gitleaks-action@v2 auto-discovers .gitleaks.toml at the repo root —
+      # do NOT pass a config-path input (it's not a valid v2 input). The
+      # GITHUB_TOKEN is required by the action.
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config-path: .gitleaks.toml
