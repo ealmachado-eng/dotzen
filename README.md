@@ -96,13 +96,13 @@ keeps the local check fast and credential-free.
 
 ```mermaid
 flowchart LR
-  HCL["`.tf` HCL files"] --> Parse["hcl2json parse"]
+  HCL[".tf HCL files"] --> Parse["hcl2json parse"]
   Parse --> Norm["normalize<br/>vars · locals · ternary · merge<br/>modules · for_each · dynamic"]
   Norm --> Eval["evaluate<br/>42 conditions<br/>+ dependency graph"]
-  Eval --> Out{"report"}
+  Eval --> Out{report}
   Out -->|default| T["terminal (ANSI)"]
-  Out -->|--format json| J["JSON artifact"]
-  Out -->|--format sarif| S["SARIF 2.1.0<br/>GitHub Code Scanning / GitLab"]
+  Out -->|"--format json"| J["JSON artifact"]
+  Out -->|"--format sarif"| S["SARIF 2.1.0<br/>GitHub Code Scanning / GitLab"]
 ```
 
 Three outcomes, never collapsed: a rule **violates**, **passes**, or **could not
@@ -127,12 +127,12 @@ decide reachability:
 
 ```mermaid
 flowchart LR
-  DB["aws_db_instance"] -->|"subnet_id (forward)"| SUB["aws_subnet"]
-  SUB -.->|"who references me? (reverse)"| RTA["route_table_association"]
-  RTA -->|"route_table_id"| RT["aws_route_table"]
-  RT -->|"gateway_id"| IGW["aws_internet_gateway"]
-  classDef target fill:#fee,stroke:#c00,color:#900,font-weight:bold;
-  class IGW target;
+  DB[aws_db_instance] -->|subnet_id| SUB[aws_subnet]
+  SUB -. reverse hop .-> RTA[route_table_association]
+  RTA -->|route_table_id| RT[aws_route_table]
+  RT -->|gateway_id| IGW[aws_internet_gateway]
+  classDef target fill:#fee,stroke:#c00,color:#900,font-weight:bold
+  class IGW target
 ```
 
 If that chain reaches an Internet Gateway, the DB is in a public subnet →
