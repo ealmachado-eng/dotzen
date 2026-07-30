@@ -6,6 +6,44 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.28
+
+Feature — graph-layer UX + multi-cloud improvements.
+
+### Added — violation path detail
+
+`denyIfReachable` violations now include the **exact reference chain** that
+makes a resource public, so the finding is immediately actionable:
+
+```
+✗ aws_db_instance.public_db  (terraform/main.tf:3)
+    DB instances must not be reachable to an Internet Gateway
+    ↳ reachable to aws_internet_gateway via:
+      aws_db_instance.public_db (subnet_id) → aws_subnet.public
+      ←(subnet_id) aws_route_table_association.rta (route_table_id) →
+      aws_route_table.public_rt ←(route_table_id) aws_route.public_igw
+      (gateway_id) → aws_internet_gateway.igw
+```
+
+New `pathTo()` BFS (shortest-path with parent tracking) + `formatPath()`
+formatter. Added `detail` field to the `Violation` interface, wired through
+`evaluate()` so all conditions' detail reaches the terminal/JSON/SARIF output.
+
+### Added — Azure NSG edge type
+
+`network_security_group_id` added to `SECURITY_ATTRS`. Enables
+`denyIfSharedWith` for Azure network security groups (VM → NSG → other VM
+type — lateral-movement prevention across Azure trust boundaries).
+
+### No preset or API changes
+
+The 143 rules are unchanged. The path detail is internal (the evaluator
+computes it; the user sees it in the output). No condition signatures changed.
+
+### Tests
+
+769 unit + 40 integration, 0 regressions.
+
 ## 1.9.27
 
 Fix — **graph edge types**. The v1.9.26 graph layer treated ALL resource
