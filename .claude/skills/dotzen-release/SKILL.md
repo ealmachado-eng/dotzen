@@ -145,14 +145,19 @@ jobs:
       contents: read
       id-token: write           # REQUIRED for npm trusted publishing (OIDC)
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'          # npm 10.x is fine on GitHub (trusted
-                                       # publishing works without --provenance)
+          # Node 24 → npm 11.x. REQUIRED for trusted publishing: the OIDC →
+          # publish-token exchange needs npm CLI ≥ 11.5.1; Node 20 ships npm
+          # 10.x, which is too old (the exchange silently fails, the PUT goes
+          # anonymous, and npm returns 404 "not in this registry" — provenance
+          # signing still succeeds because sigstore uses the GitHub OIDC token
+          # directly, masking the publish-token failure).
+          node-version: '24'
           cache: npm
           cache-dependency-path: packages/cli/package-lock.json
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
         working-directory: packages/cli
       - run: npm run build
         working-directory: packages/cli
@@ -173,6 +178,15 @@ Notes (each is a real failure mode — do not relearn):
 - **`permissions: id-token: write` is mandatory.** Without it the OIDC token
   isn't issued and `npm publish` fails auth. The `contents: read` is for
   checkout. Do not broaden to `write-all`.
+- **Node 24 (npm 11.x), NOT Node 20.** Trusted publishing — the OIDC →
+  publish-token exchange — requires npm CLI ≥ 11.5.1. Node 20 ships npm 10.x,
+  which is too old: the exchange silently fails, the publish PUT goes
+  anonymous, and npm returns **404 "not in this registry"** (the exact symptom
+  that bit the v1.9.24 first-GitHub-publish). Provenance *signing* still
+  succeeds on Node 20 (sigstore uses the GitHub OIDC token directly, not the
+  npm publish token), which masks the failure — don't be fooled by a signed
+  provenance statement followed by a 404. The publish job uses
+  `node-version: '24'`; the gate jobs stay on Node 20.
 - **No `NPM_TOKEN` / `.npmrc` write.** The old stored-token path wrote
   `//registry.npmjs.org/:_authToken=${NPM_TOKEN}` to `~/.npmrc`. With
   trusted publishing there is no token variable — that line writes a blank
