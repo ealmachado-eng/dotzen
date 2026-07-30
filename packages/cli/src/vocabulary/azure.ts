@@ -188,6 +188,8 @@ export enum AzureResource {
   ScheduledQueryRuleAlert = 'azurerm_monitor_scheduled_query_rules_alert',
   ScheduledQueryRuleLog = 'azurerm_monitor_scheduled_query_rules_log',
   MonitorActionGroup = 'azurerm_monitor_action_group',
+  MonitorDataCollectionRule = 'azurerm_monitor_data_collection_rule',
+  MonitorDataCollectionRuleAssociation = 'azurerm_monitor_data_collection_rule_association',
   MonitorSmartDetectorAlertRule = 'azurerm_monitor_smart_detector_alert_rule',
   MonitorAutoscaleSetting = 'azurerm_monitor_autoscale_setting',
   AdvancedThreatProtection = 'azurerm_advanced_threat_protection',

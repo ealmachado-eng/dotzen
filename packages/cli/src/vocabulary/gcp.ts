@@ -76,6 +76,7 @@ export enum GcpResource {
   ComputeNetwork = 'google_compute_network',
   ComputeSharedVpcHostProject = 'google_compute_shared_vpc_host_project',
   ComputeSharedVpcServiceProject = 'google_compute_shared_vpc_service_project',
+  ServiceNetworkingConnection = 'google_service_networking_connection',
   ComputeAddress = 'google_compute_address',
   ComputeGlobalAddress = 'google_compute_global_address',
   DnsManagedZone = 'google_dns_managed_zone',

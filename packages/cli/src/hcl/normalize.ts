@@ -180,6 +180,8 @@ const UTILITY_TYPES = new Set<string>([
   'kubernetes_validating_webhook_configuration_v1',
   'kubernetes_mutating_webhook_configuration',
   'kubernetes_mutating_webhook_configuration_v1',
+  'kubernetes_config_map_data',
+  'kubernetes_config_map_v1_data',
   'terraform_remote_state',
 ])
 

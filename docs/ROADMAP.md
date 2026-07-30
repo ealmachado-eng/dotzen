@@ -682,6 +682,18 @@ removed (37 AWS + 26 GCP); 7 AWS `transit_gateway` values renamed to
      11 new `evaluate.compound.test.ts` cases + 10 new
      `normalize.resolve.test.ts` cases pin both halves.
 
+  5b. ✅ **DONE (v1.9.31-pre) — Bare resource-attr `member` ref (dogfood round 11).**
+     The bare-ref analog of item 5: `member = google_service_account.<name>[<idx>].member`
+     has NO literal text, so the prefix/suffix rule can't help — but the
+     provider type-system guarantees the value is a service-account identifier,
+     which can never equal a bare public-principal scalar (`allUsers` /
+     `allAuthenticatedUsers`). New `denyValueExcludedByResourceAttr` returns a
+     definite PASS (not CNE) for `google_service_account.*.{member,email,name}`
+     refs when no denylist scalar could itself be a service-account identifier
+     (conservative `serviceAccount:` / `@` guard). Dropped the
+     terraform-google-kubernetes-engine module from 15 CNE → 3 (the 12
+     `.member`-ref IAM members now PASS). 5 new `evaluate.compound.test.ts` cases.
+
 6. ✅ **DONE — More rules for the governed surface (batches 2+3)** —
    batch 2 (v1.5.1): DynamoDB encryption + PITR, S3 access logging, ALB
    access logging. Batch 3 (v1.5.3): RDS cluster encryption, S3 bucket
@@ -937,6 +949,12 @@ reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
   (`aws_opensearchserverless_collection` / `_security_policy` /
   `_security_config` / `_access_policy` / `_lifecycle_policy` / `_vpc_endpoint`).
   Recognized, not yet rule-bearing.
+- ✅ **DONE (v1.9.31-pre) — Round-12 minor ungoverned enum-adds** (dogfood
+  round 11). Names taken straight from real module `.tf` (observed-in-the-wild
+  = inherently verified, no provider clone needed): `aws_vpc_security_group_rules_exclusive`,
+  `aws_vpc_security_group_vpc_association`, `azurerm_monitor_data_collection_rule(+_association)`,
+  `google_service_networking_connection`. Plus `kubernetes_config_map_v1_data`
+  (+ non-v1 sibling) → `UTILITY_TYPES` (k8s provider, not cloud IaC).
 - ACM / Route 53 — deprioritized (thin / no dangerous AI-gen surface).
 
 ---

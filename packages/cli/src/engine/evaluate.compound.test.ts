@@ -153,3 +153,66 @@ describe('evaluate (denyValue — compound interpolation with literal text)', ()
     expect(report.couldNotEvaluate).toHaveLength(0)
   })
 })
+
+describe('evaluate (denyValue — bare resource-attr ref, provider semantics)', () => {
+  // The bare-ref analog of the literal-prefix rule: `member = google_service_account.x[0].member`
+  // has NO literal text, so the prefix/suffix rule can't help — but the provider
+  // guarantees the value is a service-account identifier, which can never equal
+  // a bare public-principal scalar. Eliminates the 15 CNE the
+  // terraform-google-kubernetes-engine module produced on this pattern (round 11).
+  it('passes definitively for a bare google_service_account.*.member ref (the GKE pattern)', () => {
+    const r = iamMember(
+      unresolved('${google_service_account.cluster_service_account[0].member}'),
+    )
+    const report = evaluate([noPublicMember], [r])
+    expect(report.violations).toHaveLength(0)
+    expect(report.couldNotEvaluate).toHaveLength(0)
+    expect(report.passed).toBe(1)
+  })
+
+  it('passes for a bare google_service_account.*.email ref (no index)', () => {
+    const r = iamMember(unresolved('${google_service_account.default.email}'))
+    const report = evaluate([noPublicMember], [r])
+    expect(report.couldNotEvaluate).toHaveLength(0)
+    expect(report.passed).toBe(1)
+  })
+
+  it('passes for a bare google_service_account.*.name ref', () => {
+    const r = iamMember(unresolved('${google_service_account.default.name}'))
+    const report = evaluate([noPublicMember], [r])
+    expect(report.couldNotEvaluate).toHaveLength(0)
+    expect(report.passed).toBe(1)
+  })
+
+  it('stays couldNotEvaluate for a bare ref to a non-service-account resource', () => {
+    // A different resource's `.member`-ish attr has no provider guarantee —
+    // don't over-apply the heuristic. Stay honest.
+    const r = iamMember(unresolved('${google_some_other_resource.x.member}'))
+    const report = evaluate([noPublicMember], [r])
+    expect(report.couldNotEvaluate).toHaveLength(1)
+  })
+
+  it('stays couldNotEvaluate when the denylist could be a service-account value', () => {
+    // If a denylist scalar itself looks like a service-account identifier
+    // (serviceAccount: prefix or an @-email), a google_service_account.* ref
+    // COULD equal it → not excludable → CNE (conservative).
+    const denySpecificSa: Rule = {
+      id: 'deny-specific-sa',
+      target: { kind: 'resource', types: [GcpResource.StorageBucketIamMember] },
+      conditions: [
+        {
+          kind: 'denyValue',
+          attr: GcpAttribute.Member,
+          values: ['serviceAccount:leak@proj.iam.gserviceaccount.com'],
+        },
+      ],
+      effect: Effect.Block,
+      message: 'specific SA denylisted',
+    }
+    const r = iamMember(
+      unresolved('${google_service_account.cluster_service_account[0].member}'),
+    )
+    const report = evaluate([denySpecificSa], [r])
+    expect(report.couldNotEvaluate).toHaveLength(1)
+  })
+})

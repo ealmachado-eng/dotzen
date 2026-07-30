@@ -143,5 +143,26 @@ describe('normalize', () => {
       expect(out).toHaveLength(1)
       expect(out[0]?.type).toBe('aws_fictional_round11')
     })
+
+    it('recognizes round-12 types + silently skips the kubernetes_config_map_v1_data utility', () => {
+      // Round-12 names taken straight from real module .tf (terraform-aws-modules,
+      // Azure/aks, terraform-google-network, terraform-google-kubernetes-engine)
+      // — observed-in-the-wild, so inherently verified. The kubernetes_* type is
+      // a k8s-provider resource (not cloud IaC) → UTILITY_TYPES silent skip.
+      const parsed = {
+        resource: {
+          aws_vpc_security_group_rules_exclusive: { a: [{}] },
+          aws_vpc_security_group_vpc_association: { b: [{}] },
+          azurerm_monitor_data_collection_rule: { c: [{}] },
+          azurerm_monitor_data_collection_rule_association: { d: [{}] },
+          google_service_networking_connection: { e: [{}] },
+          kubernetes_config_map_v1_data: { k: [{}] },
+          aws_fictional_round12: { leak: [{}] },
+        },
+      }
+      const out = collectUngoverned(parsed, 'main.tf', '')
+      expect(out).toHaveLength(1)
+      expect(out[0]?.type).toBe('aws_fictional_round12')
+    })
   })
 })

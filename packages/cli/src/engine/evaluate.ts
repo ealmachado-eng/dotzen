@@ -1328,6 +1328,49 @@ function denyValueExcludedByLiteral(
   return true
 }
 
+/**
+ * Conservative definite-PASS shortcut for `denyValue` on a BARE resource-
+ * attribute reference whose runtime value is definitionally incompatible with
+ * every denylist scalar (provider type-system semantics). The bare-ref analog
+ * of {@link denyValueExcludedByLiteral} (which handles the `prefix${ref}suffix`
+ * compound form — a bare `${ref}` has no literal text for that rule to use).
+ *
+ * Canonical case: a GCP IAM `member` set to
+ * `google_service_account.<name>[<idx>].member` / `.email` / `.name`. The
+ * provider guarantees these resolve to a service-account identifier
+ * (`serviceAccount:<email>` or the bare email) — which can never equal a bare
+ * public-principal scalar such as `allUsers` / `allAuthenticatedUsers`. Without
+ * this, the common GKE pattern produced a false could-not-evaluate (the engine
+ * cannot follow a resource-attribute ref, but the provider type-system rules
+ * out the denylist).
+ *
+ * Conservative guard: excluded ONLY when no denylist scalar could itself be a
+ * service-account identifier (a `serviceAccount:` prefix or an `@`-email). If
+ * the denylist names a specific service account, the ref COULD match it → not
+ * excludable → falls back to could-not-evaluate. Scoped to
+ * `google_service_account.*` — other resources' attrs carry no such guarantee.
+ */
+function denyValueExcludedByResourceAttr(
+  expr: string,
+  denylist: (string | number)[],
+): boolean {
+  if (denylist.some((d) => String(d).includes('${'))) return false
+  // A bare `${google_service_account.<name>[<idx>].(member|email|name)}` ref.
+  // The optional `[<idx>]` covers count/for_each instances.
+  const m =
+    /^\$\{google_service_account\.[A-Za-z0-9_-]+(?:\[[^\]]+\])?\.(member|email|name)\}$/.exec(
+      expr,
+    )
+  if (!m) return false
+  // Excluded only if no denylist scalar could BE a service-account identifier
+  // (serviceAccount: prefix or an @-email). Otherwise the ref's value might
+  // match → stay honest (could-not-evaluate).
+  return denylist.every((d) => {
+    const s = String(d)
+    return !s.startsWith('serviceAccount:') && !s.includes('@')
+  })
+}
+
 /** Flag a scalar attribute whose literal value is in a forbidden set. */
 function evalDenyValue(c: DenyValue, r: NormalizedResource): ConditionOutcome {
   const v = r.attributes[c.attr]
@@ -1336,6 +1379,10 @@ function evalDenyValue(c: DenyValue, r: NormalizedResource): ConditionOutcome {
       // Compound interpolation whose literal prefix/suffix rules out every
       // denylist scalar → definite PASS (ROADMAP #5). See helper for rationale.
       if (denyValueExcludedByLiteral(v.expr, c.values)) return { kind: 'pass' }
+      // Bare resource-attr ref whose provider-semantics value rules out every
+      // denylist scalar (e.g. google_service_account.*.member vs allUsers).
+      if (denyValueExcludedByResourceAttr(v.expr, c.values))
+        return { kind: 'pass' }
       return {
         kind: 'cannotEvaluate',
         reason: `${c.attr} is an unresolved reference`,

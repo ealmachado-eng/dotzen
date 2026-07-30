@@ -21,6 +21,8 @@ export enum AwsResource {
   // The legacy standalone SG rule (handles BOTH ingress and egress via
   // `type = "ingress" | "egress"`). Older but still extremely common.
   SecurityGroupRule = 'aws_security_group_rule',
+  VpcSecurityGroupRulesExclusive = 'aws_vpc_security_group_rules_exclusive',
+  VpcSecurityGroupVpcAssociation = 'aws_vpc_security_group_vpc_association',
   DbInstance = 'aws_db_instance',
   S3Bucket = 'aws_s3_bucket',
   S3DirectoryBucket = 'aws_s3_directory_bucket',

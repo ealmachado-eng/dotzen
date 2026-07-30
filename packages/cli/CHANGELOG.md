@@ -6,6 +6,57 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.31
+
+Feature — **dogfood-round-11 follow-ups**: a precision fix that converts
+honest gaps to definite verdicts on a flagship module, plus the round-12
+vocabulary that collapses the last `ungoverned` noise surfaced by the round.
+
+### Changed — bare resource-attr `member` ref now a definite PASS
+
+`denyValue` now returns a definite **PASS** (was could-not-evaluate) for a GCP
+IAM `member` set to a bare `google_service_account.<name>[<idx>].member` /
+`.email` / `.name` reference. The provider type-system guarantees these resolve
+to a service-account identifier, which can never equal a bare public-principal
+scalar (`allUsers` / `allAuthenticatedUsers`). New
+`denyValueExcludedByResourceAttr` is the bare-ref analog of the v1.7
+literal-prefix rule (`denyValueExcludedByLiteral`).
+
+**Heads-up for consumers:** configs using the `member = google_service_account.x[0].member`
+pattern (common in GKE / service-account modules) will see fewer
+`couldNotEvaluate` findings where they previously degraded honestly — these now
+resolve to PASS. No new violations. On the `terraform-google-kubernetes-engine`
+module this dropped CNE from 15 → 3. Conservative guard: stays CNE if a denylist
+scalar could itself be a service-account identifier (`serviceAccount:` prefix or
+an `@`-email), and is scoped to `google_service_account.*` only.
+
+### Added — round-12 recognized vocabulary (dogfood round 11)
+
+Names taken straight from real module `.tf` (observed-in-the-wild, so
+inherently verified — no provider-source clone needed). Added to the resource
+enums (`KNOWN_TYPES` derives from them → auto-collapses `ungoverned`):
+
+- `aws_vpc_security_group_rules_exclusive`, `aws_vpc_security_group_vpc_association`
+- `azurerm_monitor_data_collection_rule(+_association)`
+- `google_service_networking_connection`
+
+Plus `kubernetes_config_map_v1_data` (+ non-v1 sibling) → `UTILITY_TYPES`
+(kubernetes provider, not cloud IaC — silently skipped, not surfaced).
+
+**Heads-up for consumers:** repos using these types will see fewer `ungoverned`
+entries (coverage-telemetry improvement — no new violations).
+
+### No spec DSL API changes
+
+No new condition kinds, no new builder methods. 144 rules across 8 presets
+unchanged; consumers need not change anything.
+
+### Tests
+
+800 unit + 40 integration, 0 regressions. Dogfood round 11 (9 repos, 3 clouds)
+confirmed 0 false positives on v1.9.30; these follow-ups dropped GKE CNE 15→3
+and cleared the round's remaining ungoverned noise.
+
 ## 1.9.30
 
 Feature — **org-profile example specs + round-11 vocabulary expansion**.
