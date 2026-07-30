@@ -21,6 +21,8 @@ export interface Violation {
   readonly file: string
   readonly line: number
   readonly approvers?: string[]
+  /** Extra context (e.g. the graph reference chain for denyIfReachable). */
+  readonly detail?: string
 }
 
 export interface Unevaluable {
@@ -286,11 +288,12 @@ const ROUTING_ATTRS = new Set([
   'vpc_endpoint_id',
 ])
 
-/** Attributes whose reference edges represent SECURITY-GROUP attachments. */
+/** Security attrs — including Azure NSG attachment. */
 const SECURITY_ATTRS = new Set([
   'security_groups',
   'vpc_security_group_ids',
   'security_group_ids',
+  'network_security_group_id',
 ])
 
 /** Attributes whose reference edges represent KMS/encryption configuration. */
@@ -336,14 +339,21 @@ export interface ReachResult {
  * separately (same pattern as the association index). See doc 10.
  */
 export interface ResourceGraph {
-  /** BFS: can `start` reach any resource of `targetType`?
-   *  `edgeTypes` filters which edges to follow (default: all). */
+  /** BFS: can `start` reach any resource of `targetType`? */
   canReach(
     start: string,
     targetType: string,
     direction: 'forward' | 'reverse' | 'both',
     edgeTypes?: readonly EdgeType[],
   ): ReachResult
+  /** BFS: the edge chain from `start` to the first `targetType` found.
+   *  Returns null if not reachable. For violation detail. */
+  pathTo(
+    start: string,
+    targetType: string,
+    direction: 'forward' | 'reverse' | 'both',
+    edgeTypes?: readonly EdgeType[],
+  ): GraphEdge[] | null
   /** Does `start` share a `sharedType` resource with any `otherType` resource? */
   sharedWith(start: string, sharedType: string, otherType: string): ReachResult
   /** BFS: can `start` reach a `targetType` whose `attr` is in `values`? */
@@ -508,7 +518,53 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     return { reachable: false }
   }
 
-  return { canReach, sharedWith, reachableAttr }
+  /** BFS: the edge chain from `start` to the first `targetType` found.
+   *  Returns null if not reachable. Uses parent-tracking for shortest-path
+   *  reconstruction. For violation detail ("here's the chain that makes
+   *  this resource public"). */
+  const pathTo = (
+    start: string,
+    targetType: string,
+    direction: 'forward' | 'reverse' | 'both',
+    edgeTypes?: readonly EdgeType[],
+  ): GraphEdge[] | null => {
+    const allow = (et: EdgeType) => !edgeTypes || edgeTypes.includes(et)
+    if (nodeTypes.get(start) === targetType) return []
+    const visited = new Set<string>([start])
+    const parent = new Map<string, { edge: GraphEdge; from: string }>()
+    const queue: string[] = [start]
+    while (queue.length > 0) {
+      const addr = queue.shift()!
+      type N = { addr: string; edge: GraphEdge }
+      const neighbors: N[] = []
+      if (direction !== 'reverse')
+        for (const e of forward.get(addr) ?? [])
+          if (allow(e.edgeType)) neighbors.push({ addr: e.to, edge: e })
+      if (direction !== 'forward')
+        for (const e of reverse.get(addr) ?? [])
+          if (allow(e.edgeType)) neighbors.push({ addr: e.from, edge: e })
+      for (const { addr: n, edge } of neighbors) {
+        if (visited.has(n)) continue
+        visited.add(n)
+        parent.set(n, { edge, from: addr })
+        if (nodeTypes.get(n) === targetType) {
+          const path: GraphEdge[] = []
+          let cur = n
+          while (cur !== start) {
+            const p = parent.get(cur)
+            if (!p) break
+            path.unshift(p.edge)
+            cur = p.from
+          }
+          return path
+        }
+        queue.push(n)
+      }
+    }
+    return null
+  }
+
+  return { canReach, pathTo, sharedWith, reachableAttr }
 }
 
 const assertNever = (x: never): never => {
@@ -1853,6 +1909,32 @@ function evalDenyNonApprovedRegion(
  * majority of real-world cases. A future refinement will track conditional
  * edges for honest CNE on partially-resolved chains (doc 10 §degradation).
  */
+
+/** Format a graph edge chain into a readable string for violation detail.
+ *  E.g. "db.subnet_id → aws_subnet.public ←(subnet_id) rta →(route_table_id) rt →(gateway_id) igw" */
+const cleanAddr = (addr: string): string => {
+  const seg = addr.includes('\0') ? addr.split('\0')[1] : addr
+  return seg ?? addr
+}
+
+function formatPath(start: string, path: readonly GraphEdge[]): string {
+  if (path.length === 0) return cleanAddr(start)
+  const parts: string[] = [cleanAddr(start)]
+  let current = start
+  for (const edge of path) {
+    if (edge.from === current) {
+      parts.push(`(${edge.via}) →`)
+      parts.push(cleanAddr(edge.to))
+      current = edge.to
+    } else {
+      parts.push(`←(${edge.via})`)
+      parts.push(cleanAddr(edge.from))
+      current = edge.from
+    }
+  }
+  return parts.join(' ')
+}
+
 function evalDenyIfReachable(
   c: DenyIfReachable,
   r: NormalizedResource,
@@ -1866,9 +1948,13 @@ function evalDenyIfReachable(
     ['routing'],
   )
   if (result.reachable) {
+    const path = ctx.graph.pathTo(start, c.targetType, c.direction ?? 'both', [
+      'routing',
+    ])
+    const chain = path ? formatPath(start, path) : '(chain unavailable)'
     return {
       kind: 'violation',
-      detail: `reachable to ${c.targetType} via a reference chain — see the resource graph`,
+      detail: `reachable to ${c.targetType} via: ${chain}`,
     }
   }
   return { kind: 'pass' }
@@ -2081,6 +2167,7 @@ export function evaluate(
               file: resource.file,
               line: resource.line,
               approvers: rule.approvers,
+              detail: 'detail' in outcome ? outcome.detail : undefined,
             })
             break
           case 'cannotEvaluate':

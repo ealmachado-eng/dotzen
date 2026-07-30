@@ -67,6 +67,9 @@ describe('evaluate — denyIfReachable (graph condition)', () => {
     expect(r.violations).toHaveLength(1)
     expect(r.violations[0]?.resource).toBe('aws_db_instance.db')
     expect(r.violations[0]?.message).toMatch(/Internet Gateway/)
+    // The violation detail includes the reference chain (path detail).
+    expect(r.violations[0]?.detail).toMatch(/aws_subnet\.public/)
+    expect(r.violations[0]?.detail).toMatch(/aws_internet_gateway\.igw/)
   })
 
   it('passes when a DB is in a private subnet (routes via NAT, not IGW)', () => {

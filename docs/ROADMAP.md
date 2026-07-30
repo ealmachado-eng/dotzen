@@ -946,6 +946,34 @@ a strategic pivot — listed by category, not priority.
   - **Public-vs-private subnet classification** — `subnet → route_table_association → route → internet_gateway` (the documented skip under VPC/networking above). Unlocks "no DB / no IGW in a public subnet", prod-VPC isolation rules.
   - **Resource dependency chains** — e.g. "an SG attached to a public ALB must not be attached to a private DB", KMS-key-to-bucket provenance, load-balancer-to-target reachability.
   This is a v2 architectural decision (a graph index over `NormalizedResource[]`), not a rule. It adds a new condition family (`denyIfReachable`, `mustBeInPrivateSubnet`) and a build pass after normalize. Scope it as its own design doc before coding.
+  ✅ **DONE (v1.9.26–27).** Design doc `docs/specs/10-graph-layer.md`. Three
+  conditions shipped (`denyIfReachable`, `denyIfSharedWith`, `denyIfReachableAttr`)
+  with edge-type classification (routing/security/encryption/structural),
+  bidirectional BFS, module-scope isolation, violation path detail, and 3
+  preset rules (cis-aws ×2, data-protection ×1). 769 unit + 40 integration.
+
+  **Remaining graph-layer improvements (prioritized):**
+  - **Resource-type-aware edge classification** — `subnet_id` on a NAT
+    gateway is currently classified as `routing` (it IS a routing attr), but
+    semantically it's a deployment ref. Classify by attr name + resource type
+    to fix this remaining false-positive vector.
+  - **CNE for unresolved graph edges** — if a chain is partially unresolvable
+    (`subnet_id = var.x` no default), degrade to could-not-evaluate instead of
+    pass (closes the false-negative gap; doc 10 §degradation).
+  - **Violation path detail for denyIfSharedWith + denyIfReachableAttr** —
+    extend the `pathTo` chain display to those conditions (currently only
+    `denyIfReachable` shows the chain).
+  - **More routing attributes** — `peer_vpc_id`, `customer_gateway_id`,
+    `vpn_gateway_id`, `carrier_gateway_id`, `local_gateway_id`.
+  - **Azure graph conditions** — `network_security_group_id` is in the
+    SECURITY_ATTRS set (enables `denyIfSharedWith` for Azure NSGs). Azure's
+    subnet → route_table topology partially maps but has no IGW equivalent
+    (internet access is via public IP on the NIC, not a gateway resource).
+    Needs Azure-specific conditions (e.g. VM → NIC → public IP reachability).
+  - **GCP** — the graph model is less applicable (no per-resource SGs;
+    firewall rules are VPC-level; routing is implicit). GCP's public-access
+    controls are better served by existing per-resource conditions
+    (`denyBlockPresence` on `access_config`, `mustBeFalse` on `ipv4_enabled`).
 
 ### Adoption — output & integration (cheap, high-leverage)
 
