@@ -24,6 +24,12 @@
     {
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "description": "Block TS 7 until typescript-eslint supports it (typescript-eslint/typescript-eslint#10940). Remove this rule when the ecosystem catches up.",
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
