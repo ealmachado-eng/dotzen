@@ -37,10 +37,17 @@
 
 ## Known issues / gotchas (don't re-discover these)
 
+### Open issue
 - **Graph NAT false positive:** `subnet_id` on `aws_nat_gateway` is classified as `routing` (it IS a routing attr name), but semantically it's a deployment ref. Creates a false chain: private_DB → … → NAT → subnet_id → public_subnet → … → IGW. Fix: resource-type-aware edge classification (classify by attr name + resource type). The `vpc_id` false-positive was fixed by edge types (structural), but this one needs per-resource-type classification.
-- **Renovate `mode: silent`:** the Mend hosted app defaults to `mode: silent` (detects updates, populates dashboard, but doesn't auto-create PRs unless ticked). Check the Mend dashboard if "no PRs appear" — it may need a mode toggle.
+
+### Already fixed (don't re-introduce)
+- **Trusted publishing requires Node 24 (npm 11):** Node 20 / npm 10.x silently fails the OIDC token exchange → 404 "not in this registry." The `release.yml` uses `node-version: '24'`. Don't lower it.
+- **Renovate `mode: silent`:** the Mend hosted app defaulted to `mode: silent`. After config changes (`dependencyDashboardApproval: false`, `onboarding` removed, invalid `:pinDigests` preset removed), Renovate now auto-creates minor/patch PRs + gates majors. If "no PRs appear" in a future session, check the Mend dashboard — but the current config works.
+
+### Permanent facts (not bugs)
 - **npm no-republish:** once a version number is published (even if unpublished), npm blocks republishing it. v1.9.24 was skipped for this reason. Always use a fresh version number after any publish.
-- **Trusted publishing requires Node 24 (npm 11):** Node 20 / npm 10.x silently fails the OIDC token exchange → 404 "not in this registry." The release.yml uses `node-version: '24'`.
+
+### Process reminders
 - **check-docs gate:** `npm run check-docs` regenerates + diffs the rule catalog. After ANY preset change, run `npm run gen-docs` + commit the output, or the gate fails.
 - **`.gitlab-ci.yml` was removed** (dead after migration). Don't recreate it.
 
