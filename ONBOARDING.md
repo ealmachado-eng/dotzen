@@ -12,7 +12,7 @@ _Last updated: 2026-07-10, at published version **0.1.2**._
 ## 0. TL;DR — get running in 5 steps
 
 ```bash
-git clone https://gitlab.com/governance-tools/dotzen.git
+git clone https://github.com/ealmachado-eng/dotzen.git
 cd dotzen/packages/cli
 npm install                 # NOT `npm ci` — see §3
 npm run typecheck && npm run lint && npx vitest run && npm run build   # gate: all green (217 tests)
@@ -38,7 +38,7 @@ architectural change).
 
 - **Published:** `@dotzen/dotzen@0.1.2` is npm `latest`. `package.json`
   version = `0.1.2` and **matches npm**.
-- **Repo:** `gitlab.com/governance-tools/dotzen`. `main` is fully synced and
+- **Repo:** `github.com/ealmachado-eng/dotzen`. `main` is fully synced and
   contains everything below. Just clone it.
 - **Coverage:** three clouds at CIS-L1 (AWS deepest; Azure + GCP slices),
   ~24 conditions, multi-root + per-environment scoping, `dotzen init`
@@ -76,7 +76,7 @@ architectural change).
 
 The gate also runs as three **parallel subagents** (`.claude/agents/`):
 `test-runner`, `code-quality`, `security-scan`. A feature is not done until
-all three pass and CI is green (`.gitlab-ci.yml`).
+all three pass and CI is green (`.github/workflows/ci.yml`).
 
 ## 5. Non-negotiable invariants — READ BEFORE WRITING CODE
 

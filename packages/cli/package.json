@@ -1,6 +1,6 @@
 {
   "name": "@dotzen/dotzen",
-  "version": "1.9.23",
+  "version": "1.9.24",
   "description": "Prose as Code — governance for AI-generated Terraform (AWS, Azure, GCP).",
   "license": "MIT",
   "keywords": [
@@ -18,12 +18,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/governance-tools/dotzen.git",
+    "url": "git+https://github.com/ealmachado-eng/dotzen.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://gitlab.com/governance-tools/dotzen#readme",
+  "homepage": "https://github.com/ealmachado-eng/dotzen#readme",
   "bugs": {
-    "url": "https://gitlab.com/governance-tools/dotzen/-/issues"
+    "url": "https://github.com/ealmachado-eng/dotzen/issues"
   },
   "bin": {
     "dotzen": "./bin/dotzen.js"

@@ -45,7 +45,7 @@ function engineInfo(): { version: string; informationUri: string } {
   return {
     version: j.version,
     // homepage points at the canonical docs/repo page (package.json homepage).
-    informationUri: j.homepage ?? 'https://gitlab.com/governance-tools/dotzen',
+    informationUri: j.homepage ?? 'https://github.com/ealmachado-eng/dotzen',
   }
 }
 

@@ -1,0 +1,102 @@
+# dotzen CI — the non-bypassable quality/security gate (doc 07).
+# Mirrors the local subagents (test-runner, code-quality, security-scan)
+# with the SAME tools, so local and CI never disagree.
+#
+# Public repo → GitHub grants unlimited Actions minutes, so the full gate
+# runs on every push and PR at no cost. (Self-hosting is optional — see
+# docs/dev/setup-runner.md.) The publish flow lives in release.yml.
+#
+# Two `auto` community rules are excluded as semgrep false positives for a
+# LOCAL, file-processing CLI (there is no server / privilege boundary):
+#  - path-join-resolve-traversal: dotzen reads the developer's own Terraform
+#    at developer-supplied paths — intended behavior, not a traversal vuln.
+#  - detect-non-literal-regexp: the only dynamic regexes are built from
+#    escapeRegExp()-escaped input / fixed iterator names (ReDoS-safe; they
+#    carry eslint-disable justifications in the source).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+# Cancel superseded runs on the same ref (free-tier courtesy).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── test + code-quality (mirrors the test-runner + code-quality agents) ──
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+      # `npm install`, NOT `npm ci` — the test toolchain (vitest → vite →
+      # rolldown) ships platform-specific optional native bindings whose
+      # transitive @emnapi versions resolve differently on Linux than in a
+      # lockfile generated on another OS, which can make `npm ci` reject an
+      # otherwise-valid lock. `npm install` honors the committed lock but
+      # tolerates that per-platform optional resolution. The lock stays the
+      # source of truth. (Prod deps — @cdktf/hcl2json, jiti — are unaffected.)
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run coverage
+      # Rule-doc freshness: docs/user/reference/rules/ must match gen-docs
+      # output. A preset change without regenerating blocks the gate.
+      - run: npm run check-docs
+
+  # ── security-scan agent's tools, run authoritatively ──
+  audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+      - run: npm install --no-audit --no-fund
+      - run: npm audit --audit-level=high
+
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Run the raw semgrep CLI (not the semgrep-action) so the command is
+      # byte-for-byte identical to the local subagent invocation — the core
+      # gate principle (local and CI never disagree).
+      - run: pipx install semgrep
+      - name: semgrep scan
+        run: |
+          semgrep scan --config auto --error \
+            --exclude-rule javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal \
+            --exclude-rule javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp \
+            packages/cli/src
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — gitleaks scans the whole repo
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config-path: .gitleaks.toml

@@ -1,6 +1,6 @@
 ---
 name: dotzen-release
-description: Use this skill when cutting a new dotzen release, publishing to npm, writing or modifying the release CI pipeline, bumping the engine version, or updating the CHANGELOG. Triggers on requests like "release a new version", "publish to npm", "bump the version", "set up the release pipeline", or edits to the release jobs in .gitlab-ci.yml. (dotzen ships no native binary — the parser is the @cdktf/hcl2json WASM dep — so there is no Go build or macOS signing to do.)
+description: Use this skill when cutting a new dotzen release, publishing to npm, writing or modifying the release CI pipeline, bumping the engine version, or updating the CHANGELOG. Triggers on requests like "release a new version", "publish to npm", "bump the version", "set up the release pipeline", or edits to the release jobs in .github/workflows/release.yml. (dotzen ships no native binary — the parser is the @cdktf/hcl2json WASM dep — so there is no Go build or macOS signing to do.)
 ---
 
 # dotzen Release Engineering
@@ -65,7 +65,7 @@ package (which blocks consumers).
    and re-run the gate. The `check-docs` step (added with the v1.9.23
    user-docs set) fails if a preset changed without regenerating the
    rule catalog — fix with `npm run gen-docs`, stage the result, re-run.
-   It is also wired into `.gitlab-ci.yml` `.test` so CI is the
+   It is also wired into `.github/workflows/ci.yml` so CI is the
    non-bypassable backstop.
 7. **Commit the release prep** (version bump + CHANGELOG + ROADMAP +
    any formatting fixes). If formatting fixes land in a *separate*
@@ -96,14 +96,15 @@ release commit after pushing), `--force` the tag:
 git push origin v<version> --force
 ```
 
-Caveat: if `v*` is a **protected tag** in GitLab (Settings → Repository →
-Protected tags), `--force` is rejected. Either temporarily unprotect the
-pattern, or delete + recreate the remote tag:
+Caveat: if `v*` is a **protected tag** in GitHub (Settings → Tags → tag
+protection rule), force-push/move is restricted. Either temporarily remove
+the protection rule, or delete + recreate the remote tag:
 ```bash
 git push origin :refs/tags/v<version>   # delete remote
 git push origin v<version>              # recreate at the new commit
 ```
-Then re-protect the pattern.
+Then re-add the protection rule. (GitLab's old "protected tag" concept —
+`Settings → Repository → Protected tags` — no longer applies post-migration.)
 
 ## The version-bump is also a documentation update
 
@@ -117,7 +118,7 @@ change. Cross-check:
   concrete example version appears anywhere, check it isn't now
   misleadingly stale.
 
-## Release CI pipeline shape (GitLab CI)
+## Release CI pipeline shape (GitHub Actions)
 
 dotzen ships **no native binary** — the HCL parser is the pure-JS
 `@cdktf/hcl2json` WASM dependency (ADR §2a). A release is therefore just:
@@ -126,56 +127,68 @@ matrix and no macOS signing/notarization** — earlier drafts had those; they
 are obsolete and must not be reintroduced (see ADR §2a before ever adding
 a native binary).
 
-The publish job uses **npm Trusted Publishing (OIDC)** — no stored
-`NPM_TOKEN`. npm exchanges a GitLab OIDC ID token for a short-lived
-publish token at publish time. The current job in `.gitlab-ci.yml`:
+The publish workflow uses **npm Trusted Publishing (OIDC)** — no stored
+`NPM_TOKEN`. npm exchanges the GitHub Actions OIDC token for a short-lived
+publish token at publish time. The current workflow in
+`.github/workflows/release.yml`:
 
 ```yaml
-# .gitlab-ci.yml — release stage (actual current shape; keep in sync)
-publish:
-  stage: release
-  extends: .node
-  image: node:24-bookworm # npm 11.x for trusted publishing (Node 20's npm 10.x is too old)
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v/' # only on vX.Y.Z tags
-  id_tokens:
-    NPM_ID_TOKEN:
-      aud: "npm:registry.npmjs.org" # exchanged for a short-lived publish token
-  script:
-    - npm run build
-    # No --provenance: the source repo is private on GitLab, and sigstore
-    # provenance bundles require a public source repo (npm E422 otherwise).
-    # Trusted-publishing OIDC auth still works without provenance.
-    - npm publish --access public
+# .github/workflows/release.yml — release (actual current shape; keep in sync)
+name: release
+on:
+  push:
+    tags: ['v*']                # only on vX.Y.Z tags
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write           # REQUIRED for npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'          # npm 10.x is fine on GitHub (trusted
+                                       # publishing works without --provenance)
+          cache: npm
+          cache-dependency-path: packages/cli/package-lock.json
+      - run: npm ci
+        working-directory: packages/cli
+      - run: npm run build
+        working-directory: packages/cli
+      # The repo is PUBLIC on GitHub → sigstore provenance works (was E422 on
+      # the old private GitLab repo). Keep --provenance so the npm page shows
+      # the attestation.
+      - run: npm publish --access public --provenance
+        working-directory: packages/cli
 ```
 
-Notes (each is a real failure mode hit during v0.2.0 — do not relearn):
+Notes (each is a real failure mode — do not relearn):
 - **Trusted Publisher must be configured on npmjs.com** (Package → Settings →
-  Trusted publishing): namespace=`governance-tools`, project=`dotzen`,
-  top-level CI file=`.gitlab-ci.yml`, allowed action=`npm publish`. npm
-  does **not** validate these fields when you save them — a mismatch only
-  surfaces at publish time as `ENEEDAUTH`. Re-verify before each release
-  if anyone touched the repo path or CI filename.
-- **Node 24, not Node 20.** Trusted publishing requires npm CLI ≥11.5.1;
-  Node 20 ships npm 10.x (too old — publish fails auth). The publish job
-  overrides the default `.node` image (`node:20-bookworm`) to
-  `node:24-bookworm`. The test/security jobs stay on Node 20 (unchanged).
+  Trusted publishing): repository owner=`ealmachado-eng`, name=`dotzen`,
+  workflow filename=`release.yml`, allowed action=`npm publish`. npm does
+  **not** validate these fields when you save them — a mismatch only
+  surfaces at publish time as `ENEEDAUTH`. Re-verify before each release if
+  anyone touched the repo path or workflow filename.
+- **`permissions: id-token: write` is mandatory.** Without it the OIDC token
+  isn't issued and `npm publish` fails auth. The `contents: read` is for
+  checkout. Do not broaden to `write-all`.
 - **No `NPM_TOKEN` / `.npmrc` write.** The old stored-token path wrote
   `//registry.npmjs.org/:_authToken=${NPM_TOKEN}` to `~/.npmrc`. With
-  trusted publishing there is no token variable — that line writes a
-  blank `_authToken`, which npm rejects with `ENEEDAUTH`. Do not
-  reintroduce it.
-- **No `--provenance` while the repo is private.** sigstore provenance
-  bundles require a **public** source repo; a private GitLab repo fails
-  sigstore verify with `E422 ... Unsupported GitLab CI source repository
-  visibility: "private"`. OIDC publish itself is unaffected — only the
-  provenance attestation is skipped. When the repo is made public,
-  restore `--provenance` and add a `SIGSTORE_ID_TOKEN` (`aud: sigstore`)
-  to `id_tokens` to get provenance attestations on the npm page.
-- **GitLab.com shared runners only.** Trusted publishing does not support
-  self-hosted runners. The `green-*` SaaS runners are fine.
+  trusted publishing there is no token variable — that line writes a blank
+  `_authToken`, which npm rejects with `ENEEDAUTH`. Do not reintroduce it.
+- **Provenance now works (public repo).** The repo moved from a private
+  GitLab repo (provenance E422-blocked) to a **public** GitHub repo, so
+  `--provenance` is on and the npm page gets the sigstore attestation from
+  `v1.9.24` onward. Past releases (v1.9.1–v1.9.23) keep their pre-provenance
+  state on npm — attestation is not retroactive.
+- **`v*` tag triggers it.** Pushing a `vX.Y.Z` tag fires `release.yml`. Works
+  on hosted runners (`ubuntu-latest`) AND self-hosted runners — unlike
+  GitLab (where trusted publishing was shared-runner-only). See
+  `docs/dev/setup-runner.md`.
 - **Tag = version.** The `v*` tag must match `package.json`. Never publish
   from an untagged or dirty tree.
+
 
 ## No binary to build (was: cross-compilation note)
 

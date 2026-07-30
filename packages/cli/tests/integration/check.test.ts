@@ -777,7 +777,7 @@ describe('check (end-to-end)', () => {
     const doc = JSON.parse(
       renderSarif(r.value, {
         version: '0.0.1',
-        informationUri: 'https://gitlab.com/governance-tools/dotzen',
+        informationUri: 'https://github.com/ealmachado-eng/dotzen',
       }),
     ) as {
       version: string

@@ -6,6 +6,28 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.24
+
+Meta — the project moved from **GitLab to GitHub** (`github.com/ealmachado-eng/dotzen`, public). No engine, DSL, or rule change for consumers; the package behaves identically. The move unblocks two operational wins and re-homes the CI:
+
+### Changed — repository home + CI
+
+- **Canonical repo** is now `github.com/ealmachado-eng/dotzen` (was `gitlab.com/governance-tools/dotzen`). `package.json` (`repository`/`homepage`/`bugs`), the README Docs links, the CLI's SARIF `informationUri`, and the onboarding/skill docs all point at GitHub. The GitLab repo is archived (read-only) after this release publishes from GitHub.
+- **CI** moved from `.gitlab-ci.yml` (GitLab CI) to `.github/workflows/` (GitHub Actions): `ci.yml` (the test/security gate — typecheck, lint, format, test, integration, coverage, check-docs, npm-audit, semgrep, gitleaks) and `release.yml` (publish on `v*` tags). The `.gitlab-ci.yml` file is kept in-tree as a historical reference; the consumer-facing CI templates (`src/templates/ci-templates.ts`) still ship both GitHub Actions + GitLab CI for consumers.
+- **npm trusted publishing** reconfigured for GitHub: the publish workflow uses GitHub OIDC (`permissions: id-token: write`) instead of the GitLab OIDC `id_tokens` block. No stored `NPM_TOKEN` either way.
+
+### Added — npm provenance (was blocked on GitLab)
+
+`release.yml` runs `npm publish --provenance`. The repo is now **public**, so sigstore provenance attestations land on the npm page from **v1.9.24 onward**. (On the private GitLab repo, `--provenance` failed with `E422 … private source repository` and was skipped — OIDC publish itself worked, but without the attestation.) Past releases (v1.9.1–v1.9.23) keep their pre-provenance state on npm; provenance is not retroactive.
+
+### Renovate
+
+`renovate.json` swapped the `gitlabci` manager → `github-actions` (now pins/bumps Action SHAs instead of CI image digests). Install the Renovate GitHub App to resume automated dependency + Action bumps.
+
+### No consumer action required
+
+`npx @dotzen/dotzen check` is unchanged. Specs, presets, output formats, and exit codes are identical. The only consumer-visible difference is the npm page now shows provenance attestations on new releases.
+
 ## 1.9.23
 
 Fix — correct two SARIF schema-validity bugs in v1.9.22's `--format sarif`

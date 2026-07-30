@@ -1,146 +1,89 @@
-# Self-host a GitLab runner (unlimited CI minutes)
+# Self-host a GitHub Actions runner (optional)
 
-> **Audience:** the project maintainer. The `governance-tools` namespace shares a finite pool of free GitLab.com runner minutes (400/qtr). When it runs out, **no pipelines run** — including the `publish` job on a release tag. Self-hosting a runner gives the test/security gate **unlimited minutes**, for free, on any always-on machine (your Mac mini, a VPS, a home server).
+> **Audience:** the project maintainer. **On a public repo you do NOT need this** — GitHub grants public repos unlimited hosted-Actions minutes, so the free tier is already uncapped. This guide is only relevant if you (a) take the repo private later (private = 2,000 min/mo), or (b) want to offload CI onto your own hardware for speed/cost. It replaces the earlier GitLab-runner guide after the repo migrated to GitHub.
 
-## The one critical constraint — `publish` must stay on shared
+## When you'd actually self-host on GitHub
 
-npm **trusted publishing (OIDC)** — which dotzen uses to publish *without* a stored `NPM_TOKEN` — works **only on GitLab.com shared runners**. npm rejects the OIDC token from a self-hosted runner. (Confirmed in `.claude/skills/dotzen-release/SKILL.md`.) So:
+| Situation | Self-host? |
+|---|---|
+| Public repo (current) | **No** — unlimited hosted minutes; provenance works on hosted runners. Skip this doc. |
+| Repo goes private | Optional — 2,000 hosted min/mo may still be plenty; self-host if you exceed it. |
+| You want faster/heavier CI on your own hardware | Yes — runs on your machine, no queue, no minute counting. |
 
-| Job | Runs on | Why |
-|---|---|---|
-| `test:linux`, `audit`, `semgrep`, `gitleaks` | **self-hosted runner** (tagged `local`) | The bulk of compute — runs on every push/MR/tag. Unlimited minutes here is the whole win. |
-| `publish` | **shared runner** (untagged) | Trusted-publishing OIDC needs a GitLab.com runner. Only runs on `v*` tags → costs ~1–2 min/release. Sustainable on the free quota. |
-
-So you get unlimited gate runs (the 99% of compute) and spend shared minutes only on releases (a few/year). 400/qtr is plenty for the publish job alone.
+Unlike GitLab (where npm trusted publishing only worked on shared runners), **GitHub trusted publishing works on self-hosted runners too** — so there's no hybrid split: every job, including `publish`, can run on a self-hosted runner.
 
 ## Prerequisites (on the host machine)
 
-- **An always-on machine** — the runner only works while the machine is up. A Mac mini / NUC / $5 VPS all work. (If it's your dev Mac mini, that's ideal.)
-- **Docker** — the gate jobs declare `image:` (`node:20-bookworm`, `semgrep/semgrep`, `zricethezav/gitleaks`), so the runner uses the **docker executor**. Install Docker Desktop or [colima](https://github.com/abiosoft/colima):
-  ```bash
-  brew install --cask docker          # Docker Desktop
-  # OR, lighter:
-  brew install colima && colima start
-  docker run --rm hello-world         # verify
-  ```
-- **gitlab-runner** — the agent:
-  ```bash
-  brew install gitlab-runner
-  ```
+- **An always-on machine** — the runner only polls while it's up. A Mac mini, a NUC, or a Linux VPS all work.
+- **The machine's OS/arch** must match the jobs you'll route there. `runs-on: self-hosted` accepts any OS; add OS labels (`ubuntu`, `macos`) if jobs assume one.
+- **Docker** — if you route container-based jobs to the runner. (dotzen's jobs run Node directly via `actions/setup-node`, so Docker is optional.)
 
-## Register the runner (project-scoped, docker executor)
+## Register the runner (project-scoped)
 
-1. **Create the runner token in GitLab** (the UI is the source of truth — the path moves):
-   - Project → **Settings → CI/CD → Runners**, click **New project runner**.
-   - Tags: **`local`** (required — the gate jobs will select this runner by tag).
-   - Tick **Run untagged jobs? = No** (the runner only takes jobs asking for `local`; `publish` stays untagged → stays on shared).
-   - Untick **Locked to current project** only if you'll reuse it across the namespace.
-   - Submit, copy the **authentication token** GitLab prints (starts with `glrt-`).
+GitHub generates the exact commands per OS — these are the shape:
 
-2. **Register it on the host:**
+1. **Repo → Settings → Actions → Runners → New self-hosted runner** → pick OS/arch.
+2. GitHub prints a download URL, a **registration token** (short-lived), and the config command. Run them on the host:
    ```bash
-   gitlab-runner register \
-     --url https://gitlab.com \
-     --token glrt-XXXXXXXXXXXXXXXX \
-     --name "mac-mini-local" \
-     --executor docker \
-     --docker-image "node:20-bookworm" \
-     --tag-list local
+   # Linux x64 example (GitHub gives you the exact tarball + token):
+   mkdir actions-runner && cd actions-runner
+   curl -o actions-runner-linux-x64-<ver>.tar.gz -L <github-url>
+   tar xzf actions-runner-linux-x64-<ver>.tar.gz
+   ./config.sh --url https://github.com/ealmachado-eng/dotzen --token <TOKEN> \
+     --name "mac-mini" --labels "self-hosted,linux" --unattended
    ```
-   The `--docker-image` is the default; each job's own `image:` overrides it. `--tag-list local` is the tag the gate jobs will request.
-
-3. **Verify registration** — the runner shows **online (green)** in Project → Settings → CI/CD → Runners ("Assign project runners").
+   macOS uses `actions-runner-osx-x64-<ver>.tar.gz`; the flow is identical.
+3. **Verify** — the runner shows **Idle (green)** under Settings → Actions → Runners.
 
 ## Run it as a service (auto-start on boot)
 
 ```bash
-brew services start gitlab-runner
+sudo ./svc.sh install "$USER"   # install as a launchd/systemd service
+sudo ./svc.sh start             # start now + on boot
+sudo ./svc.sh status            # verify
 ```
 
-`brew services` launches it now and on every login. Verify:
-```bash
-gitlab-runner status        # => service is running
-gitlab-runner verify        # => is alive
-```
+On macOS the runner installs a launchd agent via `svc.sh` ( survives reboot, runs as your user).
 
-On Linux hosts (VPS), the equivalent is `systemctl enable --now gitlab-runner` (install via the [official repo](https://docs.gitlab.com/runner/install/linux-repository/)).
+## Route jobs to it
 
-## Point the gate jobs at the self-hosted runner
-
-Edit `.gitlab-ci.yml` — tag the four gate jobs `local`. **`publish` stays untagged.** The minimal change is a `tags: [local]` line on each:
+In `.github/workflows/ci.yml` (and/or `release.yml`), set `runs-on`:
 
 ```yaml
-# Gate jobs → self-hosted (unlimited minutes)
-test:linux:
-  extends: .test
-  tags: [local]                              # ← add
-  rules: !reference [.default_rules, rules]
-
-audit:
-  extends: .node
-  stage: security
-  tags: [local]                              # ← add
-  rules: !reference [.default_rules, rules]
-  script:
-    - npm audit --audit-level=high
-
-semgrep:
-  stage: security
-  image: semgrep/semgrep:latest
-  tags: [local]                              # ← add
-  # …rest unchanged
-
-gitleaks:
-  stage: security
-  image: { name: zricethezav/gitleaks:latest, entrypoint: [''] }
-  tags: [local]                              # ← add
-  # …rest unchanged
-
-# publish stays UNTAGGED → runs on a GitLab.com shared runner (trusted-publishing OIDC).
-publish:
-  stage: release
-  extends: .node
-  image: node:24-bookworm
-  rules: [ { if: '$CI_COMMIT_TAG =~ /^v/' } ]
-  # …rest unchanged — NO tags: line
+jobs:
+  test:
+    runs-on: self-hosted          # any self-hosted runner
+    # OR pin by label:
+    # runs-on: [self-hosted, linux]
+    steps: …
 ```
 
-> **Ordering matters (chicken-and-egg):** register the runner and confirm it's **online** *before* pushing this `.gitlab-ci.yml` change. Otherwise the gate jobs have nowhere to run and CI goes red until the runner appears. (Shared `publish` is unaffected — it has no tag.)
-
-> **Don't tag the `.test` template itself** — that template is also `extends`-ed by `test:windows`/`test:macos` (the cross-OS jobs gated behind `ENABLE_CROSS_OS`), which must stay on GitLab SaaS runners. Put the `tags: [local]` on the concrete `test:linux` job, not the template.
+Leave a job on hosted runners by keeping `runs-on: ubuntu-latest` — GitHub routes hosted `runs-on` values to its cloud, self-hosted labels to your machine. You can mix freely (e.g. test on `self-hosted`, publish on `ubuntu-latest`).
 
 ## Verify end-to-end
 
-Push any commit and watch the pipeline:
+Push any commit; the routed job's log opens with:
 
-```bash
-git commit --allow-empty -m "ci: verify self-hosted runner" && git push
-glab ci list
+```
+Self-hosted runner: mac-mini
+…
 ```
 
-In the pipeline view, each gate job's log should open with:
-```
-Running on runner-… (mac-mini-local) via mac-mini…
-```
-— the `via mac-mini…` (your host name) confirms it's on your self-hosted runner, **not** a `green-*` shared runner. The `publish` job (if you pushed a tag) still lands on a shared runner.
-
-You can confirm minutes are no longer being spent: Project → **Settings → Usage Quotas → CI/CD** — the "shared runner compute minutes" line should stop climbing for push/MR pipelines.
+Confirm under Settings → Billing → Actions that hosted-minutes stop climbing for jobs routed to `self-hosted`.
 
 ## Ops notes
 
-- **The host must be up** for CI to run. If your Mac mini sleeps, either prevent sleep during CI (`caffeinate`) or accept that pipelines queue until wake. (A VPS avoids this entirely.)
-- **Keep Docker running** — the docker executor pulls images on demand; if Docker isn't up, jobs fail with a docker-daemon error.
-- **Update the runner periodically** — `brew upgrade gitlab-runner && brew services restart gitlab-runner`. GitLab ships a new runner ~monthly; staying within one major avoids compatibility surprises.
-- **Image cache** — the first run pulls `node:20-bookworm` / `semgrep` / `gitleaks` (a few hundred MB each). Subsequent runs reuse them; only `npm install` per job. Cache is already configured for `node_modules/` (`.node.cache` in `.gitlab-ci.yml`).
-- **What if the host is offline when you push a tag?** The gate jobs stay `pending` until the runner reconnects. `publish` (on shared) runs independently once its gate siblings complete — so if the host is down, the whole pipeline stalls, including publish. Keep the host reachable around releases.
-- **Don't run untrusted pipelines on a self-hosted runner without isolation.** This is fine for a solo/private repo (you control the `.gitlab-ci.yml`). For a public project, lock the runner to protected branches/tags only (Settings → CI/CD → Runners → "Protected" toggle) and keep `npm install`-from-lock discipline.
+- **The host must be up** for self-hosted jobs to run; they queue (`queued`) until the runner reconnects. Prevent sleep on a Mac host: `sudo pmset -a sleep 0` (server mode) is cleaner than `caffeinate`.
+- **Keep the runner current** — GitHub ships a new runner ~monthly; it auto-updates by default, but restart after major bumps.
+- **Security (public repo)** — GitHub does **not** run workflows from forked PRs on self-hosted runners by default (safe). For your own branches, only run trusted workflows (you control `.github/workflows/`).
+- **If the host is offline** the job stays queued; hosted-runner jobs are unaffected. Keep the host reachable around releases if `release.yml` routes there.
 
-## Why not just self-host everything (including publish)?
+## Why this is optional now (vs the old GitLab constraint)
 
-You could — but it means **abandoning trusted publishing** for a stored `NPM_TOKEN` CI variable, re-introducing the secret-rotation/leak surface the project deliberately removed. The hybrid (self-hosted gate + shared publish) keeps zero-stored-secrets publishing *and* unlimited gate minutes. It's strictly better until/unless npm extends trusted publishing to self-hosted runners.
+On GitLab, npm trusted publishing worked **only** on shared runners — so the original guide split gate jobs to a self-hosted runner and kept `publish` on shared (the "hybrid" dance). **GitHub has no such constraint**: trusted publishing (OIDC) works on hosted *and* self-hosted runners. With a public repo you get unlimited hosted minutes anyway, so self-hosting is a pure opt-in for cost/speed — not an escape hatch.
 
 ## See also
 
-- `.gitlab-ci.yml` — the pipeline definition (the `tags` edits live here).
-- `.claude/skills/dotzen-release/SKILL.md` — the trusted-publishing constraint (why `publish` stays shared).
-- GitLab docs: [register a runner](https://docs.gitlab.com/runner/register/), [docker executor](https://docs.gitlab.com/runner/executors/docker.html).
+- `.github/workflows/ci.yml`, `.github/workflows/release.yml` — the workflow definitions (`runs-on` lives here).
+- `.claude/skills/dotzen-release/SKILL.md` — the trusted-publishing flow on GitHub.
+- GitHub docs: [self-hosted runners](https://docs.github.com/actions/hosting-your-own-runners).

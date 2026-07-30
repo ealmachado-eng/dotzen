@@ -3,7 +3,7 @@
 Status: **Decided.** This document defines *how dotzen itself is built*:
 test-driven development as the mandated authoring loop, and a standing
 quality/security gate that runs on every change — locally via Claude
-subagents for fast feedback, and in GitLab CI as the
+subagents for fast feedback, and in GitHub Actions as the
 non-bypassable gate. It complements `06-engine-architecture.md` (what to
 build) with *how to build it safely*.
 
@@ -68,7 +68,7 @@ surfaces and they run the **same** tools so local and CI never disagree:
 
 1. **Dev-time, via Claude subagents** — fast feedback inside the agentic
    loop (see "Subagent orchestration").
-2. **CI, via GitLab CI** — the authoritative, non-bypassable gate on
+2. **CI, via GitHub Actions** — the authoritative, non-bypassable gate on
    every push/MR (see "CI gate").
 
 ### The check categories and tools
@@ -122,70 +122,70 @@ A change is done only when **all** hold:
 
 1. Written test-first; red → green → refactor completed.
 2. `test-runner`, `code-quality`, and `security-scan` all PASS locally.
-3. The GitLab CI gate is green on the branch.
+3. The GitHub Actions CI gate is green on the branch.
 4. Any new rule condition or resource type ships its violating + passing
    fixtures (see Test layers).
 
-## CI gate (GitLab CI)
+## CI gate (GitHub Actions)
 
-The non-bypassable gate mirrors the subagents exactly. Linux is the
-guaranteed gate; **Windows + macOS parity jobs** (`03-distribution-and-cli.md`
-§"Cross-platform implementation notes") are gated behind an
-`ENABLE_CROSS_OS` variable because GitLab's cross-OS story differs from
-GitHub's — Windows/macOS need GitLab SaaS or self-hosted runners for those
-OSes, unlike GitHub's always-available runner matrix. The live pipeline is
-`.gitlab-ci.yml`:
+The non-bypassable gate mirrors the subagents exactly. Linux (`ubuntu-latest`)
+is the guaranteed gate; **Windows + macOS parity** (`03-distribution-and-cli.md`
+§"Cross-platform implementation notes") is a free native matrix on a public
+repo (or gated behind an `ENABLE_CROSS_OS` input if you want to keep it opt-in).
+The live pipeline is `.github/workflows/ci.yml`:
 
 ```yaml
-# .gitlab-ci.yml (abridged — see the file for the full version)
-stages: [test, security]
-default:
-  image: node:20-bookworm
-variables:
-  GIT_DEPTH: '0' # full history for gitleaks
+# .github/workflows/ci.yml (abridged — see the file for the full version)
+name: ci
+on:
+  push: { branches: [main], tags: ['v*'] }
+  pull_request:
 
-.node:
-  before_script: [cd packages/cli, npm install --no-audit --no-fund]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: packages/cli } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: npm, cache-dependency-path: packages/cli/package-lock.json }
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run coverage
+      - run: npm run check-docs      # rule-doc freshness
 
-test:linux:
-  extends: .node
-  stage: test
-  script:
-    - npm run typecheck
-    - npm run lint
-    - npm run format:check
-    - npm test
-    - npm run test:integration
-    - npm run coverage
+  # Cross-OS parity (Windows/macOS) is a free native matrix on a public repo;
+  # add `strategy: matrix: os: [ubuntu-latest, macos-latest, windows-latest]`
+  # if/when parity is wanted. Currently Linux-only.
 
-# test:windows / test:macos — same script, tagged for SaaS runners,
-# gated behind `rules: - if: '$ENABLE_CROSS_OS == "true"'`.
-
-audit:    { extends: .node, stage: security, script: [npm audit --audit-level=high] }
-semgrep:  { stage: security, image: semgrep/semgrep:latest, script: [semgrep scan --config auto --error packages/cli/src] }
-gitleaks: { stage: security, image: { name: zricethezav/gitleaks:latest, entrypoint: [''] }, script: [gitleaks detect --source . --no-banner --redact] }
+  audit:    { runs-on: ubuntu-latest, steps: [checkout, setup-node, npm install, npm audit --audit-level=high] }   # abridged
+  semgrep:  { runs-on: ubuntu-latest, steps: [checkout, pipx install semgrep, semgrep scan --config auto --error packages/cli/src] }  # abridged
+  gitleaks: { runs-on: ubuntu-latest, steps: [checkout (fetch-depth 0), gitleaks/gitleaks-action@v2] }  # abridged
 ```
 
-Node is pre-installed in the `node:20` image, so dependency install is the
-only setup step. **We use `npm install`, not `npm ci`** — the test toolchain
+`actions/setup-node` provides Node + an npm cache; dependency install is the
+only other setup step. **We use `npm install`, not `npm ci`** — the test toolchain
 (vitest → vite → rolldown) ships platform-specific optional native bindings
 whose transitive `@emnapi` versions resolve differently on the Linux runner
 than in a lockfile generated on another OS, which makes `npm ci` reject an
 otherwise-valid lock. `npm install` honors the committed lockfile (still the
 source of truth, still committed) but tolerates that per-platform optional
 resolution; the prod deps (`@cdktf/hcl2json`, `jiti`) are unaffected either
-way. **Images should be digest-pinned** — a governance tool should not float its own CI on mutable
-tags, mirroring the `dotzen.json` no-`@latest` principle. `renovate.json`
-is configured (`:pinDigests`, npm + `gitlabci` managers, grouped, weekly)
-to pin and bump both the CI image digests and the CLI dependencies — the
-GitLab equivalent of the old SHA-pinned Actions + Dependabot setup.
+way. **Actions should be digest-pinned** — a governance tool should not float
+its own CI on mutable tags, mirroring the `dotzen.json` no-`@latest` principle.
+`renovate.json` is configured (`:pinDigests`, npm + `github-actions` managers,
+grouped, weekly) to pin and bump both the Action SHAs and the CLI dependencies.
 
-> **GitLab-native alternative (not used).** The `Security/SAST.gitlab-ci.yml`
-> and `Security/Secret-Detection.gitlab-ci.yml` templates wrap semgrep +
-> gitleaks — the *same* tools this pipeline runs directly. We invoke the
-> raw tools so local subagents and CI stay byte-for-byte identical (the
-> core gate principle), but the templates are a valid swap if GitLab's
-> Security Dashboard integration becomes worth it.
+> **GitHub-native alternative (not used).** GitHub's code-scanning +
+> secret-scanning features wrap semgrep + gitleaks — the *same* tools this
+> pipeline runs directly. We invoke the raw tools so local subagents and CI
+> stay byte-for-byte identical (the core gate principle), but the native
+> integrations are a valid swap if the GitHub Security tab integration
+> becomes worth it.
 >
 > **osv-scanner is intentionally not wired into CI.** Its differentiated
 > value is polyglot repos; dotzen is npm-only, so it would duplicate

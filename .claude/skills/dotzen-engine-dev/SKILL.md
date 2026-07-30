@@ -154,7 +154,7 @@ the three subagents in `.claude/agents/` — `test-runner`, `code-quality`,
 `security-scan` — **in parallel** in one message, and do not mark the
 work complete until all three PASS. A check that could not run is a
 failure, never a silent pass (the same principle as the engine's
-`couldNotEvaluate`). CI (`.gitlab-ci.yml`, GitLab CI) enforces the same
+`couldNotEvaluate`). CI (`.github/workflows/ci.yml`, GitHub Actions) enforces the same
 tools as the non-bypassable gate. Test runner is Vitest.
 
 - Every new rule condition type (deny-ingress, must-have-attribute,

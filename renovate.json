@@ -17,8 +17,8 @@
       "commitMessagePrefix": "deps:"
     },
     {
-      "matchManagers": ["gitlabci"],
-      "groupName": "ci images",
+      "matchManagers": ["github-actions"],
+      "groupName": "ci actions + images",
       "commitMessagePrefix": "ci:"
     }
   ],

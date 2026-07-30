@@ -18,7 +18,7 @@ From the repository root. These tools are dev/CI tooling (not shipped in
 the npm package), so installing/invoking native ones is fine:
 
 1. **SAST** — `semgrep scan --config auto --error` over `packages/cli/src`,
-   matching `.gitlab-ci.yml`: exclude the two rules that are false positives
+   matching `.github/workflows/ci.yml`: exclude the two rules that are false positives
    for a local file-processing CLI —
    `--exclude-rule javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal`
    and
@@ -33,7 +33,7 @@ the npm package), so installing/invoking native ones is fine:
 
 If a tool is not installed on this machine, **do not report a pass** for
 it — state clearly "not run locally; enforced in CI" so the gap is
-visible. The GitLab CI gate runs all of these authoritatively (see
+visible. The GitHub Actions gate (`.github/workflows/ci.yml`) runs all of these authoritatively (see
 `/docs/specs/07-development-workflow.md`); local runs are best-effort
 fast feedback.
 
