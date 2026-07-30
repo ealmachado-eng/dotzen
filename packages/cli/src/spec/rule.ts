@@ -188,6 +188,15 @@ export type Condition =
   // ignored for this condition (it is about the project as a whole). Pair
   // with `.allResources()`; combine freely with per-resource conditions.
   | { readonly kind: 'requireResource'; readonly type: AnyResource }
+  // v2 graph layer (doc 10): deny if this resource can reach a resource of
+  // `targetType` through any chain of references. The "no DB in a public
+  // subnet" rule = denyIfReachable('aws_internet_gateway'). Uses the graph's
+  // bidirectional BFS (direction default 'both').
+  | {
+      readonly kind: 'denyIfReachable'
+      readonly targetType: AnyResource
+      readonly direction?: 'forward' | 'reverse' | 'both'
+    }
 
 export interface Rule {
   readonly id: string
@@ -649,6 +658,18 @@ export class RuleBuilder {
    */
   requireResource(type: AnyResource): this {
     this._conditions.push({ kind: 'requireResource', type })
+    return this
+  }
+
+  /** v2 graph layer (doc 10): deny if this resource can reach a resource of
+   *  `targetType` through any chain of references (bidirectional BFS).
+   *  The "no DB in a public subnet" rule = `.denyIfReachable(AwsResource.InternetGateway)`.
+   *  `direction` defaults to 'both' (forward + reverse traversal). */
+  denyIfReachable(
+    targetType: AnyResource,
+    direction?: 'forward' | 'reverse' | 'both',
+  ): this {
+    this._conditions.push({ kind: 'denyIfReachable', targetType, direction })
     return this
   }
 

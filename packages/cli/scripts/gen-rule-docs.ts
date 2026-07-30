@@ -218,6 +218,10 @@ function renderCondition(c: Condition): string {
       return `Deny provider region not in the approved list: ${list(c.regions)}`
     case 'requireResource':
       return `Require at least one \`${c.type}\` to exist anywhere in the project (project-level, not per-resource)`
+    case 'denyIfReachable': {
+      const dir = c.direction ?? 'both'
+      return `Deny if this resource can reach a \`${c.targetType}\` via any reference chain (direction: ${dir})`
+    }
   }
 }
 

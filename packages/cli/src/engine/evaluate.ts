@@ -126,6 +126,7 @@ type DenyNonApprovedRegion = Extract<
   Condition,
   { kind: 'denyNonApprovedRegion' }
 >
+type DenyIfReachable = Extract<Condition, { kind: 'denyIfReachable' }>
 const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 
 /**
@@ -1700,6 +1701,35 @@ function evalDenyNonApprovedRegion(
   }
 }
 
+/**
+ * v2 graph layer (doc 10): deny if this resource can reach a resource of
+ * `targetType` through any chain of references. Uses the graph's
+ * bidirectional BFS. The "no DB in a public subnet" rule =
+ * `denyIfReachable('aws_internet_gateway')`.
+ *
+ * v1 limitation: unresolvable refs (var/local chains that don't bottom out
+ * at a concrete resource) produce no graph edge → the query returns
+ * not-reachable → pass. This is a potential false-negative for fully-
+ * unresolvable chains, but the resolvedRef mechanism covers the vast
+ * majority of real-world cases. A future refinement will track conditional
+ * edges for honest CNE on partially-resolved chains (doc 10 §degradation).
+ */
+function evalDenyIfReachable(
+  c: DenyIfReachable,
+  r: NormalizedResource,
+  ctx: EvalContext,
+): ConditionOutcome {
+  const start = assocKey(r.file, `${r.type}.${r.name}`)
+  const result = ctx.graph.canReach(start, c.targetType, c.direction ?? 'both')
+  if (result.reachable) {
+    return {
+      kind: 'violation',
+      detail: `reachable to ${c.targetType} via a reference chain — see the resource graph`,
+    }
+  }
+  return { kind: 'pass' }
+}
+
 /** Exhaustive dispatch: a new condition kind is a compile error (Layer 4). */
 function evalCondition(
   c: Condition,
@@ -1790,6 +1820,8 @@ function evalCondition(
       return { kind: 'pass' }
     case 'denyNonApprovedRegion':
       return evalDenyNonApprovedRegion(c, r)
+    case 'denyIfReachable':
+      return evalDenyIfReachable(c, r, ctx)
     // Project-level condition — evaluated in the PROJECT pass (no-op here).
     case 'requireResource':
       return { kind: 'pass' }
