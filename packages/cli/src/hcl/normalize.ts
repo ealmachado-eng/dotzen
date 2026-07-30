@@ -110,6 +110,7 @@ const UTILITY_TYPES = new Set<string>([
   'tls_private_key',
   'tls_self_signed_cert',
   'tls_locally_signed_cert',
+  'tls_certificate',
   // `local_file` (writes files locally — no security surface) and
   // `data.cloudinit_config` (cloud-init config generation — a utility data
   // source). Dogfood round 3: 145 combined on the EKS module.

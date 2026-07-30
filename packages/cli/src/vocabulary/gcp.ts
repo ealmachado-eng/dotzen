@@ -19,6 +19,7 @@ export enum GcpResource {
   ContainerCluster = 'google_container_cluster',
   KmsCryptoKey = 'google_kms_crypto_key',
   ComputeSubnetwork = 'google_compute_subnetwork',
+  ComputeSubnetworkIamMember = 'google_compute_subnetwork_iam_member',
   // Cloud Run Functions (2nd-gen Cloud Functions, `google_cloudfunctions2_function`).
   // `service_config.ingress_settings` gates public exposure; `service_config.
   // service_account_email` is the runtime identity; env-var secrets live in
@@ -257,6 +258,12 @@ export enum GcpResource {
   // above). Recognized-but-not-rule-bearing.
   Project = 'google_project',
   ProjectService = 'google_project_service',
+  ProjectServiceIdentity = 'google_project_service_identity',
+  ProjectDefaultServiceAccounts = 'google_project_default_service_accounts',
+  ProjectUsageExportBucket = 'google_project_usage_export_bucket',
+  ResourceManagerLien = 'google_resource_manager_lien',
+  TagsTagBinding = 'google_tags_tag_binding',
+  ServiceUsageConsumerQuotaOverride = 'google_service_usage_consumer_quota_override',
   OrganizationPolicy = 'google_organization_policy',
   // Jigu / Anos
   AlibabaInstallAmazonProvider = 'google_access_context_manager_access_policy_iam_binding',

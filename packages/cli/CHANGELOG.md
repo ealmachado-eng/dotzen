@@ -6,6 +6,41 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.32
+
+Feature — **round-13 vocabulary expansion** (dogfood round 12 follow-up).
+Collapses the `ungoverned` noise surfaced by the broader 9-repo round, all
+names observed-in-the-wild on real module `.tf` (inherently verified — no
+provider-source clone needed).
+
+### Added — recognized vocabulary (auto-collapses ungoverned)
+
+- **AWS resources:** `aws_eks_access_entry`, `aws_eks_access_policy_association`,
+  `aws_autoscaling_traffic_source_attachment`, `aws_db_option_group`.
+- **AWS read-only data sources → `DataResource`:** `aws_eks_addon_version`,
+  `aws_eks_cluster_versions`, `aws_ec2_instance_type`, `aws_iam_session_context`.
+- **`UTILITY_TYPES`:** `tls_certificate` data source (TLS provider, not cloud IaC).
+- **GCP resources:** `google_compute_subnetwork_iam_member`,
+  `google_project_default_service_accounts`, `google_resource_manager_lien`,
+  `google_tags_tag_binding`, `google_project_service_identity`,
+  `google_service_usage_consumer_quota_override`, `google_project_usage_export_bucket`.
+
+**Heads-up for consumers:** repos using these types will see fewer `ungoverned`
+entries. On the round-12 modules this drove eks / autoscaling / cloudposse-rds
+ungoverned → 0 and terraform-google-project-factory 12 → 7 (the remainder are
+deeper-niche types — diminishing returns). No new violations or could-not-evaluate
+findings.
+
+### No spec DSL API changes
+
+No new condition kinds or builder methods. 144 rules across 8 presets unchanged;
+consumers need not change anything.
+
+### Tests
+
+801 unit + 40 integration, 0 regressions. Dogfood rounds 11 + 12: 18 distinct
+real-world module repos across 3 clouds, 0 false positives on v1.9.30–31.
+
 ## 1.9.31
 
 Feature — **dogfood-round-11 follow-ups**: a precision fix that converts

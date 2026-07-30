@@ -955,6 +955,21 @@ reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
   `aws_vpc_security_group_vpc_association`, `azurerm_monitor_data_collection_rule(+_association)`,
   `google_service_networking_connection`. Plus `kubernetes_config_map_v1_data`
   (+ non-v1 sibling) → `UTILITY_TYPES` (k8s provider, not cloud IaC).
+- ✅ **DONE (v1.9.32-pre) — Round-13 minor ungoverned enum-adds** (dogfood
+  round 12). Observed-in-the-wild on terraform-aws-modules/eks + autoscaling,
+  cloudposse/rds, terraform-google-modules/project-factory. AWS resources:
+  `aws_eks_access_entry`, `aws_eks_access_policy_association`,
+  `aws_autoscaling_traffic_source_attachment`, `aws_db_option_group`. AWS
+  read-only data sources → `DataResource`: `aws_eks_addon_version`,
+  `aws_eks_cluster_versions`, `aws_ec2_instance_type`, `aws_iam_session_context`.
+  `tls_certificate` data source → `UTILITY_TYPES` (TLS provider, not cloud IaC).
+  GCP resources: `google_compute_subnetwork_iam_member`,
+  `google_project_default_service_accounts`, `google_resource_manager_lien`,
+  `google_tags_tag_binding`, `google_project_service_identity`,
+  `google_service_usage_consumer_quota_override`, `google_project_usage_export_bucket`.
+  Drove eks/autoscaling/cp-rds ungoverned → 0; gpf 12 → 7 (the remainder are
+  deeper-niche — essential_contacts, access_context_manager perimeters,
+  cloud_armor_tier — diminishing returns).
 - ACM / Route 53 — deprioritized (thin / no dangerous AI-gen surface).
 
 ---

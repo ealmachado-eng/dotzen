@@ -164,5 +164,44 @@ describe('normalize', () => {
       expect(out).toHaveLength(1)
       expect(out[0]?.type).toBe('aws_fictional_round12')
     })
+
+    it('recognizes round-13 types + skips the tls_certificate utility data source', () => {
+      // Round-13 names from dogfood round 12 (terraform-aws-modules/eks +
+      // autoscaling, cloudposse/rds, terraform-google-modules/project-factory) —
+      // observed-in-the-wild. AWS resources -> AwsResource; AWS read-only data
+      // sources -> DataResource; the tls_certificate data source (TLS provider,
+      // not cloud IaC) -> UTILITY_TYPES silent skip.
+      const parsed = {
+        resource: {
+          aws_eks_access_entry: { a: [{}] },
+          aws_eks_access_policy_association: { b: [{}] },
+          aws_autoscaling_traffic_source_attachment: { c: [{}] },
+          aws_db_option_group: { d: [{}] },
+          google_compute_subnetwork_iam_member: { e: [{}] },
+          google_project_default_service_accounts: { f: [{}] },
+          google_resource_manager_lien: { g: [{}] },
+          google_tags_tag_binding: { h: [{}] },
+          google_project_service_identity: { i: [{}] },
+          google_service_usage_consumer_quota_override: { j: [{}] },
+          google_project_usage_export_bucket: { k: [{}] },
+          aws_fictional_round13: { leak: [{}] },
+        },
+        data: {
+          aws_eks_addon_version: { x: [{}] },
+          aws_eks_cluster_versions: { y: [{}] },
+          aws_ec2_instance_type: { z: [{}] },
+          aws_iam_session_context: { w: [{}] },
+          tls_certificate: { t: [{}] },
+          fictional_data: { leak: [{}] },
+        },
+      }
+      const out = collectUngoverned(parsed, 'main.tf', '')
+      // Only the two genuine gaps (1 resource + 1 data source) — the rest are
+      // recognized; tls_certificate is a silent utility skip.
+      expect(out).toHaveLength(2)
+      expect(out.map((o) => o.type).sort()).toEqual(
+        ['aws_fictional_round13', 'data.fictional_data'].sort(),
+      )
+    })
   })
 })
