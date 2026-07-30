@@ -1,267 +1,253 @@
-# @dotzen/dotzen
+# dotzen
 
-**Prose as Code.** Zero-install governance for AI-generated Terraform — across **AWS, Azure, and GCP**.
+**Prose as Code.** Governance for AI-generated Terraform — AWS, Azure, and GCP.
 
 ```bash
-npx @dotzen/dotzen check ./terraform/
+npx @dotzen/dotzen@1 check ./terraform/
 ```
 
-dotzen catches security, tagging, and compliance violations in Terraform HCL — especially the kind AI code-generation tools produce when they don't know your organization's policies. Rules are written in a readable, strongly-typed TypeScript DSL (`.zen/spec.ts`) meant to be reviewable by a security architect who has never written code:
+A zero-install governance layer that catches policy violations in Terraform HCL —
+especially the kind AI code-gen tools produce when they don't know your
+organization's security, tagging, and compliance requirements. Rules are written
+in a readable, strongly-typed TypeScript DSL (`.zen/spec.ts`) designed to be
+reviewed by a security architect who has never written code:
 
 ```ts
-import { rule, AwsResource, Port } from '@dotzen/dotzen'
+rule()
+  .resource(AwsResource.SecurityGroup)
+  .denyIngress(Port.SSH, Port.RDP)
+  .message('SSH and RDP must not be open to the internet')
+  .rationale('CIS AWS Foundations Benchmark v1.4, control 5.2')
+```
+
+Every finding is **`block`** (fails the build), **`warn`**, or **`require_approval`**
+(pauses CI for sign-off). When dotzen can't statically resolve a value, it reports
+**`could not evaluate`** instead of guessing — for a governance tool, a false
+positive is worse than an honest gap.
+
+> **v1.9.32** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
+> types recognized (3 clouds) · 801 unit + 40 integration tests · published to npm
+> with [SLSA provenance](https://docs.npmjs.com/generating-provenance-statements)
+> · **0 false positives across 18 real-world module repos** (3 clouds).
+
+---
+
+## Why dotzen
+
+Organizations are moving from "developers call pre-approved modules" to
+"developers generate Terraform with AI (Copilot, ChatGPT, agents)." Once the
+developer stops routing through the module, **the module can no longer be the
+governance chokepoint** — and the model doesn't know your required tags, banned
+ports, data-residency rules, or encryption baseline.
+
+The insight that makes this governable: **AI-generated Terraform is literal and
+explicit** — a `0.0.0.0/0` CIDR, a `publicly_accessible = true`, a missing
+`encrypted = true` appear as literal values far more often than in hand-written,
+parameterized code. So **static analysis of the HCL text** catches the large
+majority of real violations — _without_ `terraform plan`, credentials, or state
+access. The same directness that creates the risk is what makes it detectable.
+
+### How it's different
+
+|                                  | OPA / Rego              | HashiCorp Sentinel    | tfsec / Checkov               | **dotzen**                                |
+| -------------------------------- | ----------------------- | --------------------- | ----------------------------- | ----------------------------------------- |
+| Authoring audience               | Engineers who know Rego | Same                  | Nobody — rules hardcoded/YAML | **Security architects**, via readable DSL |
+| Local pre-commit check           | High-friction           | Cloud/Enterprise only | Yes                           | **Yes, zero-install `npx`**               |
+| Needs credentials / state        | Usually                 | Yes                   | No                            | **No**                                    |
+| Org-customizable rules           | Yes                     | Yes                   | Limited                       | **Yes**                                   |
+| Topology-aware (multi-hop) rules | —                       | —                     | No                            | **Yes — graph layer**                     |
+| Vendor lock-in                   | No                      | Yes                   | No                            | **No**                                    |
+
+dotzen's claim isn't "better rule engine." It's **the governance layer designed
+for the failure mode of AI-generated infrastructure, with authoring non-engineers
+can actually review, at zero adoption friction.**
+
+---
+
+## The 30-second demo
+
+Point dotzen at any Terraform project that has a `.zen/spec.ts`:
+
+```bash
+npx @dotzen/dotzen@1 check ./terraform/
+```
+
+```
+── BLOCKING ──
+✗ aws_security_group.web  (terraform/main.tf:2)
+    SSH and RDP must not be open to the internet
+    ↳ CIS AWS Foundations Benchmark v1.4, control 5.2
+
+✗ 1 violation(s), 14 passed, 0 could not be evaluated
+```
+
+No install step, no Gatekeeper dialog on macOS, no SmartScreen on Windows, no
+cloud credentials. The `could not evaluate` count is the honest-gap signal —
+values dotzen can't resolve statically (a `var`-supplied CIDR, an unresolved
+`for_each`) rather than a silent pass.
+
+---
+
+## How it works
+
+dotzen is a static-analysis pipeline. The parser is a pure-JS WASM dependency
+(`@cdktf/hcl2json`) — **no native binary, no `terraform plan`**, which is what
+keeps the local check fast and credential-free.
+
+```mermaid
+flowchart LR
+  HCL["`.tf` HCL files"] --> Parse["hcl2json parse"]
+  Parse --> Norm["normalize<br/>vars · locals · ternary · merge<br/>modules · for_each · dynamic"]
+  Norm --> Eval["evaluate<br/>42 conditions<br/>+ dependency graph"]
+  Eval --> Out{"report"}
+  Out -->|default| T["terminal (ANSI)"]
+  Out -->|--format json| J["JSON artifact"]
+  Out -->|--format sarif| S["SARIF 2.1.0<br/>GitHub Code Scanning / GitLab"]
+```
+
+Three outcomes, never collapsed: a rule **violates**, **passes**, or **could not
+be evaluated**. `couldNotEvaluate` is carried inside the success track — it's not
+an error and not a silent pass.
+
+### The graph layer — topology-aware rules (differentiated)
+
+Per-resource rules ("is this RDS encrypted?") cover most CIS controls. A class of
+real controls needs **multi-hop traversal** — and no static Terraform tool does
+this as authorable rules. dotzen does:
+
+```ts
+rule()
+  .resource(AwsResource.DbInstance)
+  .denyIfReachable(AwsResource.InternetGateway)
+  .message('Database instances must not be in a public subnet')
+```
+
+The graph walks the reference chain bidirectionally — forward and reverse — to
+decide reachability:
+
+```mermaid
+flowchart LR
+  DB["aws_db_instance"] -->|"subnet_id (forward)"| SUB["aws_subnet"]
+  SUB -.->|"who references me? (reverse)"| RTA["route_table_association"]
+  RTA -->|"route_table_id"| RT["aws_route_table"]
+  RT -->|"gateway_id"| IGW["aws_internet_gateway"]
+  classDef target fill:#fee,stroke:#c00,color:#900,font-weight:bold;
+  class IGW target;
+```
+
+If that chain reaches an Internet Gateway, the DB is in a public subnet →
+**violation**, with the exact chain rendered in the finding detail. Partially-
+unresolvable chains (an opaque `var`) degrade honestly to `could not evaluate`,
+never a false pass. Three graph conditions ship: `denyIfReachable`,
+`denyIfSharedWith` (no shared SG between a public LB and a private DB), and
+`denyIfReachableAttr` (e.g. a bucket's KMS key must be customer-managed).
+
+---
+
+## Coverage
+
+- **AWS** (deep): VPC/SG/NACL, RDS/Aurora/DynamoDB/ElastiCache, S3, EBS/EFS,
+  KMS/SecretsManager, EKS/ECS, ALB/NLB, Lambda, CloudTrail/Config/IAM, and more.
+- **Azure** (CIS L1): NSG, Storage, SQL/PostgreSQL/MySQL, Key Vault, AKS,
+  App Service, Functions, VMs (+ the graph-layer VM→NIC→public-IP rule).
+- **GCP** (CIS L1): Compute Firewall, GKE, Cloud SQL, KMS, Cloud Run Functions,
+  BigQuery, storage.
+- **8 presets**: `coreSecurity` + `cisAws` / `cisAzure` / `cisGcp` +
+  `pciDss` / `soc2` / `nist80053` / `dataProtection`. Spread what you need.
+- **3 output formats**: terminal (default), `--format json`, `--format sarif`.
+
+---
+
+## Quick start
+
+**1. Run it** against existing Terraform (zero install):
+
+```bash
+npx @dotzen/dotzen@1 check ./terraform/
+```
+
+**2. Author a spec.** Copy a starting point from [`examples/`](./examples/) —
+[`startup/`](./examples/startup/.zen/spec.ts) (lean baseline),
+[`enterprise/`](./examples/enterprise/.zen/spec.ts) (multi-cloud CIS + prod
+change-safety gates), or [`regulated/`](./examples/regulated/.zen/spec.ts) (full
+compliance stack + data residency). Each is a standalone `.zen/spec.ts` you edit
+and commit.
+
+```ts
+import {
+  coreSecurity,
+  cisAws,
+  rule,
+  AwsResource,
+  Port,
+  Effect,
+} from '@dotzen/dotzen'
 
 export const spec = [
+  ...coreSecurity, // secure-by-default baseline
+  ...cisAws, // CIS AWS Foundations additions
+
   rule()
-    .resource(AwsResource.SecurityGroup)
-    .denyIngress(Port.SSH, Port.RDP)
-    .message('SSH and RDP must not be open to the internet')
-    .rationale('CIS AWS Foundations Benchmark, control 5.2'),
+    .resource(AwsResource.S3Bucket)
+    .mustHaveTags('Application', 'Owner') // use an OrgTag enum in real specs
+    .message('Buckets must carry ownership tags'),
 ]
 ```
 
-Each finding is `block` (fails the build), `warn`, or `require_approval` (pauses CI for sign-off). When a value can't be resolved statically, dotzen reports **"could not evaluate"** rather than guessing — a false positive is worse than an honest gap.
+**3. Pin the exact version** in `dotzen.json`. The install (`@1`) floats within
+major 1; `dotzen.json` is the **enforcement** pin — the engine does an exact
+match and refuses to run on a mismatch, printing the corrective command. (Run
+`npx @dotzen/dotzen@1 init` to generate it.)
 
-## Getting started
-
-```bash
-npx @dotzen/dotzen init      # scaffold .zen/spec.ts + dotzen.json
-npm i -D @dotzen/dotzen      # editor autocomplete + type-checking for spec.ts
-npx @dotzen/dotzen check     # evaluate ./terraform against the spec
+```json
+{ "spec": ".zen/spec.ts", "terraform": "./terraform", "version": "1.9.32" }
 ```
 
-Two modes, both supported:
+This is also what makes `@1` safe in CI: if a run fetches a newer `1.x` than
+`dotzen.json` pins, the engine refuses loudly and forces an intentional bump —
+no silent drift. (`@latest` is deliberately never used — it's unbounded across
+majors.)
 
-- **Authoring** — install as a devDependency so your editor resolves the
-  DSL types (`import { rule } from '@dotzen/dotzen'`) and gives you
-  autocomplete + compile-time safety while you write rules.
-- **Running** — `npx @dotzen/dotzen check` stays zero-install (nothing to add
-  to your project) — ideal for CI. The engine resolves the DSL import itself.
+**4. Wire CI.** Add `npx @dotzen/dotzen@1 check` as a GitHub Actions /
+GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
 
-- `--format json` for machine-readable output (schema frozen at `schemaVersion: 1`).
-- Pin the version in `dotzen.json` (never `@latest` in CI).
+---
 
-## Curated presets
+## Credibility
 
-All preset packs are **composable on top of `coreSecurity`** — spread the shared base + one or more framework/cloud layers. No duplicate violations when composing.
+- **0 false positives** across **18 real-world module repos** (terraform-aws-modules,
+  terraform-google-modules, Azure/, cloudposse/) on three clouds — dogfooded every
+  release since v1.9.6.
+- **Honest degradation**: `couldNotEvaluate` for unresolvable values, never a guess
+  and never a silent pass.
+- **Defense in depth**: structural, resource-aware governance that complements
+  (doesn't replace) gitleaks/secret-scanning.
 
-```ts
-import { coreSecurity, cisAws, pciDss } from '@dotzen/dotzen'
-export const spec = [...coreSecurity, ...cisAws, ...pciDss /* your rules */]
-```
+---
 
-### Shared base
+## Documentation
 
-- **`coreSecurity`** (18 rules) — the 80% shared across all frameworks: network exposure (SSH/RDP/DB ports), encryption at rest (RDS/EBS/EC2/KMS), IAM least privilege (`Action:*` / `Principal:*`), audit logging (CloudTrail KMS + multi-region), no hardcoded secrets (variables/locals/outputs/connections), required tags, provisioner denial, backup retention ≥7.
+The engine is documented deeply in `docs/specs/`:
 
-### Cloud-specific CIS additions
+- [`00-architecture-decision-record`](./docs/specs/00-architecture-decision-record.md) —
+  why Node/TypeScript + `npx` won on adoption friction (decision locked).
+- [`01-product-overview`](./docs/specs/01-product-overview.md) — the problem,
+  "Prose as Code," positioning vs OPA/Sentinel/tfsec.
+- [`02-spec-dsl`](./docs/specs/02-spec-dsl.md) — the `.zen/spec.ts` language spec.
+- [`03-distribution-and-cli`](./docs/specs/03-distribution-and-cli.md) — `npx`
+  mechanics, version pinning, the WASM-parser choice.
+- [`10-graph-layer`](./docs/specs/10-graph-layer.md) — the dependency-graph design.
+- [`ROADMAP`](./docs/ROADMAP.md) — what's shipped and the remaining backlog.
 
-```ts
-import { coreSecurity, cisAws } from '@dotzen/dotzen'
-export const spec = [...coreSecurity, ...cisAws]
-```
+User docs (tutorial, how-tos, auto-generated rule catalog) live in
+[`docs/user/`](./docs/user/).
 
-- **`cisAws`** (6 rules) — CloudTrail log validation, Redshift/ElastiCache encryption, S3 block_public_acls, RDS not-public, ECR scan-on-push.
-- **`cisAzure`** (15 rules) — storage TLS/public-access/network-deny, SQL TLS/SSL, Key Vault purge protection, AKS private cluster + local accounts, App Service HTTPS, ACR admin, RBAC Owner/Contributor.
-- **`cisGcp`** (18 rules) — storage prevention/UBLA/versioning, Cloud SQL SSL/IPv4/root-password, GKE private nodes + legacy ABAC, KMS rotation, compute secure boot + IP forwarding, IAM allUsers/primitive-roles, Cloud Run Functions ingress + service account, firewall SSH.
+---
 
-### Framework packs
+## Status
 
-```ts
-import { coreSecurity, pciDss } from '@dotzen/dotzen'
-// or soc2, nist80053, dataProtection
-export const spec = [...coreSecurity, ...pciDss]
-```
+Working, published, provenance-attested. The static-analysis engine is at
+diminishing returns on coverage/precision. The levers ahead are adoption
+(VS Code extension, broader dogfood data) — see [`ROADMAP`](./docs/ROADMAP.md).
 
-- **`pciDss`** (14 rules) — PCI DSS v4.0: encrypt ALL data stores, all four S3 public-access-block flags, backup retention ≥30 days, encrypted + non-local state, no drift hiding, DynamoDB PITR.
-- **`soc2`** (8 rules) — SOC 2 TSC: change management (version pinning for TF/providers/modules), encrypted + non-local state, ECR scan-on-push, CloudTrail log validation.
-- **`nist80053`** (15 rules) — NIST SP 800-53 Rev. 5: IAM password policy (length/complexity/reuse/age), additional encryption (Redshift/DynamoDB PITR), no drift hiding, version pinning, state encryption.
-- **`dataProtection`** (12 rules) — GDPR/LGPD: encrypt ALL data stores, S3 public-access block, RDS not-public, data-classification tagging, encrypted + non-local state, no drift hiding. Data residency is now supported via `denyNonApprovedRegion` (see below).
-
-### Data residency (GDPR / LGPD)
-
-The `denyNonApprovedRegion` condition is region-agnostic — it flags any resource whose provider region is NOT in the approved list. Tailor the region list to your jurisdiction:
-
-**GDPR (EU):**
-
-```ts
-rule()
-  .allResources()
-  .denyNonApprovedRegion('eu-west-1', 'eu-central-1', 'europe-west1')
-  .message('Personal data must not leave EU regions (GDPR Art. 44)')
-```
-
-**LGPD (Brazil):**
-
-```ts
-rule()
-  .allResources()
-  .denyNonApprovedRegion('sa-east-1', 'southamerica-east1')
-  .message(
-    'Dados pessoais devem permanecer em regiões brasileiras (LGPD Art. 11)',
-  )
-```
-
-dotzen extracts the `region` from `provider {}` blocks and resolves each resource's region (respecting provider aliases). A resource in a non-approved region is flagged; a resource with an unknown region (no provider block) degrades to could-not-evaluate — never a false pass. The `dataProtection` preset includes commented-out examples for both jurisdictions.
-
-Each rule carries `.rationale()` citing the framework control. Compose freely — `coreSecurity` + `pciDss` + `dataProtection` gives you a PCI + GDPR combined spec.
-
-## Rule conditions
-
-### Resource conditions
-
-| Condition                            | What it flags                                            |
-| ------------------------------------ | -------------------------------------------------------- |
-| `denyIngress(...ports)`              | SG/firewall opens a port to the internet                 |
-| `denyEgress(...ports)`               | Egress opens a port to the internet                      |
-| `denyAcl(...acls)`                   | S3 bucket has a public ACL                               |
-| `mustHaveTags(...keys)`              | Required tag keys missing (org enums OK)                 |
-| `mustBeTrue(...attrs)`               | Attribute must be `true` (e.g. `storage_encrypted`)      |
-| `mustBeFalse(...attrs)`              | Attribute must be `false` (e.g. `publicly_accessible`)   |
-| `mustBeSet(...attrs)`                | Attribute must be present (any value)                    |
-| `denyWhenTrue(...attrs)`             | Flag if the attribute is `true`                          |
-| `mustEqual(attr, value)`             | Attribute must equal a specific value                    |
-| `mustBeAtLeast(attr, min)`           | Numeric attribute ≥ min                                  |
-| `mustBeAtMost(attr, max)`            | Numeric attribute ≤ max                                  |
-| `mustBeOneOf(attr, ...values)`       | Attribute must be one of an allowlist                    |
-| `denyValue(attr, ...values)`         | Flag if attribute is any of the values                   |
-| `denyLiteral(...attrs)`              | Attribute must be a reference, not a hardcoded literal   |
-| `listContains(attr, ...values)`      | List attribute contains a forbidden value                |
-| `listMustInclude(attr, ...values)`   | List attribute must include all values                   |
-| `denyIamWildcard()`                  | IAM policy grants `Action: "*"`                          |
-| `denyPublicPrincipal()`              | IAM policy grants `Principal: "*"`                       |
-| `requireSslOnlyPolicy()`             | Policy must `Deny` non-SSL transport                     |
-| `denyPrivilegedContainers()`         | ECS container is privileged                              |
-| `denyPlaintextEnvSecrets()`          | Plaintext secret in env vars (ECS/Lambda/Azure/GCP)      |
-| `denyPlaintextConnectionSecret()`    | Plaintext secret in a `connection {}` block              |
-| `denyProvisioner(...names)`          | `provisioner "local-exec"/"remote-exec"/"file"` declared |
-| `denyIgnoreChanges(...attrs)`        | `lifecycle.ignore_changes` hides drift on named attrs    |
-| `mustHaveBlock(block)`               | Resource must declare a nested block                     |
-| `denyBlockPresence(block)`           | Resource must NOT declare a nested block                 |
-| `mustHaveAssociated(childType, via)` | A separate child resource must reference this one        |
-
-### Scoping
-
-| Method                  | Effect                                                                   |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `.resource(...types)`   | Rule applies only to the listed resource types                           |
-| `.allResources()`       | Rule applies to every resource                                           |
-| `.environment(Env)`     | Rule applies only to resources in that environment (tag or root mapping) |
-| `.providerAlias(alias)` | Rule applies only to resources pinned to that provider alias             |
-
-### Cross-resource surfaces (zero-arg, use `.allResources()`)
-
-| Condition                               | What it flags                                                |
-| --------------------------------------- | ------------------------------------------------------------ |
-| `denyInsensitiveVariable()`             | Secret-looking `variable` without `sensitive = true`         |
-| `denyPlaintextLocalSecret()`            | `locals` entry hardcodes a secret (literal, not a ref)       |
-| `denyInsensitiveSecretOutput(...attrs)` | `output` references a secret attr without `sensitive = true` |
-| `requireExactTerraformVersion()`        | `required_version` not an exact pin (`= X.Y.Z`)              |
-| `denyFloatingProviderVersion(...names)` | Provider version constraint floating or absent               |
-| `requireEncryptedBackend()`             | State backend not declared or not encrypted                  |
-| `denyLocalBackend()`                    | `backend "local"` or no backend (local default)              |
-| `denyFloatingModuleVersion()`           | Registry module version floating or absent                   |
-
-## Inline ignore directives
-
-Suppress a known-acceptable finding with a comment on the block:
-
-```hcl
-# dotzen:ignore: bastion host — SSH is intentionally public behind a CIDR allowlist
-resource "aws_security_group" "bastion" {
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/8"]
-  }
-}
-```
-
-**Per-rule suppression** — suppress only one rule while keeping others:
-
-```hcl
-# dotzen:ignore rule-3: known exception — this bucket hosts a public CDN
-resource "aws_s3_bucket" "cdn" {
-  bucket = "cdn-assets"
-  acl    = "public-read"
-}
-```
-
-- `# dotzen:ignore rule-5: <reason>` — suppresses only `rule-5` on this block.
-- `# dotzen:ignore no-public-ssh: <reason>` — suppresses a rule with a stable author-chosen ID.
-- `# dotzen:ignore: <reason>` — suppresses ALL rules on this block.
-- `# dotzen:ignore` — suppresses ALL rules, no reason.
-
-To use stable rule IDs (recommended for any spec with per-rule ignores):
-
-```ts
-rule()
-  .id('no-public-ssh') // ← stable, survives reorders
-  .resource(AwsResource.SecurityGroup)
-  .denyIngress(Port.SSH)
-  .message('SSH must not be open')
-```
-
-Then `# dotzen:ignore no-public-ssh: <reason>` is safe across rule reorders — unlike positional `rule-N` which shifts when rules are added/removed.
-
-Both `#` and `//` work, on their own line or trailing a block header. The optional `: <reason>` is for auditability.
-
-## Ungoverned resources
-
-dotzen has a closed vocabulary of resource types it can govern. Resources
-whose type is NOT in the vocabulary (e.g. `aws_msk_cluster`,
-`aws_codebuild_project`) are surfaced in a **`NOT GOVERNED (vocabulary gap)`**
-section of the terminal output, and as an `ungoverned` array in JSON output.
-
-This is informational — not a violation, not a could-not-evaluate. It tells
-you what dotzen **cannot** see, so you know your coverage gaps rather than
-getting a false sense of compliance from a silent skip.
-
-## CI integration
-
-`dotzen init` prints a pointer to CI templates. The check runs via `npx`
-(no local install needed) and exports `DOTZEN_REQUIRES_APPROVAL` for
-downstream manual-approval gates:
-
-- **GitHub Actions** — checkout + `npx @dotzen/dotzen@1 check` + approval signal via `$GITHUB_ENV`.
-- **GitLab CI** — a `dotzen:check` job with `artifacts:reports:dotenv` + an optional manual-approval gate.
-
-## Engine coverage
-
-**Terraform structures handled:**
-
-- Module nesting (unbounded depth, cycle-guarded) with `count`/`for_each` expansion
-- Provider `default_tags`/`default_labels` inheritance (incl. nested modules)
-- Resource `count = 0` / `for_each`-empty skip + per-element `for_each` expansion
-- `dynamic` blocks (any name, not just ingress/egress) expanded into attributes
-- Data sources (`data "aws_ami"`) governed as resources
-- Provider alias scoping + module `providers` map remapping
-- `lifecycle { prevent_destroy, create_before_destroy, ignore_changes }`
-- `connection {}` blocks, `provisioner` blocks, `output` blocks, `variable`/`locals` bindings
-- `terraform { required_version, required_providers, backend }` settings
-- Conservative ternary evaluation (`${ref == scalar ? scalar : scalar}`)
-- Var/local/each scope resolution through chains (depth-bounded)
-- `merge()` tag-key extraction (partial when an arg is unresolvable)
-
-**Three clouds, one engine:** AWS (deep), Azure and GCP at CIS Foundations Level 1.
-
-**Performance:** ~195ms for 1200 resources (100 files + 100 module calls).
-
-## Docs
-
-**User documentation** (getting started, how-tos, the full rule catalog) lives in
-[`docs/user/`](https://github.com/ealmachado-eng/dotzen/tree/main/docs/user) —
-start with [What dotzen does](https://github.com/ealmachado-eng/dotzen/blob/main/docs/user/what-it-does.md)
-and the [5-minute tutorial](https://github.com/ealmachado-eng/dotzen/blob/main/docs/user/tutorial.md).
-
-The [rule reference](https://github.com/ealmachado-eng/dotzen/tree/main/docs/user/reference/rules)
-is auto-generated from the preset source — every shipped rule, what it checks,
-its rationale, and framework mapping. Design rationale and the roadmap live in
-[`docs/`](https://github.com/ealmachado-eng/dotzen/tree/main/docs). The
-parser is the official `hashicorp/hcl` compiled to WASM (`@cdktf/hcl2json`) —
-pure JS, no native binary.
-
-## License
-
-MIT © Eduardo Machado
+MIT licensed. Issues and feedback: [github.com/ealmachado-eng/dotzen](https://github.com/ealmachado-eng/dotzen).

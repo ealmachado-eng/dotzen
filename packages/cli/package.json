@@ -57,7 +57,8 @@
     "format": "prettier --write .",
     "gen-docs": "jiti scripts/gen-rule-docs.ts",
     "check-docs": "jiti scripts/gen-rule-docs.ts && git -C ../.. diff --exit-code --quiet docs/user/reference/rules || (echo '\\nSTALE: docs/user/reference/rules differs from gen-docs output.\\nRun `npm run gen-docs` from packages/cli and commit the result.\\n' && false)",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepack": "cp ../../README.md ./README.md"
   },
   "dependencies": {
     "@cdktf/hcl2json": "^0.21.0",
