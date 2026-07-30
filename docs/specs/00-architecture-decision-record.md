@@ -94,9 +94,8 @@ categories are not re-opened one language at a time.
 - **JVM / managed-runtime languages** (strong type safety via sealed
   types and exhaustive matching). Standalone distribution needs
   ahead-of-time-compilation complexity, and again there is no zero-install
-  story. One runtime in this group happens to be present in the internal
-  T-Mobile validation environment and is documented as the strongest
-  *fallback* if a runtime-native build is ever required there — but it
+  story. One runtime in this group is documented as the strongest
+  *fallback* if a runtime-native build is ever required — but it
   is not the public product's path, because the public product must work
   for people who have never installed that toolchain.
 - **Dynamically-typed scripting languages** (several produced the most
@@ -140,7 +139,7 @@ parser may not match Terraform's parser on every edge case) is a
 *correctness* risk to track, not a portability one. See
 `/docs/specs/03-distribution-and-cli.md`.
 
-## Internal validation note (T-Mobile / Nortal context)
+## Internal validation note
 
 The internal proof-of-concept environment has a JVM toolchain available
 but not a native (compiled-language) one. **This does not change the
