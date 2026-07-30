@@ -127,6 +127,7 @@ type DenyNonApprovedRegion = Extract<
   { kind: 'denyNonApprovedRegion' }
 >
 type DenyIfReachable = Extract<Condition, { kind: 'denyIfReachable' }>
+type DenyIfSharedWith = Extract<Condition, { kind: 'denyIfSharedWith' }>
 const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 
 /**
@@ -295,6 +296,10 @@ export interface ResourceGraph {
     targetType: string,
     direction: 'forward' | 'reverse' | 'both',
   ): ReachResult
+  /** Does `start` share a `sharedType` resource with any `otherType` resource?
+   *  Traverses: start → forward → sharedType → reverse → otherType.
+   *  Use case: "a DB's security group is also attached to a public LB." */
+  sharedWith(start: string, sharedType: string, otherType: string): ReachResult
 }
 
 /** Build the forward + reverse adjacency + a type lookup, return the graph. */
@@ -369,7 +374,28 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     return { reachable: false }
   }
 
-  return { canReach }
+  /** Does `start` share a `sharedType` resource with any `otherType` resource?
+   *  Step 1: find forward neighbors of `start` whose type = `sharedType`.
+   *  Step 2: for each shared resource, check reverse neighbors for `otherType`. */
+  const sharedWith = (
+    start: string,
+    sharedType: string,
+    otherType: string,
+  ): ReachResult => {
+    const sharedAddrs: string[] = []
+    for (const e of forward.get(start) ?? []) {
+      if (nodeTypes.get(e.to) === sharedType) sharedAddrs.push(e.to)
+    }
+    if (sharedAddrs.length === 0) return { reachable: false }
+    for (const sharedAddr of sharedAddrs) {
+      for (const e of reverse.get(sharedAddr) ?? []) {
+        if (nodeTypes.get(e.from) === otherType) return { reachable: true }
+      }
+    }
+    return { reachable: false }
+  }
+
+  return { canReach, sharedWith }
 }
 
 const assertNever = (x: never): never => {
@@ -1730,6 +1756,29 @@ function evalDenyIfReachable(
   return { kind: 'pass' }
 }
 
+/**
+ * v2 graph layer (doc 10): deny if this resource shares a `sharedType`
+ * (e.g. a security group) with a resource of `otherType` (e.g. a public
+ * load balancer). Lateral-movement prevention — isolates trust boundaries.
+ * Uses the graph's `sharedWith` query (forward to sharedType, then reverse
+ * to check for otherType).
+ */
+function evalDenyIfSharedWith(
+  c: DenyIfSharedWith,
+  r: NormalizedResource,
+  ctx: EvalContext,
+): ConditionOutcome {
+  const start = assocKey(r.file, `${r.type}.${r.name}`)
+  const result = ctx.graph.sharedWith(start, c.sharedType, c.otherType)
+  if (result.reachable) {
+    return {
+      kind: 'violation',
+      detail: `shares a ${c.sharedType} with a ${c.otherType} — trust-boundary bridging risk`,
+    }
+  }
+  return { kind: 'pass' }
+}
+
 /** Exhaustive dispatch: a new condition kind is a compile error (Layer 4). */
 function evalCondition(
   c: Condition,
@@ -1822,6 +1871,8 @@ function evalCondition(
       return evalDenyNonApprovedRegion(c, r)
     case 'denyIfReachable':
       return evalDenyIfReachable(c, r, ctx)
+    case 'denyIfSharedWith':
+      return evalDenyIfSharedWith(c, r, ctx)
     // Project-level condition — evaluated in the PROJECT pass (no-op here).
     case 'requireResource':
       return { kind: 'pass' }

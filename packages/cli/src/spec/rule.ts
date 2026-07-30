@@ -197,6 +197,14 @@ export type Condition =
       readonly targetType: AnyResource
       readonly direction?: 'forward' | 'reverse' | 'both'
     }
+  // v2 graph layer (doc 10): deny if this resource shares a `sharedType`
+  // resource (e.g. a security group) with a resource of `otherType` (e.g.
+  // a public load balancer). Lateral-movement prevention.
+  | {
+      readonly kind: 'denyIfSharedWith'
+      readonly sharedType: AnyResource
+      readonly otherType: AnyResource
+    }
 
 export interface Rule {
   readonly id: string
@@ -670,6 +678,14 @@ export class RuleBuilder {
     direction?: 'forward' | 'reverse' | 'both',
   ): this {
     this._conditions.push({ kind: 'denyIfReachable', targetType, direction })
+    return this
+  }
+
+  /** v2 graph layer (doc 10): deny if this resource shares a `sharedType`
+   *  (e.g. a security group) with a resource of `otherType` (e.g. a public
+   *  load balancer). Lateral-movement prevention — isolates trust boundaries. */
+  denyIfSharedWith(sharedType: AnyResource, otherType: AnyResource): this {
+    this._conditions.push({ kind: 'denyIfSharedWith', sharedType, otherType })
     return this
   }
 

@@ -154,3 +154,81 @@ describe('evaluate — denyIfReachable (graph condition)', () => {
     expect(r.violations).toHaveLength(2)
   })
 })
+
+describe('evaluate — denyIfSharedWith (SG bridging)', () => {
+  const noSharedSgRule: Rule = {
+    id: 'no-sg-shared-lb-db',
+    target: { kind: 'resource', types: ['aws_db_instance'] as never },
+    conditions: [
+      {
+        kind: 'denyIfSharedWith',
+        sharedType: 'aws_security_group' as never,
+        otherType: 'aws_lb' as never,
+      },
+    ],
+    effect: Effect.Block,
+    message: 'DB security groups must not be shared with load balancers',
+  }
+
+  it('violates when a DB and an LB share the same security group', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_db_instance', 'db', {
+        vpc_security_group_ids: ref(
+          '${aws_security_group.shared.id}',
+          'aws_security_group',
+          'shared',
+        ),
+      }),
+      res('aws_lb', 'public_lb', {
+        security_groups: ref(
+          '${aws_security_group.shared.id}',
+          'aws_security_group',
+          'shared',
+        ),
+      }),
+      res('aws_security_group', 'shared'),
+    ]
+    const r = evaluate([noSharedSgRule], resources)
+    expect(r.violations).toHaveLength(1)
+    expect(r.violations[0]?.resource).toBe('aws_db_instance.db')
+  })
+
+  it('passes when the DB has its own SG not shared with any LB', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_db_instance', 'db', {
+        vpc_security_group_ids: ref(
+          '${aws_security_group.db_sg.id}',
+          'aws_security_group',
+          'db_sg',
+        ),
+      }),
+      res('aws_lb', 'public_lb', {
+        security_groups: ref(
+          '${aws_security_group.lb_sg.id}',
+          'aws_security_group',
+          'lb_sg',
+        ),
+      }),
+      res('aws_security_group', 'db_sg'),
+      res('aws_security_group', 'lb_sg'),
+    ]
+    const r = evaluate([noSharedSgRule], resources)
+    expect(r.violations).toHaveLength(0)
+  })
+
+  it('passes when the DB has no security group at all', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_db_instance', 'standalone'),
+      res('aws_lb', 'lb', {
+        security_groups: ref(
+          '${aws_security_group.sg.id}',
+          'aws_security_group',
+          'sg',
+        ),
+      }),
+      res('aws_security_group', 'sg'),
+    ]
+    const r = evaluate([noSharedSgRule], resources)
+    expect(r.violations).toHaveLength(0)
+  })
+})

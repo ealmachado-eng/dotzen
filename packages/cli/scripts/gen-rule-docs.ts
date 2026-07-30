@@ -222,6 +222,8 @@ function renderCondition(c: Condition): string {
       const dir = c.direction ?? 'both'
       return `Deny if this resource can reach a \`${c.targetType}\` via any reference chain (direction: ${dir})`
     }
+    case 'denyIfSharedWith':
+      return `Deny if this resource shares a \`${c.sharedType}\` with a \`${c.otherType}\` (lateral-movement prevention)`
   }
 }
 
