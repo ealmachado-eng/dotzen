@@ -101,27 +101,54 @@ dotzen's differentiated claim is not "better rule engine" — it is
 AI-generated infrastructure, with an authoring experience non-engineers
 can actually review, and zero adoption friction."**
 
-## Target users (in order of who dotzen must win over first)
+## Target users — two entry ramps
 
-1. **The individual developer** generating Terraform via AI. Must have
-   zero installation friction (hence `npx`) or they will not adopt it
-   voluntarily, and voluntary adoption is how the flywheel starts before
-   there is any organizational mandate.
-2. **The platform engineer** who puts dotzen into the CI pipeline and
-   pre-commit hooks. Needs the tool to be a single, well-documented
-   pipeline step, not an infrastructure project of its own (hence: no
-   servers, no database, no cloud dependency for v1 — see
-   `/docs/specs/05-future-cloud-layer.md` for what's deferred).
-3. **The security architect** who authors and approves the spec. Needs
-   to be able to read `.zen/spec.ts` directly in a GitLab/GitHub MR
-   diff and understand the change without asking an engineer to explain
-   it.
-4. **Compliance / audit** (LGPD, SOC2, PCI-DSS, CIS benchmarks). Needs
-   an audit trail proving which rules applied to which infrastructure
-   change and when — served for v1 by CI logs and Git history in a
-   monorepo (see `/docs/specs/04-governance-model.md`), not by a
-   dedicated compliance dashboard (that's v2+, see
-   `/docs/specs/05-future-cloud-layer.md`).
+Governance tools have a quirk: the *user* and the *buyer/advocate* are usually
+different people, and a developer won't voluntarily self-impose a blocker. So
+there isn't a single linear "win over first" ladder — there are two entry ramps
+that meet in the middle.
+
+### Bottom-up — the individual developer (the launch wedge)
+
+The developer generating Terraform via AI is the *user*. They will not adopt a
+governance check for its own sake — but they *will* adopt a tool that their
+**AI coding agent runs in its own loop**: the agent writes Terraform, runs
+`npx @dotzen/dotzen@1 check`, reads the findings, and fixes them before the
+developer ever opens a PR. The dev's win is fewer review cycles and less
+rework, not "I love policy." This is why dotzen must be zero-install (`npx`)
+and credential-free — the agent loop only works if the check is instant and
+self-contained. This bottom-up wedge is how adoption starts before any
+organizational mandate (the eslint/Prettier playbook), and the agent loop is
+what makes a *governance* tool credible on that path — without it, "developers
+will voluntarily add a blocker" is not a believable thesis.
+
+### Top-down — security architect + platform engineer (the org-wide driver)
+
+The *advocates/buyers* who actually put dotzen into CI:
+
+- **The security architect** authors and approves the spec. This is often the
+  person who *brings* dotzen in — OPA/Rego lock them out of authoring (someone
+  who knows Rego writes the policy; the architect reviews it on trust), and
+  dotzen's readable DSL lets them read `.zen/spec.ts` directly in a
+  GitLab/GitHub MR diff and own the rules themselves. They are the internal
+  champion.
+- **The platform engineer** puts dotzen into the CI pipeline and pre-commit
+  hooks. Needs it to be a single, well-documented pipeline step, not an
+  infrastructure project of its own (hence: no servers, no database, no cloud
+  dependency for v1 — see `/docs/specs/05-future-cloud-layer.md`).
+
+In most orgs this ramp is the real adoption driver: the architect champions,
+the platform team mandates, and the developer (often already using dotzen via
+the agent loop) complies. The two ramps reinforce each other rather than one
+strictly preceding the other.
+
+### Trailing beneficiary — compliance / audit
+
+LGPD, SOC2, PCI-DSS, CIS benchmarks. Needs an audit trail proving which rules
+applied to which infrastructure change and when — served for v1 by CI logs and
+Git history in a monorepo (see `/docs/specs/04-governance-model.md`), not by a
+dedicated compliance dashboard (that's v2+, see
+`/docs/specs/05-future-cloud-layer.md`).
 
 ## The "governance as three-layer defense in depth" model
 
