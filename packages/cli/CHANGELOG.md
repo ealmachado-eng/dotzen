@@ -6,7 +6,15 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
-## 1.9.24
+## 1.9.25
+
+> **Note on 1.9.24:** version `1.9.24` was skipped on npm. The first attempt
+> to publish it via GitHub Actions OIDC hit a workflow bug (Node 20 → npm 10.x,
+> too old for trusted publishing — fixed). A manual test-publish of 1.9.24 was
+> then unpublished to retry via the workflow, but npm permanently blocks
+> republishing a version number once it has been published. `1.9.25` is the
+> actual first release published from GitHub via trusted publishing with
+> provenance. Same content as the intended 1.9.24.
 
 Meta — the project moved from **GitLab to GitHub** (`github.com/ealmachado-eng/dotzen`, public). No engine, DSL, or rule change for consumers; the package behaves identically. The move unblocks two operational wins and re-homes the CI:
 

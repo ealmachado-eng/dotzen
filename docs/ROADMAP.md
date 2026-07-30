@@ -856,14 +856,17 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 
 ---
 
-## Current state (post-v1.9.24) & still-open
+## Current state (post-v1.9.25) & still-open
 
 Engine feature-complete for static HCL governance: 750 unit + 39 integration
 tests (89 unit files), 0 false positives since dogfood round 6 across 35+ real
 module repos, ~3200 resource/data types recognized across AWS/Azure/GCP, three
 output formats (terminal, JSON, SARIF 2.1.0). **Repo + CI moved to GitHub**
-(`github.com/ealmachado-eng/dotzen`, public) in v1.9.24 — npm provenance
+(`github.com/ealmachado-eng/dotzen`, public) in v1.9.24/25 — npm provenance
 attestations now land on the npm page (was E422-blocked on private GitLab).
+(`1.9.24` was skipped on npm — a manual test-publish was unpublished, and npm
+blocks republishing a version number once published; `1.9.25` is the first
+GitHub-published, provenance-attested release.)
 `examples/ai-generated/.zen/spec.ts` is the canonical comprehensive spec
 reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
 
