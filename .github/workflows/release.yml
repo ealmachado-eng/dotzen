@@ -26,7 +26,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    environment: release
+    # No `environment:` — keeps the OIDC claim matching the simplest npm
+    # trusted-publisher config (owner + repo + workflow, no environment pin).
+    # Add `environment: release` only if you also pin it on npmjs.com AND want
+    # environment-scoped protection rules / secrets.
     defaults:
       run:
         working-directory: packages/cli
