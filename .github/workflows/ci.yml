@@ -98,6 +98,13 @@ jobs:
       # gitleaks-action@v2 auto-discovers .gitleaks.toml at the repo root —
       # do NOT pass a config-path input (it's not a valid v2 input). The
       # GITHUB_TOKEN is required by the action.
+      #
+      # NOTE: this action still emits a "Node.js 20 is deprecated" warning —
+      # it's UPSTREAM (the action itself is built on Node 20; no Node-24
+      # gitleaks-action release exists yet). Harmless (the runner forces Node
+      # 24) and auto-resolves once the action ships a Node-24 build + Renovate
+      # bumps the pin. Do NOT swap for a raw-CLI install: that would hardcode
+      # a gitleaks binary version Renovate can't bump (a worse tradeoff).
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
