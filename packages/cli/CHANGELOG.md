@@ -6,6 +6,65 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.30
+
+Feature — **org-profile example specs + round-11 vocabulary expansion**.
+Adoption-focused: a copy-paste starting point for every org maturity level,
+plus the last round of recognized-but-not-governed AWS vocabulary.
+
+### Added — org-profile example specs
+
+Three standalone `.zen/spec.ts` templates under a new top-level `examples/`
+directory, so consumers copy the closest fit instead of authoring from scratch:
+
+- **`examples/startup/`** — `coreSecurity` + one ownership tag (warn). Lean
+  secure-by-default baseline.
+- **`examples/enterprise/`** — multi-cloud CIS (`cisAws` + `cisAzure` +
+  `cisGcp`) + ownership tags (block) + a production `prevent_destroy`
+  approval gate (`RequireApproval` → security + SRE sign-off on stateful
+  prod resources that lack it).
+- **`examples/regulated/`** — the full compliance stack (`pciDss` + `soc2` +
+  `nist80053` + `dataProtection`) + GDPR-style data residency
+  (`denyNonApprovedRegion`).
+
+Each is a **standalone spec** (copy one, don't stack two — duplicate rule IDs
+are a load error, so an exported profile const embedding presets would collide
+if a consumer also spread the underlying pack). An `examples/README.md`
+documents the profiles, the composition pattern, and the customization points
+(org tag keys, approved regions, approvers). A loader test
+(`src/spec/examples.test.ts`) loads each via the **real jiti spec loader** +
+validates every rule, so the templates track the DSL.
+
+### Added — round-11 AWS vocabulary (recognized, not yet rule-bearing)
+
+Ten AWS resource types verified against the provider Go `ResourcesMap`
+(`hashicorp/terraform-provider-aws` per-service `service_package_gen.go`
+`TypeName` registrations + `@SDKResource`/`@FrameworkResource` annotations —
+the v1.x Azure-audit method; web fetch was unusable since the provider docs
+went registry-JS-only). Added to `AwsResource`; since `KNOWN_TYPES` is derived
+from the enum, they auto-collapse `ungoverned` noise on repos that use them:
+
+- `aws_elasticache_global_replication_group`, `aws_elasticache_serverless_cache`
+- `aws_opensearch_package_association`, `aws_opensearch_vpc_endpoint`
+- OpenSearch Serverless: `aws_opensearchserverless_collection` /
+  `_security_policy` / `_security_config` / `_access_policy` /
+  `_lifecycle_policy` / `_vpc_endpoint`
+
+**Heads-up for consumers:** repos using these types will see fewer
+`ungoverned` entries (a coverage-telemetry improvement — no new violations or
+could-not-evaluate findings).
+
+### No spec DSL API changes
+
+No new condition kinds, no new builder methods. The new resource types are
+available as enum values a spec author could target, but no shipped rule uses
+them yet. Consumers need not change anything. 144 rules across 8 presets
+unchanged.
+
+### Tests
+
+794 unit + 40 integration, 0 regressions.
+
 ## 1.9.29
 
 Feature — **graph-layer hardening + the first Azure graph rule**. Closes the

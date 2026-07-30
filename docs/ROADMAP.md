@@ -924,10 +924,19 @@ reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
 
 **Open — low priority:**
 
-- Round-11 minor ungoverned: `aws_elasticache_global_replication_group`,
-  `aws_elasticache_serverless_cache`, `aws_opensearchserverless_*`,
-  `aws_opensearch_package_association` / `_vpc_endpoint` — enum-add
-  candidates if a repo's ungoverned must reach 0.
+- ✅ **DONE (v1.9.30-pre) — Round-11 minor ungoverned enum-adds.** Verified
+  the candidate names against the AWS provider Go `ResourcesMap` (cloned
+  `hashicorp/terraform-provider-aws`, grepped the per-service
+  `service_package_gen.go` `TypeName` registrations + `@SDKResource` /
+  `@FrameworkResource` annotations — the method the v1.x Azure audit used;
+  web fetch was unusable since the provider docs went registry-JS-only). All
+  candidates were real, added to `AwsResource` (which `KNOWN_TYPES` derives
+  from, so they auto-collapse ungoverned): `aws_elasticache_global_replication_group`,
+  `aws_elasticache_serverless_cache`, `aws_opensearch_package_association`,
+  `aws_opensearch_vpc_endpoint`, and the OpenSearch Serverless family
+  (`aws_opensearchserverless_collection` / `_security_policy` /
+  `_security_config` / `_access_policy` / `_lifecycle_policy` / `_vpc_endpoint`).
+  Recognized, not yet rule-bearing.
 - ACM / Route 53 — deprioritized (thin / no dangerous AI-gen surface).
 
 ---
@@ -1020,7 +1029,17 @@ a strategic pivot — listed by category, not priority.
 ### Adoption — ecosystem (non-code)
 
 - **Dogfood breadth.** Run v1.9.20 across more real module repos (cloudposse, terraform-aws-modules, FaztWeb, etc.) and publish the noise-floor / catch-rate. The engine has had 0 false positives since round 6 on ~25 repos — broader data strengthens the adoption story.
-- **Spec registry / community specs.** The `05-future-cloud-layer.md` future-directions doc sketches a hosted-spec angle. Seed `examples/` with org-profile specs (startup, enterprise, regulated) so consumers `export const spec = [...coreSecurity, ...enterpriseProfile]` instead of authoring from scratch.
+- **Spec registry / community specs.** ✅ **DONE (v1.9.30-pre): seeded
+  `examples/` with three org-profile spec templates** — `startup/` (lean
+  baseline + ownership tag), `enterprise/` (multi-cloud CIS + ownership
+  tags + a prod `prevent_destroy` approval gate), `regulated/` (the full
+  compliance stack + GDPR-style data residency). Standalone copy-paste
+  templates (not exported profile consts — duplicate rule IDs are a load
+  error, so a profile const embedding presets would collide if a consumer
+  also spread the underlying pack). A loader test
+  (`src/spec/examples.test.ts`) loads each via the real jiti loader +
+  validates every rule, so the templates track the DSL. The hosted-registry
+  angle in `05-future-cloud-layer.md` remains future work.
 - **README / docs story.** The engine is documented deeply (`docs/specs/*`) but the *product* story (why governance-as-code for AI-generated Terraform, the 30-second demo) is undertold. A canonical worked example + the `npx` one-liner is the highest-ROI doc work.
 
 ### Niche (on-demand only)

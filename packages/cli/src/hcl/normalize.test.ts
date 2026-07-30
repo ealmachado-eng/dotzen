@@ -117,4 +117,31 @@ describe('normalize', () => {
       expect(out).toHaveLength(0)
     })
   })
+
+  describe('collectUngoverned — round-11 recognized vocabulary', () => {
+    // Elasticache global/serverless + OpenSearch(serverless) types verified
+    // against the AWS provider Go ResourcesMap, then added to AwsResource so
+    // KNOWN_TYPES (derived from the enum) recognizes them — they no longer
+    // surface as ungoverned noise. A genuine gap must still surface.
+    it('recognizes the round-11 elasticache + opensearch(serverless) types', () => {
+      const parsed = {
+        resource: {
+          aws_elasticache_global_replication_group: { g: [{}] },
+          aws_elasticache_serverless_cache: { sc: [{}] },
+          aws_opensearchserverless_collection: { c: [{}] },
+          aws_opensearchserverless_security_policy: { sp: [{}] },
+          aws_opensearchserverless_security_config: { sconf: [{}] },
+          aws_opensearchserverless_access_policy: { ap: [{}] },
+          aws_opensearchserverless_lifecycle_policy: { lp: [{}] },
+          aws_opensearchserverless_vpc_endpoint: { vpc: [{}] },
+          aws_opensearch_package_association: { pa: [{}] },
+          aws_opensearch_vpc_endpoint: { ove: [{}] },
+          aws_fictional_round11: { leak: [{}] },
+        },
+      }
+      const out = collectUngoverned(parsed, 'main.tf', '')
+      expect(out).toHaveLength(1)
+      expect(out[0]?.type).toBe('aws_fictional_round11')
+    })
+  })
 })
