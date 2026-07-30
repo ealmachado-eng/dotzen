@@ -185,6 +185,7 @@ interface EvalContext {
   readonly associations: Associations
   readonly unresolvableCandidates: UnresolvableCandidates
   readonly literalLinks: LiteralLinks
+  readonly graph: ResourceGraph
 }
 
 /**
@@ -253,7 +254,121 @@ function buildAssociations(resources: NormalizedResource[]): EvalContext {
       }
     }
   }
-  return { associations: idx, unresolvableCandidates: unresolved, literalLinks }
+  return {
+    associations: idx,
+    unresolvableCandidates: unresolved,
+    literalLinks,
+    graph: buildGraph(resources),
+  }
+}
+
+// ── v2 graph layer (doc 10) ──────────────────────────────────────────────
+
+/** A directed reference edge in the resource dependency graph. */
+export interface GraphEdge {
+  readonly from: string
+  readonly to: string
+  readonly via: string
+}
+
+/** Result of a graph reachability query. */
+export interface ReachResult {
+  readonly reachable: boolean
+}
+
+/**
+ * A multi-hop dependency graph over normalized resources. Built from the
+ * SAME `resolvedRef` data as `buildAssociations`, but generalized to ALL
+ * attributes (not just the one `via` per condition). Supports bidirectional
+ * BFS — the "no DB in a public subnet" chain alternates forward (db→subnet)
+ * and reverse (who references this subnet?) hops.
+ *
+ * v1: definite edges only (a resolvedRef chain that bottoms out at a concrete
+ * resource). Unresolvable refs produce no edge → the evaluator handles CNE
+ * separately (same pattern as the association index). See doc 10.
+ */
+export interface ResourceGraph {
+  /** BFS: can `start` reach any resource of `targetType`? */
+  canReach(
+    start: string,
+    targetType: string,
+    direction: 'forward' | 'reverse' | 'both',
+  ): ReachResult
+}
+
+/** Build the forward + reverse adjacency + a type lookup, return the graph. */
+export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
+  const forward = new Map<string, GraphEdge[]>()
+  const reverse = new Map<string, GraphEdge[]>()
+  const nodeTypes = new Map<string, string>()
+
+  const addEdge = (
+    fwd: Map<string, GraphEdge[]>,
+    key: string,
+    edge: GraphEdge,
+  ) => {
+    const arr = fwd.get(key)
+    if (arr) arr.push(edge)
+    else fwd.set(key, [edge])
+  }
+
+  for (const res of resources) {
+    const addr = assocKey(res.file, `${res.type}.${res.name}`)
+    nodeTypes.set(addr, res.type)
+    for (const [attr, value] of Object.entries(res.attributes)) {
+      if (value.kind !== 'unresolved') continue
+      // Prefer resolvedRef (structured — covers var/local chains).
+      if (value.resolvedRef) {
+        const toAddr = assocKey(
+          res.file,
+          `${value.resolvedRef.type}.${value.resolvedRef.name}`,
+        )
+        const edge: GraphEdge = { from: addr, to: toAddr, via: attr }
+        addEdge(forward, addr, edge)
+        addEdge(reverse, toAddr, edge)
+        continue
+      }
+      // Fallback: RESOURCE_REF regex for direct (non-var/local/data) refs.
+      const m = RESOURCE_REF.exec(value.expr)
+      if (!m || m[1] === undefined || m[2] === undefined) continue
+      if (m[1] === 'var' || m[1] === 'local' || m[1] === 'data') continue
+      const toAddr = assocKey(res.file, `${m[1]}.${m[2]}`)
+      const edge: GraphEdge = { from: addr, to: toAddr, via: attr }
+      addEdge(forward, addr, edge)
+      addEdge(reverse, toAddr, edge)
+    }
+  }
+
+  /** BFS from `start` in the given direction, checking each visited node's
+   *  type against `targetType`. Returns reachable=true on first match. */
+  const canReach = (
+    start: string,
+    targetType: string,
+    direction: 'forward' | 'reverse' | 'both',
+  ): ReachResult => {
+    const visited = new Set<string>([start])
+    if (nodeTypes.get(start) === targetType) return { reachable: true }
+    const queue: string[] = [start]
+    while (queue.length > 0) {
+      const addr = queue.shift()!
+      const neighbors: string[] = []
+      if (direction !== 'reverse') {
+        for (const e of forward.get(addr) ?? []) neighbors.push(e.to)
+      }
+      if (direction !== 'forward') {
+        for (const e of reverse.get(addr) ?? []) neighbors.push(e.from)
+      }
+      for (const n of neighbors) {
+        if (visited.has(n)) continue
+        visited.add(n)
+        if (nodeTypes.get(n) === targetType) return { reachable: true }
+        queue.push(n)
+      }
+    }
+    return { reachable: false }
+  }
+
+  return { canReach }
 }
 
 const assertNever = (x: never): never => {
