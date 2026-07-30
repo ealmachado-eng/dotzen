@@ -6,6 +6,61 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.26
+
+Feature — **v2 graph layer**: multi-hop dependency-graph rules. The first
+topology-aware governance controls for Terraform — no other static tool
+offers these as authorable rules. Three new conditions traverse chains of
+resource references to catch controls that per-resource evaluation cannot
+express.
+
+### Added — graph-layer conditions
+
+| Condition                                           | Use case                                                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `.denyIfReachable(targetType)`                      | "No DB in a public subnet" — traverses `db → subnet → route_table → route → IGW` (5-hop bidirectional BFS). |
+| `.denyIfSharedWith(sharedType, otherType)`          | "No shared SG between a public LB and a private DB" — lateral-movement prevention.                          |
+| `.denyIfReachableAttr(targetType, attr, ...values)` | "KMS key must be customer-managed" — traverse to a resource + check its attribute.                          |
+
+```ts
+rule()
+  .resource(AwsResource.DbInstance)
+  .denyIfReachable(AwsResource.InternetGateway)
+  .message('DB instances must not be in a public subnet')
+```
+
+### Added — graph infrastructure
+
+- `buildGraph()` constructs a bidirectional adjacency index over all `resolvedRef` edges (forward + reverse), module-scoped via `assocKey` (same isolation as the v1.9.21 association fix).
+- `ResourceGraph.canReach / sharedWith / reachableAttr` — BFS queries with type-matching.
+- Wired into `EvalContext` (built alongside the existing association index; additive — no existing condition changes behavior).
+
+### Added — preset rules (3 new, 143 total)
+
+- `cis-aws`: `no-db-in-public-subnet` (block) + `no-sg-shared-lb-db` (warn).
+- `data-protection`: `no-aws-managed-kms` (warn).
+- New vocabulary: `AwsAttribute.KeyManager`.
+
+### Added — integration + docs
+
+- `.tf` integration fixture (`graph-public-subnet/`) proving the full HCL → normalize → graph → evaluate pipeline.
+- DSL reference (`dsl.md`): new "Graph (topology-aware)" section.
+- Design spec: `docs/specs/10-graph-layer.md` (369-line architecture doc).
+
+### Known limitation
+
+The current graph treats ALL references as edges (untyped). Structural refs
+like `vpc_id` and NAT-gateway `subnet_id` can over-connect resources,
+producing false positives on complex VPC topologies. Edge types (Phase 6,
+doc 10) will distinguish routing edges from structural ones. The preset
+rules are conservative (block on the clearest case, warn on the SG-bridging
+case); users can suppress false positives with inline ignore directives.
+
+### Tests
+
+13 new graph tests (8 graph construction + 5 evaluator) + 1 .tf integration
+test (40 integration total). Gate: 769 unit + 40 integration, 0 regressions.
+
 ## 1.9.25
 
 > **Note on 1.9.24:** version `1.9.24` was skipped on npm. The first attempt
