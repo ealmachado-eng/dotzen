@@ -250,7 +250,17 @@ downstream manual-approval gates:
 
 ## Docs
 
-Full documentation, design rationale, and the roadmap live in the [project repository](https://gitlab.com/governance-tools/dotzen). The parser is the official `hashicorp/hcl` compiled to WASM (`@cdktf/hcl2json`) — pure JS, no native binary.
+**User documentation** (getting started, how-tos, the full rule catalog) lives in
+[`docs/user/`](https://gitlab.com/governance-tools/dotzen/-/tree/main/docs/user) —
+start with [What dotzen does](https://gitlab.com/governance-tools/dotzen/-/blob/main/docs/user/what-it-does.md)
+and the [5-minute tutorial](https://gitlab.com/governance-tools/dotzen/-/blob/main/docs/user/tutorial.md).
+
+The [rule reference](https://gitlab.com/governance-tools/dotzen/-/tree/main/docs/user/reference/rules)
+is auto-generated from the preset source — every shipped rule, what it checks,
+its rationale, and framework mapping. Design rationale and the roadmap live in
+[`docs/`](https://gitlab.com/governance-tools/dotzen/-/tree/main/docs). The
+parser is the official `hashicorp/hcl` compiled to WASM (`@cdktf/hcl2json`) —
+pure JS, no native binary.
 
 ## License
 

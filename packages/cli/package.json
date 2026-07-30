@@ -55,6 +55,7 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
+    "gen-docs": "jiti scripts/gen-rule-docs.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
