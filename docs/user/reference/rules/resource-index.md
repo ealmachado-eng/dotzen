@@ -53,6 +53,7 @@ not do"). ~60-70 of ~3200 recognized types carry rules today.
 - `azurerm_key_vault` — `rule-12` (cis-azure, ✗ block)
 - `azurerm_kubernetes_cluster` — `rule-13` (cis-azure, ✗ block); `rule-14` (cis-azure, ✗ block)
 - `azurerm_linux_function_app` — `app-service-min-tls` (cis-azure, ‼ warn); `rule-15` (cis-azure, ✗ block)
+- `azurerm_linux_virtual_machine` — `no-vm-public-ip-reachable` (cis-azure, ‼ warn)
 - `azurerm_linux_web_app` — `app-service-min-tls` (cis-azure, ‼ warn); `rule-15` (cis-azure, ✗ block)
 - `azurerm_mssql_server` — `rule-7` (cis-azure, ✗ block); `rule-8` (cis-azure, ✗ block)
 - `azurerm_mysql_flexible_server` — `rule-10` (cis-azure, ✗ block)
@@ -60,7 +61,9 @@ not do"). ~60-70 of ~3200 recognized types carry rules today.
 - `azurerm_postgresql_server` — `rule-9` (cis-azure, ✗ block)
 - `azurerm_role_assignment` — `rule-18` (cis-azure, ✗ block); `rule-19` (cis-azure, ✗ block)
 - `azurerm_storage_account` — `rule-2` (cis-azure, ✗ block); `rule-3` (cis-azure, ✗ block); `rule-4` (cis-azure, ✗ block); `rule-5` (cis-azure, ✗ block); `storage-infrastructure-encryption` (cis-azure, ‼ warn)
+- `azurerm_virtual_machine` — `no-vm-public-ip-reachable` (cis-azure, ‼ warn)
 - `azurerm_windows_function_app` — `app-service-min-tls` (cis-azure, ‼ warn); `rule-15` (cis-azure, ✗ block)
+- `azurerm_windows_virtual_machine` — `no-vm-public-ip-reachable` (cis-azure, ‼ warn)
 - `azurerm_windows_web_app` — `app-service-min-tls` (cis-azure, ‼ warn); `rule-15` (cis-azure, ✗ block)
 
 ## GCP

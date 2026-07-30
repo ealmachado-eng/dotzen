@@ -6,6 +6,95 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.29
+
+Feature — **graph-layer hardening + the first Azure graph rule**. Closes the
+three open graph-layer gaps from ROADMAP (the NAT false positive, the
+unresolved-chain false negative, and missing path detail) and ships the
+canonical cross-cloud topology control (Azure VM → NIC → public IP).
+
+### Fixed — NAT `subnet_id` false positive (resource-type-aware edges)
+
+`subnet_id` on an `aws_nat_gateway` was classified as `routing` (it IS a
+routing attr name), but semantically it's a **deployment ref** — the NAT is
+deployed in a public subnet (it needs a public IP), but transit traffic does
+not follow the NAT's deployment subnet; it routes TO the NAT via route tables.
+This created a false chain: `private_DB → … → NAT → public_subnet → … → IGW`.
+
+`classifyEdge(attr, resourceType)` now consults a `STRUCTURAL_REF_BY_TYPE`
+override map (`aws_nat_gateway.subnet_id` → structural). A private DB egressing
+via a NAT deployed in a public subnet no longer false-violates.
+`aws_db_instance.subnet_id` stays `routing` (the governed case). The override
+map is extensible for future per-type refinements.
+
+### Changed — could-not-evaluate for unresolved graph chains
+
+Previously, an unresolved graph edge (`subnet_id = var.x`, no default) produced
+**no edge** → `denyIfReachable` returned a definite **pass** (a false negative).
+`ReachResult` now carries a `conditional` flag. The graph records opaque
+var/local refs on typed attrs (routing/security/encryption); if a definite BFS
+misses the target but traversed a node carrying an opaque edge of a type the
+query follows, the result is **could-not-evaluate** (never a false pass).
+
+**Heads-up for consumers:** configs with partially-unresolvable routing/security
+chains will now surface `couldNotEvaluate` findings where they previously
+passed silently. This is the honest outcome (doc 10 §degradation) — the
+discipline of "never a guess, never a false verdict" extended to the graph
+layer. Fully-resolved chains are unaffected; the conditional flag is
+edge-type-scoped (an opaque security edge does not trigger a routing query).
+
+### Added — violation path detail for all graph conditions
+
+`denyIfSharedWith` and `denyIfReachableAttr` violations now include the
+reference chain (previously only `denyIfReachable` did). New
+`sharedWithPath` (the two-edge SG-bridge `DB → SG ← LB`) and
+`reachableAttrPath` render the chain in the finding detail.
+
+### Added — list-valued reference edges
+
+`buildGraph` now scans `res.lists`, not just scalar attributes. Real Terraform
+routes multi-value refs through lists (`vpc_security_group_ids = [...]`,
+`network_interface_ids = [...]`); these previously created **no graph edge**.
+List items now create real edges, and an opaque whole-list (`= var.sgs`)
+degrades to could-not-evaluate. This also makes the existing SG-shared rule
+(`no-sg-shared-lb-db`) fire on real `.tf` configs — it previously only worked
+on hand-modeled scalar refs.
+
+**Heads-up for consumers:** AWS configs that share a security group between a
+DB and a load balancer via list-valued refs will now surface the SG-bridging
+finding (previously silently missed). This is the rule working as intended.
+
+### Added — more routing attributes
+
+Route-table targets + cross-cloud reachability edges added to `ROUTING_ATTRS`:
+`carrier_gateway_id`, `local_gateway_id`, `core_network_id` (AWS route targets),
+and `network_interface_ids` + `public_ip_address_id` (the Azure VM→NIC→PublicIP
+chain). Deferred `peer_vpc_id` / `customer_gateway_id` / `vpn_gateway_id` —
+they are connection/attachment identifiers, not route-table targets (peering
+reachability is already covered via the `vpc_peering_connection_id` route
+target).
+
+### Added — Azure graph rule
+
+`no-vm-public-ip-reachable` (`cisAzure`, **warn**): a virtual machine that
+reaches a public IP through its NIC
+(`network_interface_ids → ip_configuration.public_ip_address_id → public_ip`).
+Internet-facing VMs are legitimate for bastions/jumpboxes, so this is a WARN
+(visibility for review), not a block. This is the Azure analog of "no DB in a
+public subnet" and the first cross-cloud demonstration of the graph layer.
+**144 rules** across 8 presets.
+
+### No spec DSL API changes
+
+No new condition kinds, no new builder methods, no new exposed enums. The
+`conditional` flag is engine-internal; the new graph methods are internal.
+Spec authors need not change anything. `cisAzure` consumers gain one warn rule
+automatically.
+
+### Tests
+
+789 unit + 40 integration, 0 regressions.
+
 ## 1.9.28
 
 Feature — graph-layer UX + multi-cloud improvements.

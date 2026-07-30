@@ -861,7 +861,7 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 Engine feature-complete for static HCL governance: 769 unit + 40 integration
 tests (90 unit files), 0 false positives since dogfood round 6 across 35+ real
 module repos, ~3200 resource/data types recognized across AWS/Azure/GCP, three
-output formats (terminal, JSON, SARIF 2.1.0), **143 rules across 8 presets
+output formats (terminal, JSON, SARIF 2.1.0), **144 rules across 8 presets
 including the v2 graph layer** (multi-hop dependency-graph rules — the first
 topology-aware static Terraform controls). **Repo + CI on GitHub**
 (`github.com/ealmachado-eng/dotzen`, public) — npm provenance attestations on
@@ -953,23 +953,50 @@ a strategic pivot — listed by category, not priority.
   preset rules (cis-aws ×2, data-protection ×1). 769 unit + 40 integration.
 
   **Remaining graph-layer improvements (prioritized):**
-  - **Resource-type-aware edge classification** — `subnet_id` on a NAT
-    gateway is currently classified as `routing` (it IS a routing attr), but
-    semantically it's a deployment ref. Classify by attr name + resource type
-    to fix this remaining false-positive vector.
-  - **CNE for unresolved graph edges** — if a chain is partially unresolvable
-    (`subnet_id = var.x` no default), degrade to could-not-evaluate instead of
-    pass (closes the false-negative gap; doc 10 §degradation).
-  - **Violation path detail for denyIfSharedWith + denyIfReachableAttr** —
-    extend the `pathTo` chain display to those conditions (currently only
-    `denyIfReachable` shows the chain).
-  - **More routing attributes** — `peer_vpc_id`, `customer_gateway_id`,
-    `vpn_gateway_id`, `carrier_gateway_id`, `local_gateway_id`.
-  - **Azure graph conditions** — `network_security_group_id` is in the
-    SECURITY_ATTRS set (enables `denyIfSharedWith` for Azure NSGs). Azure's
-    subnet → route_table topology partially maps but has no IGW equivalent
-    (internet access is via public IP on the NIC, not a gateway resource).
-    Needs Azure-specific conditions (e.g. VM → NIC → public IP reachability).
+  - ✅ **DONE (v1.9.29) — Resource-type-aware edge classification.** `subnet_id`
+    on a NAT gateway was classified as `routing` (it IS a routing attr name),
+    but semantically it's a deployment ref — it created the false chain
+    `private_DB → … → NAT → public_subnet → … → IGW`. `classifyEdge` now takes
+    the resource type and consults a `STRUCTURAL_REF_BY_TYPE` override map
+    (`aws_nat_gateway.subnet_id` → structural). Extensible per-type. A private
+    DB egressing via a NAT deployed in a public subnet no longer false-violates;
+    `aws_db_instance.subnet_id` stays routing (the governed case).
+  - ✅ **DONE (v1.9.29) — CNE for unresolved graph edges.** If a chain is
+    partially unresolvable (`subnet_id = var.x` no default), the query now
+    degrades to could-not-evaluate instead of pass. `ReachResult` gains
+    `conditional`; `buildGraph` records opaque var/local refs on typed attrs
+    (routing/security/encryption) in a `conditionalEdges` index. If a definite
+    BFS misses the target but traversed a node carrying an opaque edge of a type
+    the query follows → CNE (never a false pass). Edge-type-scoped: an opaque
+    security edge does not trigger a routing query's CNE. Closes doc 10
+    §degradation.
+  - ✅ **DONE (v1.9.29) — Violation path detail for denyIfSharedWith +
+    denyIfReachableAttr.** New `sharedWithPath` (the two-edge SG-bridge
+    `DB → SG ← LB`) and `reachableAttrPath` (chain to the matching target) render
+    the reference chain in violation detail, matching `denyIfReachable`.
+  - ✅ **DONE (v1.9.29) — More routing attributes.** Added route-table targets
+    + cross-cloud reachability edges to `ROUTING_ATTRS`: `carrier_gateway_id`,
+    `local_gateway_id`, `core_network_id` (AWS route targets) and
+    `network_interface_ids` + `public_ip_address_id` (the Azure VM→NIC→PublicIP
+    chain). Deferred `peer_vpc_id` / `customer_gateway_id` / `vpn_gateway_id` —
+    they are connection/attachment identifiers, not route-table targets, and
+    following them adds topology noise without improving the reachability rules
+    (peering reachability is already covered via the `vpc_peering_connection_id`
+    route target). Also: `buildGraph` now scans list-valued attrs
+    (`res.lists`), not just scalar attributes — list refs like
+    `vpc_security_group_ids = [aws_sg.x.id]` and
+    `network_interface_ids = [azurerm_network_interface.nic.id]` now create real
+    edges (this also makes the SG-shared rule fire on real `.tf`, not just
+    hand-modeled scalars); an opaque whole-list (`= var.sgs`) degrades to
+    could-not-evaluate.
+  - ✅ **DONE (v1.9.29) — Azure graph conditions.** Shipped the canonical
+    Azure multi-hop control: `no-vm-public-ip-reachable` (`cis-azure`, warn) —
+    a VM that reaches a public IP through its NIC
+    (`network_interface_ids → ip_configuration.public_ip_address_id`).
+    Internet-facing VMs are legitimate for bastions, so it is a WARN
+    (visibility for review). The cross-cloud capability (list-edge traversal +
+    Azure reachability attrs classified) is the deliverable; the rule
+    demonstrates it.
   - **GCP** — the graph model is less applicable (no per-resource SGs;
     firewall rules are VPC-level; routing is implicit). GCP's public-access
     controls are better served by existing per-resource conditions

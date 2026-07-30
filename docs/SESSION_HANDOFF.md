@@ -10,7 +10,7 @@
 - **Renovate:** onboarded, majors-gated (`dependencyDashboardApproval: false` + major-gate packageRule). **typescript major BLOCKED** (`enabled: false` — typescript-eslint doesn't support TS 7 yet; tracking issue typescript-eslint#10940). `.gitlab-ci.yml` removed (dead after migration).
 - **Branch protection:** `require-ci-on-main` ruleset (status checks required) + `v*` tag ruleset. Squash-merge recommended (verify it's configured in Settings → General → Pull Requests).
 - **Docs:** full user docs in `docs/user/` (tutorial + 6 how-tos + DSL reference + auto-generated rule catalog via `npm run gen-docs`). Design spec for the graph layer at `docs/specs/10-graph-layer.md`.
-- **143 rules** across 8 presets (core-security + cis-aws/azure/gcp + pci-dss/soc2/nist-800-53/data-protection).
+- **144 rules** across 8 presets (core-security + cis-aws/azure/gcp + pci-dss/soc2/nist-800-53/data-protection).
 
 ## Session arc (v1.9.19 → v1.9.28, 10 releases)
 
@@ -26,21 +26,25 @@
 ## Immediate next steps (ranked)
 
 1. **Launch / adoption** — the engine is feature-complete + documented + provenance-attested. A Show HN / r/terraform post is the #1 traction lever. Docs are ready.
-2. **Graph improvements** (from ROADMAP):
-   - Resource-type-aware edge classification (NAT `subnet_id` → structural, not routing).
-   - CNE for unresolved graph edges (false-negative gap).
-   - Path detail for `denyIfSharedWith` + `denyIfReachableAttr`.
-   - More routing attrs (`peer_vpc_id`, `customer_gateway_id`, etc.).
-   - Azure graph conditions (VM → NIC → public IP).
+2. **Graph improvements** (from ROADMAP) — **essentially complete** across two
+   sessions (v1.9.29). Done: resource-type-aware edge classification (NAT
+   `subnet_id` → structural), CNE for unresolved graph edges, path detail for
+   `denyIfSharedWith` + `denyIfReachableAttr`, more routing attrs (+ list-edge
+   traversal so `buildGraph` scans `res.lists` — fixes SG-shared on real `.tf`),
+   and the Azure graph condition (`no-vm-public-ip-reachable`: VM → NIC → public
+   IP, warn). Remaining: GCP graph conditions (low-applicability — GCP has no
+   per-resource SGs; existing per-resource conditions cover its public-access
+   controls).
 3. **More preset rules** — round-11 ungoverned enum-adds + org-profile example specs.
 4. **VS Code extension** — inline `.tf` findings (larger lift, high adoption value).
 
 ## Known issues / gotchas (don't re-discover these)
 
 ### Open issue
-- **Graph NAT false positive:** `subnet_id` on `aws_nat_gateway` is classified as `routing` (it IS a routing attr name), but semantically it's a deployment ref. Creates a false chain: private_DB → … → NAT → subnet_id → public_subnet → … → IGW. Fix: resource-type-aware edge classification (classify by attr name + resource type). The `vpc_id` false-positive was fixed by edge types (structural), but this one needs per-resource-type classification.
+- None currently open. (The graph NAT false positive was fixed in v1.9.29 — moved below.)
 
 ### Already fixed (don't re-introduce)
+- **Graph NAT false positive (v1.9.29):** `subnet_id` on `aws_nat_gateway` was classified as `routing` (it IS a routing attr name), but semantically it's a deployment ref — it created the false chain `private_DB → … → NAT → subnet_id → public_subnet → … → IGW`. Fix: `classifyEdge(attr, resourceType)` + a `STRUCTURAL_REF_BY_TYPE` override map (`aws_nat_gateway.subnet_id` → structural). Extensible per-type; `aws_db_instance.subnet_id` stays routing (the governed case). Same session also added CNE for unresolved graph edges + path detail for `denyIfSharedWith`/`denyIfReachableAttr`.
 - **Trusted publishing requires Node 24 (npm 11):** Node 20 / npm 10.x silently fails the OIDC token exchange → 404 "not in this registry." The `release.yml` uses `node-version: '24'`. Don't lower it.
 - **Renovate `mode: silent`:** the Mend hosted app defaulted to `mode: silent`. After config changes (`dependencyDashboardApproval: false`, `onboarding` removed, invalid `:pinDigests` preset removed), Renovate now auto-creates minor/patch PRs + gates majors. If "no PRs appear" in a future session, check the Mend dashboard — but the current config works.
 

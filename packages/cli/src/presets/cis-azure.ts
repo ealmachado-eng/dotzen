@@ -176,4 +176,25 @@ export const cisAzure = [
     .denyValue(AzureAttribute.RoleDefinitionName, BuiltInRole.Contributor)
     .message('Role assignments must not grant Contributor')
     .rationale('CIS Azure — least privilege'),
+
+  // ── Graph-layer rule (doc 10): no VM directly reachable to a public IP ──
+  // The Azure analog of "no DB in a public subnet". The graph traverses
+  // VM → network_interface_ids → NIC → ip_configuration.public_ip_address_id
+  // → public IP. Internet-facing VMs are legitimate for bastions/jumpboxes,
+  // so this is a WARN (visibility for review), not a block.
+  rule()
+    .id('no-vm-public-ip-reachable')
+    .resource(
+      AzureResource.LinuxVirtualMachine,
+      AzureResource.WindowsVirtualMachine,
+      AzureResource.VirtualMachine,
+    )
+    .denyIfReachable(AzureResource.PublicIp)
+    .onViolation(Effect.Warn)
+    .message('Virtual machine is reachable to a public IP address')
+    .rationale(
+      'Internet-facing VMs expand the attack surface — bastions should be ' +
+        'isolated behind a hardening baseline (NSG, JIT, patching). Review ' +
+        'whether this VM genuinely needs a public IP.',
+    ),
 ] as const

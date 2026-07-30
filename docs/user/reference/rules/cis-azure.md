@@ -9,7 +9,7 @@ import { coreSecurity, cisAzure } from '@dotzen/dotzen'
 export const spec = [...coreSecurity, ...cisAzure]
 ```
 
-**19 rules.**
+**20 rules.**
 
 ---
 
@@ -204,4 +204,13 @@ export const spec = [...coreSecurity, ...cisAzure]
 - **Message:** Role assignments must not grant Contributor
 - **Rationale:** CIS Azure — least privilege
 - **Framework mapping (derived):** CIS Azure — least privilege
+
+### `no-vm-public-ip-reachable`
+
+- **Severity:** ‼ warn
+- **Resources:** `azurerm_linux_virtual_machine`, `azurerm_windows_virtual_machine`, `azurerm_virtual_machine`
+- **Conditions:**
+  - Deny if this resource can reach a `azurerm_public_ip` via any reference chain (direction: both)
+- **Message:** Virtual machine is reachable to a public IP address
+- **Rationale:** Internet-facing VMs expand the attack surface — bastions should be isolated behind a hardening baseline (NSG, JIT, patching). Review whether this VM genuinely needs a public IP.
 

@@ -274,8 +274,20 @@ function buildAssociations(resources: NormalizedResource[]): EvalContext {
  *  resource through the VPC node — a structural dependency, not a routing path). */
 type EdgeType = 'routing' | 'security' | 'encryption' | 'structural'
 
-/** Attributes whose reference edges represent NETWORK ROUTING paths
- *  (subnet membership, route-table association, gateway/nat targeting). */
+/** Attributes whose reference edges represent NETWORK REACHABILITY paths —
+ *  AWS route-table targets (subnet membership, route-table association,
+ *  gateway/nat/tgw targeting) PLUS the cross-cloud network-attachment edges
+ *  (Azure VM → NIC, NIC → public IP). `network_interface_id` (AWS ENI) and its
+ *  Azure plural `network_interface_ids` are network attachments; a NIC's
+ *  `public_ip_address_id` is a direct internet-exposure edge. Together these
+ *  let `denyIfReachable(['routing'])` follow both AWS route chains and the
+ *  Azure VM→NIC→PublicIP chain.
+ *
+ *  Deferred (not route targets): `peer_vpc_id`, `customer_gateway_id`,
+ *  `vpn_gateway_id` — these are connection/attachment identifiers, not
+ *  route-table targets, and following them adds topology noise without
+ *  improving the IGW/public-IP reachability rules. (Peering reachability is
+ *  already covered via the `vpc_peering_connection_id` route target.) */
 const ROUTING_ATTRS = new Set([
   'subnet_id',
   'route_table_id',
@@ -285,7 +297,12 @@ const ROUTING_ATTRS = new Set([
   'vpc_peering_connection_id',
   'egress_only_gateway_id',
   'network_interface_id',
+  'network_interface_ids',
   'vpc_endpoint_id',
+  'carrier_gateway_id',
+  'local_gateway_id',
+  'core_network_id',
+  'public_ip_address_id',
 ])
 
 /** Security attrs — including Azure NSG attachment. */
@@ -303,11 +320,24 @@ const ENCRYPTION_ATTRS = new Set([
   'server_side_encryption',
 ])
 
-/** Classify an attribute name (or its last dotted segment) into an edge type.
- *  Unclassified attrs → 'structural' (safe default — excluded from routing/
- *  security/encryption-specific queries). */
-const classifyEdge = (via: string): EdgeType => {
+/** Per-resource-type overrides: attributes whose NAME reads like a routing/
+ *  security/encryption edge, but which on that resource type are deployment /
+ *  placement refs (structural) — not a path the graph rules should follow.
+ *  The canonical case: `subnet_id` on an `aws_nat_gateway` is WHERE the NAT is
+ *  deployed (it needs a public IP), not a routing path for transit traffic —
+ *  traffic routes TO the NAT via route tables. Treating it as routing created
+ *  a false chain (private DB → NAT → public subnet → IGW). */
+const STRUCTURAL_REF_BY_TYPE: ReadonlyMap<
+  string,
+  ReadonlySet<string>
+> = new Map([['aws_nat_gateway', new Set(['subnet_id'])]])
+
+/** Classify an attribute name (or its last dotted segment) into an edge type,
+ *  aware of the referencing resource's type. Unclassified attrs → 'structural'
+ *  (safe default — excluded from routing/security/encryption-specific queries). */
+const classifyEdge = (via: string, resourceType: string): EdgeType => {
   const last = via.split('.').pop() ?? via
+  if (STRUCTURAL_REF_BY_TYPE.get(resourceType)?.has(last)) return 'structural'
   if (ROUTING_ATTRS.has(last)) return 'routing'
   if (SECURITY_ATTRS.has(last)) return 'security'
   if (ENCRYPTION_ATTRS.has(last)) return 'encryption'
@@ -322,9 +352,15 @@ export interface GraphEdge {
   readonly edgeType: EdgeType
 }
 
-/** Result of a graph reachability query. */
+/** Result of a graph reachability query.
+ *  - `reachable`: a DEFINITE path (all-resolved edges) reaches the target.
+ *  - `conditional`: target NOT reached via definite edges, BUT a node on the
+ *    traversed sub-graph carries an unresolvable edge of a type the query
+ *    follows — the chain MIGHT continue to the target through an opaque ref.
+ *    Evaluators degrade this to could-not-evaluate (never a false pass). */
 export interface ReachResult {
   readonly reachable: boolean
+  readonly conditional: boolean
 }
 
 /**
@@ -356,6 +392,13 @@ export interface ResourceGraph {
   ): GraphEdge[] | null
   /** Does `start` share a `sharedType` resource with any `otherType` resource? */
   sharedWith(start: string, sharedType: string, otherType: string): ReachResult
+  /** The SG-bridge chain: [start→shared, other→shared], or null if not shared.
+   *  For violation detail (the two-edge "DB → SG ← LB" path). */
+  sharedWithPath(
+    start: string,
+    sharedType: string,
+    otherType: string,
+  ): GraphEdge[] | null
   /** BFS: can `start` reach a `targetType` whose `attr` is in `values`? */
   reachableAttr(
     start: string,
@@ -364,6 +407,15 @@ export interface ResourceGraph {
     values: readonly (string | number)[],
     direction: 'forward' | 'reverse' | 'both',
   ): ReachResult
+  /** The traversal chain to the first `targetType` whose `attr` matches, or
+   *  null. For violation detail. */
+  reachableAttrPath(
+    start: string,
+    targetType: string,
+    attr: string,
+    values: readonly (string | number)[],
+    direction: 'forward' | 'reverse' | 'both',
+  ): GraphEdge[] | null
 }
 
 /** Build the forward + reverse adjacency + a type lookup, return the graph. */
@@ -372,6 +424,14 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
   const reverse = new Map<string, GraphEdge[]>()
   const nodeTypes = new Map<string, string>()
   const nodeResources = new Map<string, NormalizedResource>()
+  /** A node's UNRESOLVABLE typed-edge attrs: an attr that classifies to
+   *  routing/security/encryption but whose var/local ref never bottomed out at
+   *  a concrete resource. Such an edge points somewhere the graph cannot see —
+   *  a query that would follow it degrades to could-not-evaluate rather than
+   *  producing a false pass (doc 10 §degradation). Structural opacity is NOT
+   *  recorded (structural is the unclassified default; the rules reason only
+   *  about routing/security/encryption semantics). */
+  const conditionalEdges = new Map<string, Set<EdgeType>>()
 
   const addEdge = (
     fwd: Map<string, GraphEdge[]>,
@@ -383,43 +443,90 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     else fwd.set(key, [edge])
   }
 
+  /** Consider a single attribute value (scalar OR a list item) for edge
+   *  creation. A resolved ref → a definite forward+reverse edge; a sole
+   *  var/local ref that did not resolve → a conditional edge for typed attrs
+   *  (so the query degrades to CNE instead of a false pass). Shared by the
+   *  scalar-attribute scan and the list-item scan. */
+  const consider = (
+    from: string,
+    file: string,
+    attr: string,
+    resType: string,
+    value: NormalizedValue,
+  ) => {
+    if (value.kind !== 'unresolved') return
+    const et = classifyEdge(attr, resType)
+    // Prefer resolvedRef (structured — covers var/local chains).
+    if (value.resolvedRef) {
+      const toAddr = assocKey(
+        file,
+        `${value.resolvedRef.type}.${value.resolvedRef.name}`,
+      )
+      const edge: GraphEdge = { from, to: toAddr, via: attr, edgeType: et }
+      addEdge(forward, from, edge)
+      addEdge(reverse, toAddr, edge)
+      return
+    }
+    // Fallback: RESOURCE_REF regex for direct (non-var/local/data) refs.
+    const m = RESOURCE_REF.exec(value.expr)
+    if (!m || m[1] === undefined || m[2] === undefined) return
+    if (m[1] === 'var' || m[1] === 'local' || m[1] === 'data') {
+      if (et !== 'structural') {
+        const set = conditionalEdges.get(from) ?? new Set<EdgeType>()
+        set.add(et)
+        conditionalEdges.set(from, set)
+      }
+      return
+    }
+    const toAddr = assocKey(file, `${m[1]}.${m[2]}`)
+    const edge: GraphEdge = { from, to: toAddr, via: attr, edgeType: et }
+    addEdge(forward, from, edge)
+    addEdge(reverse, toAddr, edge)
+  }
+
   for (const res of resources) {
     const addr = assocKey(res.file, `${res.type}.${res.name}`)
     nodeTypes.set(addr, res.type)
     nodeResources.set(addr, res)
-    for (const [attr, value] of Object.entries(res.attributes)) {
-      if (value.kind !== 'unresolved') continue
-      const et = classifyEdge(attr)
-      // Prefer resolvedRef (structured — covers var/local chains).
-      if (value.resolvedRef) {
-        const toAddr = assocKey(
-          res.file,
-          `${value.resolvedRef.type}.${value.resolvedRef.name}`,
-        )
-        const edge: GraphEdge = {
-          from: addr,
-          to: toAddr,
-          via: attr,
-          edgeType: et,
+    for (const [attr, value] of Object.entries(res.attributes))
+      consider(addr, res.file, attr, res.type, value)
+    // List-valued attrs: each item is a separate potential edge. Real Terraform
+    // routes multi-value refs through lists (vpc_security_group_ids,
+    // network_interface_ids). Scanning items — not just scalar attributes — is
+    // what makes the SG-shared rule fire on real configs and the Azure
+    // VM→NIC chain traversable. An opaque whole-list ref (var.sgs) degrades to
+    // a conditional edge for typed attrs (honest CNE).
+    if (res.lists) {
+      for (const [attr, list] of Object.entries(res.lists)) {
+        if (list.kind === 'resolved') {
+          for (const item of list.items)
+            consider(addr, res.file, attr, res.type, item)
+        } else {
+          const et = classifyEdge(attr, res.type)
+          if (et !== 'structural') {
+            const set = conditionalEdges.get(addr) ?? new Set<EdgeType>()
+            set.add(et)
+            conditionalEdges.set(addr, set)
+          }
         }
-        addEdge(forward, addr, edge)
-        addEdge(reverse, toAddr, edge)
-        continue
       }
-      // Fallback: RESOURCE_REF regex for direct (non-var/local/data) refs.
-      const m = RESOURCE_REF.exec(value.expr)
-      if (!m || m[1] === undefined || m[2] === undefined) continue
-      if (m[1] === 'var' || m[1] === 'local' || m[1] === 'data') continue
-      const toAddr = assocKey(res.file, `${m[1]}.${m[2]}`)
-      const edge: GraphEdge = {
-        from: addr,
-        to: toAddr,
-        via: attr,
-        edgeType: et,
-      }
-      addEdge(forward, addr, edge)
-      addEdge(reverse, toAddr, edge)
     }
+  }
+
+  /** Did the definite-edge BFS visit a node that carries an unresolvable edge
+   *  of a type this query follows? If so the chain MIGHT continue to the
+   *  target through an opaque ref → degrade to could-not-evaluate. */
+  const conditionalOn = (
+    visited: ReadonlySet<string>,
+    allow: (et: EdgeType) => boolean,
+  ): boolean => {
+    for (const a of visited) {
+      const types = conditionalEdges.get(a)
+      if (!types) continue
+      for (const et of types) if (allow(et)) return true
+    }
+    return false
   }
 
   /** BFS from `start` in the given direction, checking each visited node's
@@ -433,7 +540,8 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
   ): ReachResult => {
     const allow = (et: EdgeType) => !edgeTypes || edgeTypes.includes(et)
     const visited = new Set<string>([start])
-    if (nodeTypes.get(start) === targetType) return { reachable: true }
+    if (nodeTypes.get(start) === targetType)
+      return { reachable: true, conditional: false }
     const queue: string[] = [start]
     while (queue.length > 0) {
       const addr = queue.shift()!
@@ -449,38 +557,75 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
       for (const n of neighbors) {
         if (visited.has(n)) continue
         visited.add(n)
-        if (nodeTypes.get(n) === targetType) return { reachable: true }
+        if (nodeTypes.get(n) === targetType)
+          return { reachable: true, conditional: false }
         queue.push(n)
       }
     }
-    return { reachable: false }
+    return { reachable: false, conditional: conditionalOn(visited, allow) }
+  }
+
+  /** The SG-bridge chain [start→shared, other→shared], or null if not shared.
+   *  `sharedEdge` is the forward security edge from `start` to a `sharedType`
+   *  node; `otherEdge` is a reverse edge (some `otherType` → that shared node). */
+  const sharedWithPath = (
+    start: string,
+    sharedType: string,
+    otherType: string,
+  ): GraphEdge[] | null => {
+    for (const sharedEdge of forward.get(start) ?? []) {
+      if (sharedEdge.edgeType !== 'security') continue
+      if (nodeTypes.get(sharedEdge.to) !== sharedType) continue
+      for (const otherEdge of reverse.get(sharedEdge.to) ?? []) {
+        if (otherEdge.from === start) continue
+        if (nodeTypes.get(otherEdge.from) === otherType)
+          return [sharedEdge, otherEdge]
+      }
+    }
+    return null
   }
 
   /** Does `start` share a `sharedType` resource with any `otherType` resource?
-   *  Step 1: find forward neighbors of `start` whose type = `sharedType`.
-   *  Step 2: for each shared resource, check reverse neighbors for `otherType`. */
+   *  Definite: forward to a `sharedType` node, then reverse to an `otherType`.
+   *  Conditional: `start` (or a reached shared node) has an opaque security
+   *  edge — sharing cannot be ruled out → could-not-evaluate. */
   const sharedWith = (
     start: string,
     sharedType: string,
     otherType: string,
   ): ReachResult => {
-    const sharedAddrs: string[] = []
-    for (const e of forward.get(start) ?? []) {
+    if (sharedWithPath(start, sharedType, otherType))
+      return { reachable: true, conditional: false }
+    const visited = new Set<string>([start])
+    for (const e of forward.get(start) ?? [])
       if (e.edgeType === 'security' && nodeTypes.get(e.to) === sharedType)
-        sharedAddrs.push(e.to)
+        visited.add(e.to)
+    return {
+      reachable: false,
+      conditional: conditionalOn(visited, (et) => et === 'security'),
     }
-    if (sharedAddrs.length === 0) return { reachable: false }
-    for (const sharedAddr of sharedAddrs) {
-      for (const e of reverse.get(sharedAddr) ?? []) {
-        if (nodeTypes.get(e.from) === otherType) return { reachable: true }
-      }
-    }
-    return { reachable: false }
+  }
+
+  /** True if a `targetType` node's `attr` is a literal in `values`. */
+  const matchesAttr = (
+    addr: string,
+    targetType: string,
+    attr: string,
+    values: readonly (string | number)[],
+  ): boolean => {
+    if (nodeTypes.get(addr) !== targetType) return false
+    const node = nodeResources.get(addr)
+    const attrVal = node?.attributes[attr]
+    return (
+      attrVal?.kind === 'literal' &&
+      !Array.isArray(attrVal.value) &&
+      values.includes(String(attrVal.value))
+    )
   }
 
   /** BFS: can `start` reach a `targetType` whose `attr` is in `values`?
-   *  Checks each visited targetType node's attribute — fires only if the
-   *  attr value matches. An unresolved attr → skip (can't confirm the match). */
+   *  Follows all definite edges; conditional when an opaque typed edge exists
+   *  on the traversed sub-graph. */
   const reachableAttr = (
     start: string,
     targetType: string,
@@ -488,18 +633,10 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     values: readonly (string | number)[],
     direction: 'forward' | 'reverse' | 'both',
   ): ReachResult => {
+    if (reachableAttrPath(start, targetType, attr, values, direction))
+      return { reachable: true, conditional: false }
+    // Recompute the visited set to assess conditional edges honestly.
     const visited = new Set<string>([start])
-    const checkNode = (addr: string): boolean => {
-      if (nodeTypes.get(addr) !== targetType) return false
-      const node = nodeResources.get(addr)
-      const attrVal = node?.attributes[attr]
-      return (
-        attrVal?.kind === 'literal' &&
-        !Array.isArray(attrVal.value) &&
-        values.includes(String(attrVal.value))
-      )
-    }
-    if (checkNode(start)) return { reachable: true }
     const queue: string[] = [start]
     while (queue.length > 0) {
       const addr = queue.shift()!
@@ -511,11 +648,55 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
       for (const n of neighbors) {
         if (visited.has(n)) continue
         visited.add(n)
-        if (checkNode(n)) return { reachable: true }
         queue.push(n)
       }
     }
-    return { reachable: false }
+    return { reachable: false, conditional: conditionalOn(visited, () => true) }
+  }
+
+  /** BFS: the edge chain from `start` to the first `targetType` whose `attr`
+   *  is in `values`, or null. Parent-tracking shortest-path reconstruction.
+   *  For violation detail. */
+  const reachableAttrPath = (
+    start: string,
+    targetType: string,
+    attr: string,
+    values: readonly (string | number)[],
+    direction: 'forward' | 'reverse' | 'both',
+  ): GraphEdge[] | null => {
+    if (matchesAttr(start, targetType, attr, values)) return []
+    const visited = new Set<string>([start])
+    const parent = new Map<string, { edge: GraphEdge; from: string }>()
+    const queue: string[] = [start]
+    while (queue.length > 0) {
+      const addr = queue.shift()!
+      type N = { addr: string; edge: GraphEdge }
+      const neighbors: N[] = []
+      if (direction !== 'reverse')
+        for (const e of forward.get(addr) ?? [])
+          neighbors.push({ addr: e.to, edge: e })
+      if (direction !== 'forward')
+        for (const e of reverse.get(addr) ?? [])
+          neighbors.push({ addr: e.from, edge: e })
+      for (const { addr: n, edge } of neighbors) {
+        if (visited.has(n)) continue
+        visited.add(n)
+        parent.set(n, { edge, from: addr })
+        if (matchesAttr(n, targetType, attr, values)) {
+          const path: GraphEdge[] = []
+          let cur = n
+          while (cur !== start) {
+            const p = parent.get(cur)
+            if (!p) break
+            path.unshift(p.edge)
+            cur = p.from
+          }
+          return path
+        }
+        queue.push(n)
+      }
+    }
+    return null
   }
 
   /** BFS: the edge chain from `start` to the first `targetType` found.
@@ -564,7 +745,14 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     return null
   }
 
-  return { canReach, pathTo, sharedWith, reachableAttr }
+  return {
+    canReach,
+    pathTo,
+    sharedWith,
+    sharedWithPath,
+    reachableAttr,
+    reachableAttrPath,
+  }
 }
 
 const assertNever = (x: never): never => {
@@ -1902,12 +2090,9 @@ function evalDenyNonApprovedRegion(
  * bidirectional BFS. The "no DB in a public subnet" rule =
  * `denyIfReachable('aws_internet_gateway')`.
  *
- * v1 limitation: unresolvable refs (var/local chains that don't bottom out
- * at a concrete resource) produce no graph edge → the query returns
- * not-reachable → pass. This is a potential false-negative for fully-
- * unresolvable chains, but the resolvedRef mechanism covers the vast
- * majority of real-world cases. A future refinement will track conditional
- * edges for honest CNE on partially-resolved chains (doc 10 §degradation).
+ * Degradation (doc 10 §degradation): a definite path → violation; no path but
+ * an opaque routing edge on the traversed sub-graph → could-not-evaluate
+ * (never a false pass); otherwise a definite pass.
  */
 
 /** Format a graph edge chain into a readable string for violation detail.
@@ -1957,6 +2142,11 @@ function evalDenyIfReachable(
       detail: `reachable to ${c.targetType} via: ${chain}`,
     }
   }
+  if (result.conditional)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `path to ${c.targetType} is partially unresolvable — an opaque routing reference hides the chain`,
+    }
   return { kind: 'pass' }
 }
 
@@ -1965,7 +2155,8 @@ function evalDenyIfReachable(
  * (e.g. a security group) with a resource of `otherType` (e.g. a public
  * load balancer). Lateral-movement prevention — isolates trust boundaries.
  * Uses the graph's `sharedWith` query (forward to sharedType, then reverse
- * to check for otherType).
+ * to check for otherType). Degrades to could-not-evaluate when the shared
+ * reference is an opaque var/local chain.
  */
 function evalDenyIfSharedWith(
   c: DenyIfSharedWith,
@@ -1975,11 +2166,18 @@ function evalDenyIfSharedWith(
   const start = assocKey(r.file, `${r.type}.${r.name}`)
   const result = ctx.graph.sharedWith(start, c.sharedType, c.otherType)
   if (result.reachable) {
+    const path = ctx.graph.sharedWithPath(start, c.sharedType, c.otherType)
+    const chain = path ? formatPath(start, path) : '(chain unavailable)'
     return {
       kind: 'violation',
-      detail: `shares a ${c.sharedType} with a ${c.otherType} — trust-boundary bridging risk`,
+      detail: `shares a ${c.sharedType} with a ${c.otherType} via: ${chain}`,
     }
   }
+  if (result.conditional)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `${c.sharedType} reference is unresolvable — cannot rule out sharing with ${c.otherType}`,
+    }
   return { kind: 'pass' }
 }
 
@@ -2002,11 +2200,24 @@ function evalDenyIfReachableAttr(
     c.direction ?? 'both',
   )
   if (result.reachable) {
+    const path = ctx.graph.reachableAttrPath(
+      start,
+      c.targetType,
+      c.attr,
+      c.values,
+      c.direction ?? 'both',
+    )
+    const chain = path ? formatPath(start, path) : '(chain unavailable)'
     return {
       kind: 'violation',
-      detail: `reachable to a ${c.targetType} whose ${c.attr} is in [${c.values.join(', ')}]`,
+      detail: `reachable to a ${c.targetType} (${c.attr} in [${c.values.join(', ')}]) via: ${chain}`,
     }
   }
+  if (result.conditional)
+    return {
+      kind: 'cannotEvaluate',
+      reason: `path to ${c.targetType} is partially unresolvable — cannot confirm its ${c.attr}`,
+    }
   return { kind: 'pass' }
 }
 
