@@ -128,6 +128,7 @@ type DenyNonApprovedRegion = Extract<
 >
 type DenyIfReachable = Extract<Condition, { kind: 'denyIfReachable' }>
 type DenyIfSharedWith = Extract<Condition, { kind: 'denyIfSharedWith' }>
+type DenyIfReachableAttr = Extract<Condition, { kind: 'denyIfReachableAttr' }>
 const PLAINTEXT_PROTOCOLS = new Set(['HTTP', 'TCP'])
 
 /**
@@ -300,6 +301,15 @@ export interface ResourceGraph {
    *  Traverses: start → forward → sharedType → reverse → otherType.
    *  Use case: "a DB's security group is also attached to a public LB." */
   sharedWith(start: string, sharedType: string, otherType: string): ReachResult
+  /** BFS: can `start` reach a `targetType` whose `attr` is in `values`?
+   *  Use case: "bucket → kms_key → key_manager must not be 'AWS'." */
+  reachableAttr(
+    start: string,
+    targetType: string,
+    attr: string,
+    values: readonly (string | number)[],
+    direction: 'forward' | 'reverse' | 'both',
+  ): ReachResult
 }
 
 /** Build the forward + reverse adjacency + a type lookup, return the graph. */
@@ -307,6 +317,7 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
   const forward = new Map<string, GraphEdge[]>()
   const reverse = new Map<string, GraphEdge[]>()
   const nodeTypes = new Map<string, string>()
+  const nodeResources = new Map<string, NormalizedResource>()
 
   const addEdge = (
     fwd: Map<string, GraphEdge[]>,
@@ -321,6 +332,7 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
   for (const res of resources) {
     const addr = assocKey(res.file, `${res.type}.${res.name}`)
     nodeTypes.set(addr, res.type)
+    nodeResources.set(addr, res)
     for (const [attr, value] of Object.entries(res.attributes)) {
       if (value.kind !== 'unresolved') continue
       // Prefer resolvedRef (structured — covers var/local chains).
@@ -395,7 +407,47 @@ export function buildGraph(resources: NormalizedResource[]): ResourceGraph {
     return { reachable: false }
   }
 
-  return { canReach, sharedWith }
+  /** BFS: can `start` reach a `targetType` whose `attr` is in `values`?
+   *  Checks each visited targetType node's attribute — fires only if the
+   *  attr value matches. An unresolved attr → skip (can't confirm the match). */
+  const reachableAttr = (
+    start: string,
+    targetType: string,
+    attr: string,
+    values: readonly (string | number)[],
+    direction: 'forward' | 'reverse' | 'both',
+  ): ReachResult => {
+    const visited = new Set<string>([start])
+    const checkNode = (addr: string): boolean => {
+      if (nodeTypes.get(addr) !== targetType) return false
+      const node = nodeResources.get(addr)
+      const attrVal = node?.attributes[attr]
+      return (
+        attrVal?.kind === 'literal' &&
+        !Array.isArray(attrVal.value) &&
+        values.includes(String(attrVal.value))
+      )
+    }
+    if (checkNode(start)) return { reachable: true }
+    const queue: string[] = [start]
+    while (queue.length > 0) {
+      const addr = queue.shift()!
+      const neighbors: string[] = []
+      if (direction !== 'reverse')
+        for (const e of forward.get(addr) ?? []) neighbors.push(e.to)
+      if (direction !== 'forward')
+        for (const e of reverse.get(addr) ?? []) neighbors.push(e.from)
+      for (const n of neighbors) {
+        if (visited.has(n)) continue
+        visited.add(n)
+        if (checkNode(n)) return { reachable: true }
+        queue.push(n)
+      }
+    }
+    return { reachable: false }
+  }
+
+  return { canReach, sharedWith, reachableAttr }
 }
 
 const assertNever = (x: never): never => {
@@ -1779,6 +1831,33 @@ function evalDenyIfSharedWith(
   return { kind: 'pass' }
 }
 
+/**
+ * v2 graph layer (doc 10): deny if this resource can reach a `targetType`
+ * whose `attr` is in `values`. Combines graph traversal + attribute check.
+ * E.g. "bucket → kms_key → key_manager must not be 'AWS'."
+ */
+function evalDenyIfReachableAttr(
+  c: DenyIfReachableAttr,
+  r: NormalizedResource,
+  ctx: EvalContext,
+): ConditionOutcome {
+  const start = assocKey(r.file, `${r.type}.${r.name}`)
+  const result = ctx.graph.reachableAttr(
+    start,
+    c.targetType,
+    c.attr,
+    c.values,
+    c.direction ?? 'both',
+  )
+  if (result.reachable) {
+    return {
+      kind: 'violation',
+      detail: `reachable to a ${c.targetType} whose ${c.attr} is in [${c.values.join(', ')}]`,
+    }
+  }
+  return { kind: 'pass' }
+}
+
 /** Exhaustive dispatch: a new condition kind is a compile error (Layer 4). */
 function evalCondition(
   c: Condition,
@@ -1873,6 +1952,8 @@ function evalCondition(
       return evalDenyIfReachable(c, r, ctx)
     case 'denyIfSharedWith':
       return evalDenyIfSharedWith(c, r, ctx)
+    case 'denyIfReachableAttr':
+      return evalDenyIfReachableAttr(c, r, ctx)
     // Project-level condition — evaluated in the PROJECT pass (no-op here).
     case 'requireResource':
       return { kind: 'pass' }

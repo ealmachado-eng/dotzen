@@ -232,3 +232,58 @@ describe('evaluate — denyIfSharedWith (SG bridging)', () => {
     expect(r.violations).toHaveLength(0)
   })
 })
+
+describe('evaluate — denyIfReachableAttr (traverse + attr check)', () => {
+  const noAwsManagedKmsRule: Rule = {
+    id: 'no-aws-managed-kms',
+    target: { kind: 'resource', types: ['aws_s3_bucket'] as never },
+    conditions: [
+      {
+        kind: 'denyIfReachableAttr',
+        targetType: 'aws_kms_key' as never,
+        attr: 'key_manager' as never,
+        values: ['AWS'],
+        direction: 'both',
+      },
+    ],
+    effect: Effect.Block,
+    message: 'Buckets must use customer-managed KMS keys',
+  }
+
+  it('violates when a bucket reaches a KMS key with key_manager = AWS', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_s3_bucket', 'data', {
+        kms_master_key_id: ref('${aws_kms_key.key.id}', 'aws_kms_key', 'key'),
+      }),
+      res('aws_kms_key', 'key', {
+        key_manager: { kind: 'literal', value: 'AWS' },
+      }),
+    ]
+    const r = evaluate([noAwsManagedKmsRule], resources)
+    expect(r.violations).toHaveLength(1)
+    expect(r.violations[0]?.resource).toBe('aws_s3_bucket.data')
+  })
+
+  it('passes when the KMS key is customer-managed (key_manager != AWS)', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_s3_bucket', 'data', {
+        kms_master_key_id: ref('${aws_kms_key.key.id}', 'aws_kms_key', 'key'),
+      }),
+      res('aws_kms_key', 'key', {
+        key_manager: { kind: 'literal', value: 'CUSTOMER_MANAGED' },
+      }),
+    ]
+    const r = evaluate([noAwsManagedKmsRule], resources)
+    expect(r.violations).toHaveLength(0)
+  })
+
+  it('passes when the bucket has no KMS key (not reachable)', () => {
+    const resources: NormalizedResource[] = [
+      res('aws_s3_bucket', 'data', {
+        bucket: { kind: 'literal', value: 'my-data' },
+      }),
+    ]
+    const r = evaluate([noAwsManagedKmsRule], resources)
+    expect(r.violations).toHaveLength(0)
+  })
+})

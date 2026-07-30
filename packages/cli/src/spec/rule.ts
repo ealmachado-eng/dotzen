@@ -205,6 +205,16 @@ export type Condition =
       readonly sharedType: AnyResource
       readonly otherType: AnyResource
     }
+  // v2 graph layer (doc 10): deny if this resource can reach a `targetType`
+  // whose `attr` is in `values`. Combines graph traversal + attribute check.
+  // Use case: "bucket → kms_key → key_manager must not be 'AWS'."
+  | {
+      readonly kind: 'denyIfReachableAttr'
+      readonly targetType: AnyResource
+      readonly attr: AnyAttribute
+      readonly values: readonly (string | number)[]
+      readonly direction?: 'forward' | 'reverse' | 'both'
+    }
 
 export interface Rule {
   readonly id: string
@@ -686,6 +696,25 @@ export class RuleBuilder {
    *  load balancer). Lateral-movement prevention — isolates trust boundaries. */
   denyIfSharedWith(sharedType: AnyResource, otherType: AnyResource): this {
     this._conditions.push({ kind: 'denyIfSharedWith', sharedType, otherType })
+    return this
+  }
+
+  /** v2 graph layer (doc 10): deny if this resource can reach a `targetType`
+   *  whose `attr` is in `values`. Combines traversal + attribute check.
+   *  E.g. `.denyIfReachableAttr(KmsKey, KeyManager, 'AWS')` = "KMS key must
+   *  not be AWS-managed." */
+  denyIfReachableAttr(
+    targetType: AnyResource,
+    attr: AnyAttribute,
+    ...values: (string | number)[]
+  ): this {
+    this._conditions.push({
+      kind: 'denyIfReachableAttr',
+      targetType,
+      attr,
+      values,
+      direction: 'both',
+    })
     return this
   }
 

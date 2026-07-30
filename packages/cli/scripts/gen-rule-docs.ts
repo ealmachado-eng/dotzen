@@ -224,6 +224,10 @@ function renderCondition(c: Condition): string {
     }
     case 'denyIfSharedWith':
       return `Deny if this resource shares a \`${c.sharedType}\` with a \`${c.otherType}\` (lateral-movement prevention)`
+    case 'denyIfReachableAttr': {
+      const dir = c.direction ?? 'both'
+      return `Deny if this resource can reach a \`${c.targetType}\` whose \`${c.attr}\` is in [${list(c.values as readonly unknown[])}] (direction: ${dir})`
+    }
   }
 }
 
