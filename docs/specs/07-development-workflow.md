@@ -128,11 +128,11 @@ A change is done only when **all** hold:
 
 ## CI gate (GitHub Actions)
 
-The non-bypassable gate mirrors the subagents exactly. Linux (`ubuntu-latest`)
-is the guaranteed gate; **Windows + macOS parity** (`03-distribution-and-cli.md`
-§"Cross-platform implementation notes") is a free native matrix on a public
-repo (or gated behind an `ENABLE_CROSS_OS` input if you want to keep it opt-in).
-The live pipeline is `.github/workflows/ci.yml`:
+The non-bypassable gate mirrors the subagents exactly, on `ubuntu-latest`
+(Node 24). The engine is cross-platform by construction — pure JS + the WASM
+HCL parser, no native binary — so Linux-only CI is sufficient (no per-OS
+matrix; see `03-distribution-and-cli.md` §"Cross-platform implementation
+notes"). The live pipeline is `.github/workflows/ci.yml`:
 
 ```yaml
 # .github/workflows/ci.yml (abridged — see the file for the full version)
@@ -146,9 +146,9 @@ jobs:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: packages/cli } }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: npm, cache-dependency-path: packages/cli/package-lock.json }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: '24', cache: npm, cache-dependency-path: packages/cli/package-lock.json }
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint

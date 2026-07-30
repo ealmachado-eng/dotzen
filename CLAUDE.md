@@ -213,7 +213,7 @@ dotzen/
 │       ├── 05-future-cloud-layer.md
 │       ├── 06-engine-architecture.md
 │       └── 07-development-workflow.md
-├── .gitlab-ci.yml                     ← quality/security gate (GitLab CI)
+├── .github/workflows/ci.yml             ← quality/security gate (GitHub Actions)
 ├── renovate.json                      ← npm + CI-image update automation
 ├── .claude/
 │   ├── skills/
@@ -253,10 +253,16 @@ dotzen/
 #    under packages/cli/examples/ai-generated/ instead.
 ```
 
-A **v0 vertical slice** of `packages/cli/` now exists: the full ROP
-pipeline (version → spec-load via jiti → parse via `@cdktf/hcl2json`
-WASM → normalize → evaluate → report), twenty-two structurally different
-conditions — `denyIngress` / `denyEgress` (SSH/RDP/DB ports vs the
+The engine in `packages/cli/` is shipped (v1.9.x), not a vertical slice:
+the full ROP pipeline (version → spec-load via jiti → parse via
+`@cdktf/hcl2json` WASM → normalize → evaluate → report) with **42
+structurally different conditions** — including the v1.9.26–29 graph-layer
+conditions (`denyIfReachable` / `denyIfSharedWith` / `denyIfReachableAttr`)
+— across AWS, Azure, and GCP (~3,200 recognized types). The list below is
+an illustrative sample of the condition families, not exhaustive; the
+authoritative current catalog is the `Condition` union in
+`src/spec/rule.ts`, `docs/ROADMAP.md`, and `packages/cli/CHANGELOG.md`.
+A representative sample — `denyIngress` / `denyEgress` (SSH/RDP/DB ports vs the
 internet on `aws_security_group`, incl. `dynamic` blocks and the
 standalone `aws_vpc_security_group_ingress_rule`), `mustHaveTags`
 (required tags on any resource), the boolean-attribute trio `mustBeTrue`
@@ -423,10 +429,8 @@ quality/security gate. Full detail in
     `code-quality`, `security-scan`. Launch all three **in parallel**
     after a change; a check that could not run counts as a failure, never
     a silent pass; a feature is not done until all three PASS.
-  - **CI** (`.gitlab-ci.yml`, GitLab CI): the non-bypassable gate on
-    push/MR. Linux is the guaranteed gate; Windows+macOS parity jobs are
-    gated behind `ENABLE_CROSS_OS` (they need GitLab SaaS/self-hosted
-    runners for those OSes). Update automation via Renovate
+  - **CI** (`.github/workflows/ci.yml`, GitHub Actions): the non-bypassable
+    gate on push/PR (Node 24). Update automation via Renovate
     (`renovate.json`), not Dependabot.
 - **Tools** (all dev/CI only — never shipped in the npm package, so a
   native dev tool does not breach the "stay pure-JS" distribution

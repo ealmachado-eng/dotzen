@@ -595,6 +595,37 @@ builds the engine:
 > could-not-evaluate. An absent data source (or one whose statements
 > do not parse) still degrades honestly to unresolved.
 
+> **v1.9.26–29 — graph-layer conditions (topology-aware).** Three conditions
+> traverse a multi-hop dependency graph built once per run (`buildGraph`),
+> enabling controls that per-resource evaluation cannot express. Design:
+> `docs/specs/10-graph-layer.md`.
+>
+> - **`denyIfReachable(targetType, direction?)`** — violates if this resource
+>   can reach a `targetType` through `routing` edges (bidirectional BFS; default
+>   `direction: 'both'`). The "no DB in a public subnet" rule:
+>   `.denyIfReachable(AwsResource.InternetGateway)`. A partially-unresolvable
+>   chain degrades to `couldNotEvaluate` (never a false pass). The violation
+>   detail renders the exact reference chain.
+> - **`denyIfSharedWith(sharedType, otherType)`** — violates if this resource
+>   shares a `sharedType` (e.g. a security group) with a resource of
+>   `otherType` (e.g. a public load balancer) — lateral-movement / trust-boundary
+>   bridging. Follows `security` edges.
+> - **`denyIfReachableAttr(targetType, attr, ...values)`** — combines traversal
+>   + attribute check: violates if this resource can reach a `targetType` whose
+>   `attr` is in `values`. E.g. a bucket's KMS key must be customer-managed:
+>   `.denyIfReachableAttr(AwsResource.KmsKey, AwsAttribute.KeyManager, 'AWS')`.
+>
+> ```typescript
+> rule()
+>   .resource(AwsResource.DbInstance)
+>   .denyIfReachable(AwsResource.InternetGateway)
+>   .message('Database instances must not be in a public subnet')
+> ```
+>
+> Cross-cloud: the Azure analog `no-vm-public-ip-reachable` (`cisAzure`, warn)
+> traverses VM → NIC → public IP (`network_interface_ids` list edge +
+> `ip_configuration.public_ip_address_id`).
+
 > **v1.7 — Network ACL (NACL) ingress governance.** The stateless
 > subnet-level firewall is now governed by the EXISTING `denyIngress`
 > condition — no new condition kind. The normalize layer maps three AWS

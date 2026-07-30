@@ -1,12 +1,23 @@
 # 10 — Graph Layer (dependency-graph rules)
 
-Status: **Proposed.** This document defines a new capability for the dotzen
-engine: a **multi-hop dependency graph** over normalized resources, enabling
-rule conditions that traverse chains of references (e.g. "no database in a
-public subnet" requires walking `db → subnet → route_table → route → igw`).
+Status: **Implemented (v1.9.26–29).** This document defined a new capability for
+the dotzen engine: a **multi-hop dependency graph** over normalized resources,
+enabling rule conditions that traverse chains of references (e.g. "no database
+in a public subnet" requires walking `db → subnet → route_table → route → igw`).
 It is the natural next capability after the per-resource + single-hop
-association model in `06-engine-architecture.md`, and the one class of
-controls no static Terraform tool currently does well.
+association model in `06-engine-architecture.md`, and the one class of controls
+no static Terraform tool currently does well.
+
+Shipped: `buildGraph` + three conditions (`denyIfReachable`,
+`denyIfSharedWith`, `denyIfReachableAttr`), bidirectional BFS, edge-type
+classification (routing/security/encryption/structural), resource-type-aware
+classification (`aws_nat_gateway.subnet_id` → structural), conditional edges
+(honest `couldNotEvaluate` on partially-unresolvable chains), list-valued edge
+traversal (`res.lists`), violation path detail for all three conditions, and the
+first Azure graph rule (`no-vm-public-ip-reachable`: VM → NIC → public IP). The
+doc below is the original design; where the implementation diverged (edge types,
+conditional edges, list traversal, path detail), the divergences are noted
+inline and the code (`src/engine/evaluate.ts`, `buildGraph`) is authoritative.
 
 Read `06-engine-architecture.md` first — this doc extends its model.
 
@@ -89,13 +100,22 @@ interface GraphEdge {
 }
 ```
 
-**No edge types in v1.** The initial graph treats every reference as an
-untyped edge (any `resolvedRef` → edge). This is the simplest model that
-covers the killer use cases. Edge types (`references` vs `attached` vs
-`routes`) are a future refinement for rules that need to distinguish the
-*semantic* nature of the connection (e.g. "follow routing edges only"). For
-now, `denyIfReachable` follows ALL edges — the `targetType` parameter scopes
-the query precisely enough.
+**Edge types (shipped v1.9.27, refined through v1.9.29).** Each edge is
+classified by its referencing attribute's semantic type — `routing` (network
+reachability: subnet membership, route-table targeting, NIC attachment, public
+IP), `security` (SG/NSG attachment), `encryption` (KMS targeting), or
+`structural` (everything else, plus per-resource-type overrides like
+`aws_nat_gateway.subnet_id`). `denyIfReachable` follows `routing` edges only;
+`denyIfSharedWith` follows `security`; `denyIfReachableAttr` follows all. This
+prevents false-positive over-connection (e.g. `vpc_id` linking every VPC
+resource through the VPC node is `structural`, not a routing path). The
+classification is resource-type-aware (`STRUCTURAL_REF_BY_TYPE`) so a
+deployment-ref that *reads* like a routing attr (`subnet_id` on a NAT gateway)
+is correctly treated as structural. Additionally, **list-valued attrs are
+traversed** (`res.lists`, not just scalar attributes) — so
+`vpc_security_group_ids = [...]` and `network_interface_ids = [...]` create real
+edges. An **unresolvable** typed edge degrades a query to `couldNotEvaluate`
+(never a false pass).
 
 ### Bidirectional adjacency
 
