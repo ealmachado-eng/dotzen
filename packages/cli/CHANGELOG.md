@@ -6,6 +6,50 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.33
+
+Docs/packaging — **no engine change.** Refreshes npm's README (which had
+diverged from the repo) and brings the project docs in line with current reality
+ahead of launch.
+
+### Fixed — npm README sync
+
+npm was publishing a stale, divergent `packages/cli/README.md` (npm reads the
+package-local README, not the repo root). Added a `prepack` script that syncs
+the root README into the package on every `npm pack`/`publish`, so npmjs.com now
+shows the current README. (A symlink wouldn't work — npm pack excludes symlink
+targets outside the package dir.)
+
+### Changed — launch README rewrite
+
+Rewrote the README: accurate state (was "v0 / ~200 tests / not yet published" —
+actually v1.9.x, 801 tests, published with provenance); the AI-generated-
+Terraform problem + the static-analysis insight; a 30-second demo; positioning
+vs OPA/Sentinel/Checkov/tfsec; Mermaid diagrams (the parse→evaluate pipeline and
+the graph reachability chain); a "where dotzen fits" defense-in-depth layering.
+Lead with **fail-fast in the AI agent's own loop**. Install commands use a
+major-pin (`@1`) — `dotzen.json` remains the exact enforcement pin.
+
+### Changed — doc refresh
+
+- `docs/specs/02-spec-dsl.md` documents the v1.9.26–29 graph conditions
+  (`denyIfReachable` / `denyIfSharedWith` / `denyIfReachableAttr`), which were
+  missing.
+- `docs/specs/10-graph-layer.md` `Proposed` → `Implemented`; reflects the
+  shipped edge types, conditional edges, list traversal, path detail, and Azure
+  rule.
+- `docs/specs/07-development-workflow.md` CI example: Node 20 → 24, actions
+  v4 → v5; dropped the stale Windows/macOS matrix (`ci.yml` is Linux-only; the
+  engine is cross-platform via pure-JS + the WASM parser).
+- `CLAUDE.md` orientation: gate is `.github/workflows/ci.yml` (not
+  `.gitlab-ci.yml`); reframed the "v0 vertical slice" to shipped v1.9.x.
+- `docs/specs/01-product-overview.md` target users reframed as two entry ramps
+  (bottom-up dev via the agent loop; top-down architect + platform).
+
+### No spec DSL API changes · no rule changes · 144 rules across 8 presets
+
+Consumers need not change anything. 801 unit + 40 integration, 0 regressions.
+
 ## 1.9.32
 
 Feature — **round-13 vocabulary expansion** (dogfood round 12 follow-up).
