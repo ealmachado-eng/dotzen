@@ -152,9 +152,13 @@ dependency breaks. This is accepted for now (documented, monitored) rather than
 acted on. The mitigation path if it bites: compile `hashicorp/hcl/v2` to WASM
 ourselves and **vendor the `.wasm` artifact** in this repo — same parser
 correctness, same no-native-binary/no-Gatekeeper distribution, but dotzen owns
-the build (a build-time Go toolchain, not a user-facing one). Bundling the Go
-parser as a native subprocess binary is *not* the mitigation — that reintroduces
-the per-OS / signing / Gatekeeper cost this decision deliberately avoids.
+the build (a build-time Go toolchain, not a user-facing one). Owning the build
+matters beyond the archived-upstream risk: `hashicorp/hcl/v2` itself continues
+to release (parser fixes, new HCL constructs, security patches), and a frozen
+`@cdktf/hcl2json` snapshot means dotzen cannot track those — only a dotzen-owned
+build lets us bump `hcl/v2` on our own cadence. Bundling the Go parser as a
+native subprocess binary is *not* the mitigation — that reintroduces the
+per-OS / signing / Gatekeeper cost this decision deliberately avoids.
 
 ## Internal validation note
 
