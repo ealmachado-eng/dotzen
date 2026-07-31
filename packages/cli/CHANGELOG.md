@@ -6,6 +6,22 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.34
+
+Docs — **no engine change.** Fixes the README diagrams on npmjs.com.
+
+### Fixed — README diagrams on npm
+
+npmjs.com renders README as plain markdown and doesn't execute mermaid (GitHub
+does), so the three mermaid diagrams showed as raw code fences on npm. Replaced
+all three with ASCII art that renders identically on npm, GitHub, plain text,
+and offline — consistent with dotzen's zero-dependency ethos. (1.9.33 shipped
+the rewritten README with mermaid; this corrects it for the npm surface.)
+
+### No spec DSL API changes · no rule changes · 144 rules across 8 presets
+
+Consumers need not change anything. 801 unit + 40 integration, 0 regressions.
+
 ## 1.9.33
 
 Docs/packaging — **no engine change.** Refreshes npm's README (which had
