@@ -6,6 +6,22 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.35
+
+Docs — **no engine change.** Fixes the README links on npmjs.com.
+
+### Fixed — README links on npm
+
+Relative links (`./examples/`, `./docs/...`) resolve on GitHub but 404 on
+npmjs.com (no repo context). Converted all 12 to absolute
+`github.com/ealmachado-eng/dotzen` URLs (files → `blob/main`, dirs →
+`tree/main`) so they work on both surfaces. With 1.9.34 (ASCII diagrams) this
+completes the npm README audit (mermaid / relative links / raw HTML all clear).
+
+### No spec DSL API changes · no rule changes · 144 rules across 8 presets
+
+Consumers need not change anything. 801 unit + 40 integration, 0 regressions.
+
 ## 1.9.34
 
 Docs — **no engine change.** Fixes the README diagrams on npmjs.com.
