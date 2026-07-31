@@ -214,10 +214,10 @@ never a false pass. Three graph conditions ship: `denyIfReachable`,
 npx @dotzen/dotzen@1 check ./terraform/
 ```
 
-**2. Author a spec.** Copy a starting point from [`examples/`](./examples/) —
-[`startup/`](./examples/startup/.zen/spec.ts) (lean baseline),
-[`enterprise/`](./examples/enterprise/.zen/spec.ts) (multi-cloud CIS + prod
-change-safety gates), or [`regulated/`](./examples/regulated/.zen/spec.ts) (full
+**2. Author a spec.** Copy a starting point from [`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples) —
+[`startup/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/startup/.zen/spec.ts) (lean baseline),
+[`enterprise/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/enterprise/.zen/spec.ts) (multi-cloud CIS + prod
+change-safety gates), or [`regulated/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/regulated/.zen/spec.ts) (full
 compliance stack + data residency). Each is a standalone `.zen/spec.ts` you edit
 and commit.
 
@@ -277,18 +277,18 @@ GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
 
 The engine is documented deeply in `docs/specs/`:
 
-- [`00-architecture-decision-record`](./docs/specs/00-architecture-decision-record.md) —
+- [`00-architecture-decision-record`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/00-architecture-decision-record.md) —
   why Node/TypeScript + `npx` won on adoption friction (decision locked).
-- [`01-product-overview`](./docs/specs/01-product-overview.md) — the problem,
+- [`01-product-overview`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/01-product-overview.md) — the problem,
   "Prose as Code," positioning vs OPA/Sentinel/tfsec.
-- [`02-spec-dsl`](./docs/specs/02-spec-dsl.md) — the `.zen/spec.ts` language spec.
-- [`03-distribution-and-cli`](./docs/specs/03-distribution-and-cli.md) — `npx`
+- [`02-spec-dsl`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/02-spec-dsl.md) — the `.zen/spec.ts` language spec.
+- [`03-distribution-and-cli`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/03-distribution-and-cli.md) — `npx`
   mechanics, version pinning, the WASM-parser choice.
-- [`10-graph-layer`](./docs/specs/10-graph-layer.md) — the dependency-graph design.
-- [`ROADMAP`](./docs/ROADMAP.md) — what's shipped and the remaining backlog.
+- [`10-graph-layer`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/10-graph-layer.md) — the dependency-graph design.
+- [`ROADMAP`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/ROADMAP.md) — what's shipped and the remaining backlog.
 
 User docs (tutorial, how-tos, auto-generated rule catalog) live in
-[`docs/user/`](./docs/user/).
+[`docs/user/`](https://github.com/ealmachado-eng/dotzen/tree/main/docs/user).
 
 ---
 
@@ -296,6 +296,6 @@ User docs (tutorial, how-tos, auto-generated rule catalog) live in
 
 Working, published, provenance-attested. The static-analysis engine is at
 diminishing returns on coverage/precision. The levers ahead are adoption
-(VS Code extension, broader dogfood data) — see [`ROADMAP`](./docs/ROADMAP.md).
+(VS Code extension, broader dogfood data) — see [`ROADMAP`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/ROADMAP.md).
 
 MIT licensed. Issues and feedback: [github.com/ealmachado-eng/dotzen](https://github.com/ealmachado-eng/dotzen).
