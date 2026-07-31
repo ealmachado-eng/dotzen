@@ -139,6 +139,23 @@ parser may not match Terraform's parser on every edge case) is a
 *correctness* risk to track, not a portability one. See
 `/docs/specs/03-distribution-and-cli.md`.
 
+**Supply-chain risk to track (added 2026-07).** The HCL parser used is
+`@cdktf/hcl2json`, which is CDKTF's compile of the HashiCorp Go HCL parser
+(`github.com/hashicorp/hcl/v2`) to **WASM** — it ships a `main.wasm.gz`, not a
+native binary, so the pure-JS / no-Gatekeeper property holds. Its source repo,
+`hashicorp/terraform-cdk`, is **archived** (HashiCorp sunset CDKTF; last push
+2025-12). The npm package is frozen at `0.21.0` (2025-06), not marked
+deprecated, still installable and functionally correct — HCL is a stable
+language and the parser works — but there is no upstream maintenance: no fixes,
+no security patches, and medium-term install-rot risk if a transitive
+dependency breaks. This is accepted for now (documented, monitored) rather than
+acted on. The mitigation path if it bites: compile `hashicorp/hcl/v2` to WASM
+ourselves and **vendor the `.wasm` artifact** in this repo — same parser
+correctness, same no-native-binary/no-Gatekeeper distribution, but dotzen owns
+the build (a build-time Go toolchain, not a user-facing one). Bundling the Go
+parser as a native subprocess binary is *not* the mitigation — that reintroduces
+the per-OS / signing / Gatekeeper cost this decision deliberately avoids.
+
 ## Internal validation note
 
 The internal proof-of-concept environment has a JVM toolchain available
