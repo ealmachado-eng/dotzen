@@ -78,13 +78,13 @@ can actually review, at zero adoption friction.**
 dotzen **complements, not replaces**. It occupies one layer in a stack, and the
 layers cover each other's blind spots:
 
-```mermaid
-flowchart LR
-  SECRETS["gitleaks / secret-scan"] --> CODE["dotzen<br/>static code + config"]
-  CODE --> PLAN["OPA / Sentinel<br/>plan + policy"]
-  PLAN --> DEPLOY["cloud config / CSPM"]
-  classDef dz fill:#eef,stroke:#40c,font-weight:bold
-  class CODE dz
+```text
+ gitleaks /         dotzen                OPA / Sentinel           cloud config /
+ secret-scan   →    (static code +    →   (plan + policy,     →   CSPM / Config
+ (secrets)          config)               needs auth + state)     (running cloud)
+                         ↑
+                         dotzen sits here — the fail-fast code layer:
+                         no credentials, no state, no terraform plan
 ```
 
 - **Secrets** — gitleaks/CI secret-scanning (the plaintext key in a var).
@@ -129,15 +129,22 @@ dotzen is a static-analysis pipeline. The parser is a pure-JS WASM dependency
 (`@cdktf/hcl2json`) — **no native binary, no `terraform plan`**, which is what
 keeps the local check fast and credential-free.
 
-```mermaid
-flowchart LR
-  HCL[".tf HCL files"] --> Parse["hcl2json parse"]
-  Parse --> Norm["normalize<br/>vars · locals · ternary · merge<br/>modules · for_each · dynamic"]
-  Norm --> Eval["evaluate<br/>42 conditions<br/>+ dependency graph"]
-  Eval --> Out{report}
-  Out -->|default| T["terminal (ANSI)"]
-  Out -->|"--format json"| J["JSON artifact"]
-  Out -->|"--format sarif"| S["SARIF 2.1.0<br/>GitHub Code Scanning / GitLab"]
+```text
+ .tf HCL files
+      │
+      ▼
+ hcl2json parse
+      │
+      ▼
+ normalize    ← vars · locals · ternary · merge · modules · for_each · dynamic
+      │
+      ▼
+ evaluate     ← 42 conditions + dependency graph
+      │
+      ▼
+   report  ───→  terminal (ANSI)            [default]
+           ───→  --format json              [CI artifact]
+           ───→  --format sarif 2.1.0       [GitHub Code Scanning / GitLab]
 ```
 
 Three outcomes, never collapsed: a rule **violates**, **passes**, or **could not
@@ -160,14 +167,20 @@ rule()
 The graph walks the reference chain bidirectionally — forward and reverse — to
 decide reachability:
 
-```mermaid
-flowchart LR
-  DB[aws_db_instance] -->|subnet_id| SUB[aws_subnet]
-  SUB -. reverse hop .-> RTA[route_table_association]
-  RTA -->|route_table_id| RT[aws_route_table]
-  RT -->|gateway_id| IGW[aws_internet_gateway]
-  classDef target fill:#fee,stroke:#c00,color:#900,font-weight:bold
-  class IGW target
+```text
+ aws_db_instance
+      │  subnet_id  (forward)
+      ▼
+ aws_subnet
+      │  who references this subnet?  (reverse hop)
+      ▼
+ aws_route_table_association
+      │  route_table_id
+      ▼
+ aws_route_table
+      │  gateway_id
+      ▼
+ aws_internet_gateway   ◀── target reached → violation
 ```
 
 If that chain reaches an Internet Gateway, the DB is in a public subnet →
