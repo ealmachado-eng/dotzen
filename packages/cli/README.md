@@ -99,6 +99,30 @@ mistakes AI-generated Terraform makes by default.
 
 ---
 
+## Who this is for
+
+Governance tools have a quirk: the person who _uses_ the tool day-to-day
+and the person who _champions_ it inside an org are rarely the same
+person. dotzen is built around both.
+
+- **The developer generating Terraform via AI** won't add a blocker for
+  its own sake — but will happily let their **coding agent** run
+  `npx @dotzen/dotzen@1 check` in its own loop, read the findings, and
+  fix them before a PR ever opens. Fewer review cycles, not "I love
+  policy."
+- **The security architect** authors and owns the spec. Rego locks them
+  out of authoring — someone else writes the policy, they approve on
+  trust. `.zen/spec.ts` reads like prose they can review and edit
+  directly in an MR diff.
+- **The platform engineer** wires it into CI and pre-commit. No servers,
+  no database, no credentials — one pipeline step.
+
+In most orgs the architect champions it, the platform team mandates it,
+and the developer — often already using it via the agent loop — was
+never blocked in the first place.
+
+---
+
 ## The 30-second demo
 
 Point dotzen at any Terraform project that has a `.zen/spec.ts`:

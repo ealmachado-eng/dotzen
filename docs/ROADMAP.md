@@ -1,5 +1,24 @@
 # Roadmap — resource/check backlog
 
+## Status at a glance
+
+**144 rules across 8 presets** (`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`,
+`pciDss`, `soc2`, `nist80053`, `dataProtection`) · **~3,200 resource/data
+types** recognized across AWS, Azure, and GCP · **801 unit + 40 integration
+tests** · **0 false positives since dogfood round 6**, across 35+ real
+module repos (terraform-aws-modules, terraform-google-modules, Azure/,
+cloudposse) · 3 output formats (terminal, JSON, SARIF 2.1.0) · a working
+**graph layer** for multi-hop topology rules (e.g. "no DB in a public
+subnet") — the one class of control static per-resource tools don't cover.
+
+The engine is feature-complete for static Terraform governance. What
+follows is the detailed dogfood log that got it there — useful for
+understanding *why* a given precision fix exists, not required reading to
+evaluate the tool. Skip to "Future directions" at the bottom for what's
+still open.
+
+---
+
 Prospective governance checks for dotzen's AWS vocabulary, from the
 EKS / ECS / Route 53 / ALB-NLB / ACM / Secrets Manager review. This is a
 **backlog to pull from**, not committed design (that lives in
