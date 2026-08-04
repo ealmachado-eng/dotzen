@@ -232,14 +232,8 @@ never a false pass. Three graph conditions ship: `denyIfReachable`,
 
 ## Quick start
 
-**1. Run it** against existing Terraform (zero install):
-
-```bash
-npx @dotzen/dotzen@1 check ./terraform/
-```
-
-**2. Scaffold a spec.** Generate one with `init` (or browse/copy a template from
-[`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples)):
+**1. Scaffold.** `init` writes a version-pinned `dotzen.json` + a `.zen/spec.ts`
+and auto-detects where your Terraform lives:
 
 ```bash
 npx @dotzen/dotzen@1 init                       # default: [...coreSecurity]
@@ -250,7 +244,16 @@ npx @dotzen/dotzen@1 init --presets coreSecurity,cisAws,pciDss  # à la carte (a
 `--profile` picks a curated bundle; `--presets` adds framework packs
 (`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`, `pciDss`, `soc2`, `nist80053`,
 `dataProtection`). They compose: `--profile enterprise --presets pciDss` = the
-enterprise bundle + PCI. Then edit the generated `.zen/spec.ts`:
+enterprise bundle + PCI. (Browse/copy templates in
+[`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples) too.)
+
+> **Version pinning:** the install (`@1`) floats within major 1; `dotzen.json`
+> is the **enforcement** pin — the engine does an exact match and refuses to run
+> on a mismatch, printing the corrective command. That's also what makes `@1`
+> safe in CI: a newer `1.x` than `dotzen.json` pins → loud refusal → intentional
+> bump, no silent drift. (`@latest` is never used — unbounded across majors.)
+
+**2. Edit** `.zen/spec.ts` — add rules / switch presets to fit your org:
 
 ```ts
 import { coreSecurity, cisAws, rule, AwsResource, Effect } from '@dotzen/dotzen'
@@ -266,19 +269,12 @@ export const spec = [
 ]
 ```
 
-**3. Pin the exact version** in `dotzen.json`. The install (`@1`) floats within
-major 1; `dotzen.json` is the **enforcement** pin — the engine does an exact
-match and refuses to run on a mismatch, printing the corrective command. (Run
-`npx @dotzen/dotzen@1 init` to generate it.)
+**3. Check.** Run the spec against your Terraform (zero install, no credentials,
+no `terraform plan`):
 
-```json
-{ "spec": ".zen/spec.ts", "terraform": "./terraform", "version": "1.9.32" }
+```bash
+npx @dotzen/dotzen@1 check
 ```
-
-This is also what makes `@1` safe in CI: if a run fetches a newer `1.x` than
-`dotzen.json` pins, the engine refuses loudly and forces an intentional bump —
-no silent drift. (`@latest` is deliberately never used — it's unbounded across
-majors.)
 
 **4. Wire CI.** Add `npx @dotzen/dotzen@1 check` as a GitHub Actions /
 GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
