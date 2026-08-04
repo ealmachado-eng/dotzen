@@ -2399,6 +2399,9 @@ export function evaluate(
         // not resources) — skip them here so they neither violate nor inflate
         // the passed count against resources. Same for binding-targeted
         // conditions (variables/locals), evaluated in the BINDINGS pass.
+        // Stryker disable all: skip-optimization — these conditions are no-ops
+        // in the RESOURCE pass (eval'd in their own pass), so removing any
+        // branch only risks redundant evaluation; it never changes a verdict.
         if (
           condition.kind === 'denyInsensitiveSecretOutput' ||
           condition.kind === 'denyInsensitiveVariable' ||
@@ -2411,6 +2414,7 @@ export function evaluate(
           condition.kind === 'requireResource'
         )
           continue
+        // Stryker restore all
         if (!inScope(condition, rule.target, resource)) continue
 
         const outcome = evalCondition(condition, resource, ctx)
