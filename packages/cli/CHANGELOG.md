@@ -6,6 +6,45 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.36
+
+Feature — **`dotzen init --profile` / `--presets`**. The scaffold now generates a
+ready-to-go spec from the curated profiles and/or à-la-carte presets, instead of
+a hand-written sample to edit.
+
+### Added — `init` flags
+
+- `--profile startup|enterprise|regulated` — a curated bundle (presets + bespoke
+  rules: ownership tags, prod `prevent_destroy` approval gate, data residency).
+- `--presets coreSecurity,cisAws,...` — à la carte, any of the 8 packs
+  (`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`, `pciDss`, `soc2`,
+  `nist80053`, `dataProtection`).
+- They **compose**: `--profile enterprise --presets pciDss` = the enterprise
+  bundle + PCI. The union is **deduped** (duplicate rule IDs are a load error,
+  so a preset is never double-spread). Invalid names error cleanly.
+
+```bash
+npx @dotzen/dotzen@1 init                       # default: [...coreSecurity]
+npx @dotzen/dotzen@1 init --profile enterprise  # curated bundle
+npx @dotzen/dotzen@1 init --presets coreSecurity,cisAws,pciDss
+```
+
+### Changed — default `init` output; examples are generated
+
+- `dotzen init` with no flags now writes `[...coreSecurity]` (the real
+  secure-by-default baseline) instead of the old hand-written 12-rule sample.
+  The sample's educational rule catalog is retired in favor of the actual
+  baseline spread — find rule patterns in `docs/` + `examples/`.
+- `examples/{startup,enterprise,regulated}/.zen/spec.ts` are now **generated**
+  from a single profiles-data module (`src/cli/profiles.ts`) via
+  `npm run gen-examples` — the `init` output and the example templates can no
+  longer drift apart.
+
+### No spec DSL API changes · 144 rules across 8 presets
+
+No new condition kinds or builder methods. Consumers need not change existing
+specs. 816 unit + 40 integration, 0 regressions.
+
 ## 1.9.35
 
 Docs — **no engine change.** Fixes the README links on npmjs.com.
