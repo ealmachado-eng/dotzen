@@ -18,4 +18,7 @@ Thumbs.db
 .idea/
 *.swp
 
+# Stryker mutation-test report artifacts (regenerated each run).
+packages/cli/reports/
+
 # Keep package-lock.json committed (needed for reproducible `npm ci`).

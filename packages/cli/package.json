@@ -58,6 +58,7 @@
     "gen-docs": "jiti scripts/gen-rule-docs.ts",
     "gen-examples": "jiti scripts/gen-examples.ts",
     "check-docs": "jiti scripts/gen-rule-docs.ts && git -C ../.. diff --exit-code --quiet docs/user/reference/rules || (echo '\\nSTALE: docs/user/reference/rules differs from gen-docs output.\\nRun `npm run gen-docs` from packages/cli and commit the result.\\n' && false)",
+    "mutation": "stryker run",
     "prepublishOnly": "npm run build",
     "prepack": "cp ../../README.md ./README.md"
   },
@@ -66,6 +67,8 @@
     "jiti": "^2.4.2"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.10.5",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
