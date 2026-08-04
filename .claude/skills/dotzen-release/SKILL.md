@@ -137,16 +137,40 @@ publish token at publish time. The current workflow in
 name: release
 on:
   push:
-    tags: ['v*']                # only on vX.Y.Z tags
+    tags: ["v*"]                # only on vX.Y.Z tags
+permissions:
+  contents: read
 jobs:
+  # Correctness gate — mirrors ci.yml's `test` job. publish runs ONLY after
+  # this passes, so a tag pushed with a failing check does NOT ship to npm.
+  # (ci.yml does not fire on tags; security scans audit/semgrep/gitleaks ran
+  # on the PR/commit that became the tag, so they're not re-run here.)
+  gate:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: packages/cli } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: '24', cache: npm, cache-dependency-path: packages/cli/package-lock.json }
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run coverage
+      - run: npm run check-docs
+
   publish:
+    needs: [gate]               # publish waits for the gate — not parallel
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write           # REQUIRED for npm trusted publishing (OIDC)
+    defaults: { run: { working-directory: packages/cli } }
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           # Node 24 → npm 11.x. REQUIRED for trusted publishing: the OIDC →
           # publish-token exchange needs npm CLI ≥ 11.5.1; Node 20 ships npm
@@ -155,17 +179,15 @@ jobs:
           # signing still succeeds because sigstore uses the GitHub OIDC token
           # directly, masking the publish-token failure).
           node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
           cache: npm
           cache-dependency-path: packages/cli/package-lock.json
       - run: npm install --no-audit --no-fund
-        working-directory: packages/cli
       - run: npm run build
-        working-directory: packages/cli
       # The repo is PUBLIC on GitHub → sigstore provenance works (was E422 on
       # the old private GitLab repo). Keep --provenance so the npm page shows
       # the attestation.
       - run: npm publish --access public --provenance
-        working-directory: packages/cli
 ```
 
 Notes (each is a real failure mode — do not relearn):
@@ -185,8 +207,8 @@ Notes (each is a real failure mode — do not relearn):
   that bit the v1.9.24 first-GitHub-publish). Provenance *signing* still
   succeeds on Node 20 (sigstore uses the GitHub OIDC token directly, not the
   npm publish token), which masks the failure — don't be fooled by a signed
-  provenance statement followed by a 404. The publish job uses
-  `node-version: '24'`; the gate jobs stay on Node 20.
+  provenance statement followed by a 404. Both the `gate` and `publish` jobs
+  use `node-version: '24'`.
 - **No `NPM_TOKEN` / `.npmrc` write.** The old stored-token path wrote
   `//registry.npmjs.org/:_authToken=${NPM_TOKEN}` to `~/.npmrc`. With
   trusted publishing there is no token variable — that line writes a blank
