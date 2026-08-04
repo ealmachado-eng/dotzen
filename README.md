@@ -238,22 +238,22 @@ never a false pass. Three graph conditions ship: `denyIfReachable`,
 npx @dotzen/dotzen@1 check ./terraform/
 ```
 
-**2. Author a spec.** Copy a starting point from [`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples) —
-[`startup/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/startup/.zen/spec.ts) (lean baseline),
-[`enterprise/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/enterprise/.zen/spec.ts) (multi-cloud CIS + prod
-change-safety gates), or [`regulated/`](https://github.com/ealmachado-eng/dotzen/blob/main/examples/regulated/.zen/spec.ts) (full
-compliance stack + data residency). Each is a standalone `.zen/spec.ts` you edit
-and commit.
+**2. Scaffold a spec.** Generate one with `init` (or browse/copy a template from
+[`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples)):
+
+```bash
+npx @dotzen/dotzen@1 init                       # default: [...coreSecurity]
+npx @dotzen/dotzen@1 init --profile enterprise  # curated bundle (startup|enterprise|regulated)
+npx @dotzen/dotzen@1 init --presets coreSecurity,cisAws,pciDss  # à la carte (any of 8 packs)
+```
+
+`--profile` picks a curated bundle; `--presets` adds framework packs
+(`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`, `pciDss`, `soc2`, `nist80053`,
+`dataProtection`). They compose: `--profile enterprise --presets pciDss` = the
+enterprise bundle + PCI. Then edit the generated `.zen/spec.ts`:
 
 ```ts
-import {
-  coreSecurity,
-  cisAws,
-  rule,
-  AwsResource,
-  Port,
-  Effect,
-} from '@dotzen/dotzen'
+import { coreSecurity, cisAws, rule, AwsResource, Effect } from '@dotzen/dotzen'
 
 export const spec = [
   ...coreSecurity, // secure-by-default baseline

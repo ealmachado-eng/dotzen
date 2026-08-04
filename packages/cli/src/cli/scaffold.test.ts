@@ -3,9 +3,10 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { scaffoldFiles, initProject } from './scaffold'
+import { composeSpec } from './profiles'
 
 describe('scaffoldFiles', () => {
-  const files = scaffoldFiles('1.2.3')
+  const files = scaffoldFiles('1.2.3', './terraform', composeSpec())
   const byPath = (p: string) => files.find((f) => f.path === p)
 
   it('writes dotzen.json pinned to the engine version', () => {
@@ -21,7 +22,8 @@ describe('scaffoldFiles', () => {
     const spec = files.find((f) => f.path.endsWith('spec.ts'))!.content
     expect(spec).toContain("from '@dotzen/dotzen'")
     expect(spec).toContain('export const spec')
-    expect(spec).toContain('rule()')
+    // Default spec spreads coreSecurity (the secure-by-default baseline).
+    expect(spec).toContain('...coreSecurity')
     // no relative import path in the generated file
     expect(spec).not.toContain('../')
   })
@@ -120,5 +122,23 @@ describe('initProject', () => {
     expect(res.detected).toBe(true)
     expect(res.terraform).toBe('.')
     expect(terraformOf(dir)).toBe('.')
+  })
+
+  it('--profile enterprise: writes the enterprise spec (CIS spread + bespoke)', () => {
+    const dir = mk()
+    initProject(dir, '0.0.1', { profile: 'enterprise' })
+    const spec = fs.readFileSync(path.join(dir, '.zen', 'spec.ts'), 'utf8')
+    expect(spec).toContain('...cisAws,')
+    expect(spec).toContain('enum OrgTag')
+    expect(spec).toContain('LifecycleAttribute.PreventDestroy')
+  })
+
+  it('--presets cisAws,pciDss: writes exactly that spread (no implicit coreSecurity)', () => {
+    const dir = mk()
+    initProject(dir, '0.0.1', { presets: ['cisAws', 'pciDss'] })
+    const spec = fs.readFileSync(path.join(dir, '.zen', 'spec.ts'), 'utf8')
+    expect(spec).toContain('...cisAws,')
+    expect(spec).toContain('...pciDss,')
+    expect(spec).not.toContain('...coreSecurity,')
   })
 })

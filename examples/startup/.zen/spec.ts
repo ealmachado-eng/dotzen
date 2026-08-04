@@ -1,22 +1,19 @@
 /**
  * Startup profile — secure-by-default baseline, minimal friction.
  *
- * The lean starting point: spread `coreSecurity` (no hardcoded secrets,
- * no public SSH/RDP, at-rest encryption, public-access denials, floating-
- * version pinning) and add a single ownership tag. Designed to run on every
- * PR with zero tuning and near-zero false positives.
+ * Generated from the `startup` profile (`dotzen init --profile startup`).
+ * Spreads `coreSecurity` (no hardcoded secrets, no public SSH/RDP, at-rest
+ * encryption, public-access denials, floating-version pinning) and adds a
+ * single ownership tag. Designed to run on every PR with zero tuning.
  *
- * Copy this file to `<your-project>/.zen/spec.ts`, drop a `dotzen.json`
- * next to it (`dotzen init`), and run `npx @dotzen/dotzen@1.9.29 check`.
- *
- * Grow into the enterprise/regulated profiles by spreading the CIS +
- * framework packs (see ../enterprise and ../regulated).
+ * Grow into enterprise/regulated by adding `--presets` or switching
+ * `--profile`; or edit this file directly.
  */
+
 import { coreSecurity, rule, Tag, Effect } from '@dotzen/dotzen'
 
 export const spec = [
   ...coreSecurity,
-
   // Ownership — one tag, warn severity (don't block the startup on a missing
   // label). Upgrade to Effect.Block once tag hygiene is established.
   rule()

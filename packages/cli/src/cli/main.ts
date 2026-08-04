@@ -11,6 +11,13 @@ import {
 } from '../report/report'
 import { CheckReport } from '../engine/evaluate'
 import { initProject } from './scaffold'
+import {
+  PRESET_NAMES,
+  PROFILE_NAMES,
+  ProfileName,
+  isValidPreset,
+  isValidProfile,
+} from './profiles'
 import { CI_TEMPLATE_HINT } from '../templates/ci-templates'
 
 /** The output format for `dotzen check`. `sarif` emits the SARIF 2.1.0
@@ -54,11 +61,15 @@ function parseArgs(argv: string[]): {
   root: string
   format: Format
   terraform?: string
+  profile?: string
+  presets?: string[]
 } {
   const [command, ...rest] = argv
   let root = '.'
   let format: Format = 'terminal'
   let terraform: string | undefined
+  let profile: string | undefined
+  let presets: string[] | undefined
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
     if (a === '--format') {
@@ -74,15 +85,53 @@ function parseArgs(argv: string[]): {
       i++
     } else if (a?.startsWith('--terraform=')) {
       terraform = a.slice('--terraform='.length)
+    } else if (a === '--profile') {
+      profile = rest[i + 1]
+      i++
+    } else if (a?.startsWith('--profile=')) {
+      profile = a.slice('--profile='.length)
+    } else if (a === '--presets') {
+      presets = (rest[i + 1] ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      i++
+    } else if (a?.startsWith('--presets=')) {
+      presets = a
+        .slice('--presets='.length)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     } else if (a && !a.startsWith('--')) {
       root = a
     }
   }
-  return { command, root, format, terraform }
+  return { command, root, format, terraform, profile, presets }
 }
 
-function runInit(dir: string, terraform?: string): number {
-  const res = initProject(dir, engineInfo().version, { terraform })
+function runInit(
+  dir: string,
+  opts: { terraform?: string; profile?: string; presets?: string[] },
+): number {
+  // Validate --profile / --presets before writing anything.
+  if (opts.profile !== undefined && !isValidProfile(opts.profile)) {
+    process.stderr.write(
+      `✗ unknown --profile "${opts.profile}". Valid: ${PROFILE_NAMES.join(', ')}\n`,
+    )
+    return 2
+  }
+  const badPreset = opts.presets?.find((p) => !isValidPreset(p))
+  if (badPreset !== undefined) {
+    process.stderr.write(
+      `✗ unknown --presets entry "${badPreset}". Valid: ${PRESET_NAMES.join(', ')}\n`,
+    )
+    return 2
+  }
+  const res = initProject(dir, engineInfo().version, {
+    terraform: opts.terraform,
+    profile: opts.profile as ProfileName | undefined,
+    presets: opts.presets,
+  })
   for (const c of res.created) process.stdout.write(`  created  ${c}\n`)
   for (const s of res.skipped)
     process.stdout.write(`  skipped  ${s} (already exists)\n`)
@@ -116,13 +165,15 @@ function runInit(dir: string, terraform?: string): number {
 }
 
 export async function run(argv: string[]): Promise<number> {
-  const { command, root, format, terraform } = parseArgs(argv)
+  const { command, root, format, terraform, profile, presets } = parseArgs(argv)
 
-  if (command === 'init') return runInit(root, terraform)
+  if (command === 'init') return runInit(root, { terraform, profile, presets })
 
   if (command !== 'check') {
     process.stderr.write(
-      'usage: dotzen <check|init> [projectRoot] [--format json|sarif]\n',
+      'usage: dotzen <check|init> [projectRoot] [--format json|sarif]\n' +
+        '       dotzen init [projectRoot] [--profile startup|enterprise|regulated]\n' +
+        '                                  [--presets coreSecurity,cisAws,...]\n',
     )
     return 2
   }

@@ -1,16 +1,12 @@
 /**
  * Regulated profile — the full compliance stack + data sovereignty.
  *
- * For estates under a compliance regime (PCI-DSS, SOC 2, NIST 800-53, or
- * data-protection law like GDPR/LGPD). Spreads every shipped framework pack
- * on top of the CIS baselines and adds a data-residency control: resources
- * must run in an approved region, so personal/regulated data stays in its
- * jurisdiction.
- *
- * Copy this file to `<your-project>/.zen/spec.ts`, then edit:
- *   - `ApprovedRegion` — the regions your data is allowed to live in, and
- *   - which framework packs you spread (drop the ones you aren't bound by).
+ * Generated from the `regulated` profile (`dotzen init --profile regulated`).
+ * Spreads every shipped framework pack (PCI/SOC2/NIST/data-protection) on top
+ * of the CIS baselines and adds a data-residency control. Edit the
+ * ApprovedRegion enum to your jurisdiction + drop frameworks you don't need.
  */
+
 import {
   coreSecurity,
   cisAws,
@@ -24,10 +20,9 @@ import {
   Effect,
 } from '@dotzen/dotzen'
 
-// The regions where regulated/personal data may be processed (GDPR example —
+// Regions where regulated/personal data may be processed (GDPR example —
 // edit to your jurisdiction: LGPD → sa-east-1 / southamerica-east1, etc.).
-// Declared as an enum so a typo'd region code is a compile error, not a
-// silently-never-fires residency rule.
+// Declared as an enum so a typo'd region code is a compile error.
 enum ApprovedRegion {
   EuWest1 = 'eu-west-1',
   EuWest2 = 'eu-west-2',
@@ -39,7 +34,6 @@ enum ApprovedRegion {
 }
 
 export const spec = [
-  // ── Baselines + compliance frameworks ───────────────────────────────
   ...coreSecurity,
   ...cisAws,
   ...cisAzure,
@@ -48,12 +42,9 @@ export const spec = [
   ...soc2,
   ...nist80053,
   ...dataProtection,
-
   // ── Data sovereignty: resources must run in an approved region ───────
   // A resource whose provider region is NOT in the approved set violates;
-  // a resource with no statically-knowable region degrades to
-  // could-not-evaluate (never a false pass — an unknown region might be
-  // outside the jurisdiction).
+  // an unknown region degrades to could-not-evaluate (never a false pass).
   rule()
     .allResources()
     .denyNonApprovedRegion(

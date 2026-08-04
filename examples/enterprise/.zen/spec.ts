@@ -2,18 +2,12 @@
  * Enterprise profile — multi-cloud CIS baselines + ownership metadata +
  * change-safety gates for production.
  *
- * Builds on the startup baseline by spreading the three CIS Foundations
- * packs (AWS / Azure / GCP) so a poly-cloud estate gets a consistent
- * floor, then adds:
- *   - mandatory ownership tags (Application / Owner / environment), and
- *   - a production change-safety gate: stateful resources in production
- *     must set `lifecycle.prevent_destroy` — if not, the change requires
- *     security + SRE sign-off instead of auto-merging.
- *
- * Copy this file to `<your-project>/.zen/spec.ts`, edit the `OrgTag` enum
- * to your org's tag keys, and adjust the approver set / stateful types to
- * match what you gate on.
+ * Generated from the `enterprise` profile (`dotzen init --profile enterprise`).
+ * Spreads coreSecurity + the three CIS packs, then adds mandatory ownership
+ * tags + a production prevent_destroy approval gate. Edit the OrgTag enum +
+ * the approver set / stateful types to match your org.
  */
+
 import {
   coreSecurity,
   cisAws,
@@ -28,9 +22,8 @@ import {
   LifecycleAttribute,
 } from '@dotzen/dotzen'
 
-// Org-specific tag taxonomy (see the dotzen-spec-authoring skill: tag KEYS
-// are org-defined, so declare them as an enum — never bare strings — so a
-// typo is a compile error, not a silently-never-fires rule).
+// Org-specific tag taxonomy (tag KEYS are org-defined — declare them as an
+// enum so a typo is a compile error, not a silently-never-fires rule).
 enum OrgTag {
   Application = 'Application',
   Owner = 'Owner',
@@ -38,12 +31,10 @@ enum OrgTag {
 }
 
 export const spec = [
-  // ── Baselines ────────────────────────────────────────────────────────
   ...coreSecurity,
   ...cisAws,
   ...cisAzure,
   ...cisGcp,
-
   // ── Ownership metadata across the estate ─────────────────────────────
   rule()
     .allResources()
