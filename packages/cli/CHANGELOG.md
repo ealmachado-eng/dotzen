@@ -6,6 +6,22 @@ conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
 
+## 1.9.37
+
+Docs — **no engine change.** Fixes a Quick Start ordering bug on the npm README.
+
+### Fixed — Quick Start order (init before check)
+
+The Quick Start listed `check` (step 1) before `init` (step 2), but `check` is
+spec-driven and errors with no `.zen/spec.ts`. Reordered to the logical flow:
+**init** (creates the spec + version-pinned `dotzen.json`) → **edit** →
+**check** → **CI**. Folded the version-pinning note into step 1 (init already
+pins) and dropped the redundant standalone "pin the version" step.
+
+### No spec DSL API changes · no rule changes · 144 rules across 8 presets
+
+Consumers need not change anything. 816 unit + 40 integration, 0 regressions.
+
 ## 1.9.36
 
 Feature — **`dotzen init --profile` / `--presets`**. The scaffold now generates a
