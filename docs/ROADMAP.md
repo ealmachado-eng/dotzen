@@ -887,18 +887,34 @@ Manager/ElastiCache), OpenSearch, and MSK are governed.
 
 ---
 
-## Current state (post-v1.9.26) & still-open
+## Current state (v1.9.37) & still-open
 
-Engine feature-complete for static HCL governance: 769 unit + 40 integration
+Engine feature-complete for static HCL governance: 801 unit + 40 integration
 tests (90 unit files), 0 false positives since dogfood round 6 across 35+ real
-module repos, ~3200 resource/data types recognized across AWS/Azure/GCP, three
+module repos, ~3,200 resource/data types recognized across AWS/Azure/GCP, three
 output formats (terminal, JSON, SARIF 2.1.0), **144 rules across 8 presets
 including the v2 graph layer** (multi-hop dependency-graph rules — the first
 topology-aware static Terraform controls). **Repo + CI on GitHub**
 (`github.com/ealmachado-eng/dotzen`, public) — npm provenance attestations on
-every release.
-`examples/ai-generated/.zen/spec.ts` is the canonical comprehensive spec
-reference; `coreSecurity` + the per-cloud CIS packs are the shipped baselines.
+every release, with a `gate` job the `publish` job depends on so a correctness
+regression can't ship.
+`coreSecurity` + the per-cloud CIS packs are the shipped baselines;
+`dotzen init --profile {startup,enterprise,regulated}` scaffolds a ready-to-go
+org spec (the same profiles that seed `examples/`).
+
+**v1.9.28 → v1.9.37 (launch hardening):** graph-layer edge precision (NAT
+structural-ref override, CNE for opaque graph edges, list-edge traversal so
+`buildGraph` scans `res.lists`, Azure VM→NIC→PublicIP reachability, violation
+path detail for `denyIfSharedWith`/`denyIfReachableAttr`); `denyValueExcludedByResourceAttr`
+(bare GKE `google_service_account.*.{member,email,name}` refs → definite PASS,
+dogfood round 11 — module dropped 15 CNE → 3); vocabulary rounds 11–13 +
+example-spec generation via `npm run gen-examples`; launch README rewrite
+(ASCII diagrams, absolute links, Quick Start reordered, `prepack` copies root
+README into the tarball); `dotzen init --profile/--presets`; CI release gate
+(`publish needs: [gate]`); Stryker mutation testing evaluated (engine 74.82% /
+profiles 52.85% — no real verdict-logic gaps found, kept periodic not gated);
+ADR documenting the archived `@cdktf/hcl2json` supply-chain risk + the
+own-the-WASM future mitigation.
 
 **Genuinely open — capability, not coverage:**
 
@@ -1080,9 +1096,9 @@ a strategic pivot — listed by category, not priority.
 
 ### Adoption — ecosystem (non-code)
 
-- **Dogfood breadth.** Run v1.9.20 across more real module repos (cloudposse, terraform-aws-modules, FaztWeb, etc.) and publish the noise-floor / catch-rate. The engine has had 0 false positives since round 6 on ~25 repos — broader data strengthens the adoption story.
-- **Spec registry / community specs.** ✅ **DONE (v1.9.30-pre): seeded
-  `examples/` with three org-profile spec templates** — `startup/` (lean
+- **Dogfood breadth.** Run v1.9.20 across more real module repos (cloudposse, terraform-aws-modules, FaztWeb, etc.) and publish the noise-floor / catch-rate. The engine has had 0 false positives since round 6 across 35+ repos — broader data strengthens the adoption story.
+- **Spec registry / community specs.** ✅ **DONE (v1.9.30-pre → v1.9.36):
+  seeded `examples/` with three org-profile spec templates** — `startup/` (lean
   baseline + ownership tag), `enterprise/` (multi-cloud CIS + ownership
   tags + a prod `prevent_destroy` approval gate), `regulated/` (the full
   compliance stack + GDPR-style data residency). Standalone copy-paste
@@ -1090,9 +1106,18 @@ a strategic pivot — listed by category, not priority.
   error, so a profile const embedding presets would collide if a consumer
   also spread the underlying pack). A loader test
   (`src/spec/examples.test.ts`) loads each via the real jiti loader +
-  validates every rule, so the templates track the DSL. The hosted-registry
-  angle in `05-future-cloud-layer.md` remains future work.
-- **README / docs story.** The engine is documented deeply (`docs/specs/*`) but the *product* story (why governance-as-code for AI-generated Terraform, the 30-second demo) is undertold. A canonical worked example + the `npx` one-liner is the highest-ROI doc work.
+  validates every rule, so the templates track the DSL. **v1.9.36** wired the
+  same profiles into `dotzen init --profile {startup,enterprise,regulated}`
+  + `--presets coreSecurity,cisAws,...` (profiles as data in
+  `src/cli/profiles.ts`; `gen-examples` regenerates the example trees from
+  that single source). The hosted-registry angle in
+  `05-future-cloud-layer.md` remains future work.
+- **README / docs story.** ✅ **DONE (v1.9.35).** Launch README rewrite:
+  ASCII architecture diagrams (mermaid doesn't render on npm), absolute links
+  (relative links 404 on npm), Quick Start reordered (init before check —
+  check needs a spec), "Who this is for" framing, and a `prepack` hook that
+  copies the root README into the tarball so npm ships the current version.
+  ROADMAP gained a "Status at a glance" header for the 30-second read.
 
 ### Niche (on-demand only)
 
