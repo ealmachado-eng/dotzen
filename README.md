@@ -6,6 +6,8 @@
 npx @dotzen/dotzen@1 check ./terraform/
 ```
 
+![dotzen flagging an EFS mount target placed in a public subnet](https://raw.githubusercontent.com/ealmachado-eng/dotzen/main/docs/assets/demo.gif)
+
 A zero-install governance layer that catches policy violations in Terraform HCL —
 especially the kind AI code-gen tools produce when they don't know your
 organization's security, tagging, and compliance requirements. Rules are written
@@ -183,16 +185,16 @@ this as authorable rules. dotzen does:
 
 ```ts
 rule()
-  .resource(AwsResource.DbInstance)
+  .resource(AwsResource.EfsMountTarget)
   .denyIfReachable(AwsResource.InternetGateway)
-  .message('Database instances must not be in a public subnet')
+  .message('EFS mount targets must not be in a public subnet')
 ```
 
 The graph walks the reference chain bidirectionally — forward and reverse — to
 decide reachability:
 
 ```text
- aws_db_instance
+ aws_efs_mount_target
       │  subnet_id  (forward)
       ▼
  aws_subnet
@@ -207,7 +209,7 @@ decide reachability:
  aws_internet_gateway   ◀── target reached → violation
 ```
 
-If that chain reaches an Internet Gateway, the DB is in a public subnet →
+If that chain reaches an Internet Gateway, the mount target is in a public subnet →
 **violation**, with the exact chain rendered in the finding detail. Partially-
 unresolvable chains (an opaque `var`) degrade honestly to `could not evaluate`,
 never a false pass. Three graph conditions ship: `denyIfReachable`,
