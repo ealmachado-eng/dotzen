@@ -8,6 +8,8 @@ npx @dotzen/dotzen@1 check ./terraform/
 
 ![dotzen flagging an EFS mount target placed in a public subnet](https://raw.githubusercontent.com/ealmachado-eng/dotzen/main/docs/assets/demo.gif)
 
+*One rule, evaluated per mount target: `public_mt` violates (public subnet → Internet Gateway), `private_mt` passes. Walkthrough in [`demo/`](https://github.com/ealmachado-eng/dotzen/tree/main/demo).*
+
 A zero-install governance layer that catches policy violations in Terraform HCL —
 especially the kind AI code-gen tools produce when they don't know your
 organization's security, tagging, and compliance requirements. Rules are written
