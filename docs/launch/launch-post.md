@@ -46,24 +46,24 @@ Three things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
          .denyIngress(Port.SSH, Port.RDP)
          .message('SSH and RDP must not be open to the internet')
 
-3. **It's the only one with topology-aware rules.** "No database in a public
-   subnet" isn't a per-resource check — it's a 5-hop walk
-   (db → subnet → route_table_association → route_table → internet_gateway),
+3. **It's the only one with topology-aware rules.** "No EFS mount target in a
+   public subnet" isn't a per-resource check — it's a 5-hop walk
+   (mount target → subnet → route_table_association → route_table → internet_gateway),
    forward and reverse. dotzen's graph layer does this as an authorable rule:
 
        rule()
-         .resource(AwsResource.DbInstance)
+         .resource(AwsResource.EfsMountTarget)
          .denyIfReachable(AwsResource.InternetGateway)
-         .message('Database instances must not be in a public subnet')
+         .message('EFS mount targets must not be in a public subnet')
 
 One discipline I care about: when the engine can't resolve a value (a
 `var`-supplied CIDR, an opaque `for_each`), it reports **could not evaluate**
 rather than guessing. For a governance tool a false positive is worse than an
 honest gap. I've dogfooded every release against real module repos
 (terraform-aws-modules, terraform-google-modules, Azure/, cloudposse/) — 0 false
-positives regressions across 18 repos on three clouds.
+positives across 35+ real-world repos on three clouds.
 
-It's at v1.9.32: 144 rules across 8 presets (coreSecurity + per-cloud CIS +
+It's at v1.9.37: 144 rules across 8 presets (coreSecurity + per-cloud CIS +
 PCI/SOC2/NIST/data-protection), ~3,200 resource types recognized, published to
 npm with SLSA provenance. Copy-paste spec templates for startup / enterprise /
 regulated orgs are in the repo's `examples/`.
@@ -101,7 +101,7 @@ What it does that's a bit different:
   https://github.com/ealmachado-eng/dotzen#why-dotzen
 - **No credentials, no `terraform plan`.** It's pure static HCL analysis (WASM
   parser), so it runs in pre-commit and CI without cloud access.
-- **Topology-aware rules.** Things like "no DB in a public subnet" or "no SG
+- **Topology-aware rules.** Things like "no resource in a public subnet" or "no SG
   shared between a public LB and a private DB" need multi-hop graph traversal,
   not per-resource checks. dotzen has a dependency-graph layer for these.
 - **Honest gaps.** When it can't resolve a value statically, it says

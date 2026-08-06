@@ -32,10 +32,10 @@ the AI coding agent's own loop**: the agent runs `npx @dotzen/dotzen@1 check`,
 reads the findings, and fixes them before you ever see the PR. Catch violations at
 the earliest, cheapest gate.
 
-> **v1.9.32** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
+> **v1.9.37** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
 > types recognized (3 clouds) · 801 unit + 40 integration tests · published to npm
 > with [SLSA provenance](https://docs.npmjs.com/generating-provenance-statements)
-> · **0 false positives across 18 real-world module repos** (3 clouds).
+> · **0 false positives across 35+ real-world module repos** (3 clouds).
 
 ---
 
@@ -285,7 +285,7 @@ GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
 
 ## Credibility
 
-- **0 false positives** across **18 real-world module repos** (terraform-aws-modules,
+- **0 false positives** across **35+ real-world module repos** (terraform-aws-modules,
   terraform-google-modules, Azure/, cloudposse/) on three clouds — dogfooded every
   release since v1.9.6.
 - **Honest degradation**: `couldNotEvaluate` for unresolvable values, never a guess
