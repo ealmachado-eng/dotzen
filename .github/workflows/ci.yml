@@ -19,6 +19,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # manual fallback — run the gate on demand (e.g. when GitHub drops a push event)
 
 # Cancel superseded runs on the same ref (free-tier courtesy).
 concurrency:
