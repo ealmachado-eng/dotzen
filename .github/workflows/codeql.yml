@@ -1,0 +1,38 @@
+# CodeQL — semantic (data-flow) SAST. Complements Semgrep (syntactic
+# pattern-matching): CodeQL does taint tracking Semgrep can't. The most
+# relevant query class here is ReDoS on the regex-heavy HCL parser/normalize
+# (note: the dynamic regexes are escapeRegExp()-escaped / fixed iterator
+# names — see the semgrep excludes in ci.yml — so we expect ~0 real noise).
+# Results land on the Security tab (Code Scanning) + inline on PRs, and this
+# dogfoods the SARIF/Code-Scanning flow the README recommends to consumers.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 6 * * 1" # weekly (Mon) — catches new queries on a quiet codebase
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write # upload SARIF to Code Scanning
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # security-and-quality: the security suite (incl. ReDoS) + quality
+          # queries. CodeQL is precision-tuned, so the broader suite stays low-noise.
+          queries: security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
