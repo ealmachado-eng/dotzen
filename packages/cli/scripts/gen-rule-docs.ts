@@ -344,7 +344,8 @@ function buildAllRulesTable(): string {
       })
     }
   }
-  const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
+  const cell = (s: string) =>
+    s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ')
   const table = [
     '| Rule ID | Severity | Preset | Message | Resources |',
     '|---|---|---|---|---|',
