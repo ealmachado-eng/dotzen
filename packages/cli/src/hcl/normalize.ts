@@ -409,7 +409,7 @@ function tryEvalTernary(
   // Resolve it through scope — the same path resolveValue uses for bare
   // refs. Compound expressions (var.x * 2, function calls) stay
   // unresolved (conservative — never a guess).
-  const branchValue = resolveValue(`\${${chosen}}`, scope, depth - 1)
+  const branchValue = resolveValue('$' + '{' + chosen + '}', scope, depth - 1)
   if (branchValue.kind === 'literal') return branchValue
   return undefined
 }
@@ -446,7 +446,7 @@ function tryEvalConcat(
   // the whole `${fn(...)}` has one interpolation) must NOT be string-coerced
   // (String(['a','b']) = 'a,b' is a false value); fall through so
   // tryEvalFunctionCall handles it instead.
-  const innerValue = resolveValue(`\${${inner}}`, scope, depth - 1)
+  const innerValue = resolveValue('$' + '{' + inner + '}', scope, depth - 1)
   if (innerValue.kind !== 'literal' || Array.isArray(innerValue.value))
     return undefined
   const prefix = raw.slice(0, firstOpen)
@@ -655,7 +655,7 @@ function resolveArgValue(
   // Sole var/local ref — resolveRaw follows the chain to its default.
   const ref = ARG_REF.exec(s)
   if (ref && ref[1] !== undefined && ref[2] !== undefined) {
-    return resolveRaw(`\${${ref[1]}.${ref[2]}}`, scope, depth - 1)
+    return resolveRaw('$' + '{' + ref[1] + '.' + ref[2] + '}', scope, depth - 1)
   }
   // Scalar literal (quoted string / number / boolean / null).
   return parseHclScalar(s)
