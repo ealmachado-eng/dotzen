@@ -92,7 +92,7 @@ describe('renderSarif — SARIF 2.1.0 output', () => {
   it('emits the SARIF 2.1.0 envelope', () => {
     const d = sarif()
     expect(d.version).toBe('2.1.0')
-    expect(d.$schema).toMatch(/docs\.oasis-open\.org.*sarif-schema-2\.1\.0/)
+    expect(d.$schema).toMatch(/^https:\/\/docs\.oasis-open\.org.*sarif-schema-2\.1\.0/)
     expect(d.runs).toHaveLength(1)
   })
 
