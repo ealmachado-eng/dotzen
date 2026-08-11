@@ -258,142 +258,50 @@ the full ROP pipeline (version → spec-load via jiti → parse via
 `@cdktf/hcl2json` WASM → normalize → evaluate → report) with **42
 structurally different conditions** — including the v1.9.26–29 graph-layer
 conditions (`denyIfReachable` / `denyIfSharedWith` / `denyIfReachableAttr`)
-— across AWS, Azure, and GCP (~3,200 recognized types). The list below is
-an illustrative sample of the condition families, not exhaustive; the
-authoritative current catalog is the `Condition` union in
-`src/spec/rule.ts`, `docs/ROADMAP.md`, and `packages/cli/CHANGELOG.md`.
-A representative sample — `denyIngress` / `denyEgress` (SSH/RDP/DB ports vs the
-internet on `aws_security_group`, incl. `dynamic` blocks and the
-standalone `aws_vpc_security_group_ingress_rule`), `mustHaveTags`
-(required tags on any resource), the boolean-attribute trio `mustBeTrue`
-/ `mustBeFalse` / `denyWhenTrue` (RDS `storage_encrypted`/`publicly_accessible`,
-EBS/EFS `encrypted`, KMS `enable_key_rotation`, DynamoDB/ECR nested
-booleans, the four S3 `aws_s3_bucket_public_access_block` flags, ALB
-`access_logs`, CloudTrail `is_multi_region_trail`/`enable_log_file_validation`,
-IAM password-policy complexity; `mustBeFalse` treats *absent* as a
-violation — for attributes whose insecure AWS default is `true`, e.g. EKS
-`vpc_config.endpoint_public_access`), `mustBeSet` (attribute must be
-present — any value beats absence, e.g. CloudTrail `kms_key_id`), `denyAcl` (public
-S3 ACLs, inline or the modern `aws_s3_bucket_acl` resource), `mustEqual`
-(e.g. EC2 IMDSv2 `metadata_options.http_tokens` = required — via
-nested-block attribute flattening to dotted keys), `mustBeAtLeast` /
-`mustBeAtMost` (numeric thresholds, e.g. RDS `backup_retention_period` >= 7,
-IAM password length >= 14, IAM `max_password_age` <= 90), and `denyIamWildcard` (flags over-permissive `Allow`
-statements in literal-JSON *and* `jsonencode(...)` IAM / S3 bucket policies — `Action: "*"`,
-sharpened to "full administrative access" with `Resource: "*"`, and the
-`NotAction` over-broad-grant anti-pattern; `jsonencode(var.x)`/variable
-policies degrade to "could not evaluate"; `Condition` blocks are parsed too), `denyPublicPrincipal` (flags `Principal: "*"` in an Allow statement — public access; CIS AWS; a Deny with `Principal: "*"` is fine), `requireSslOnlyPolicy` (requires a `Deny` with `Condition Bool aws:SecureTransport=false` in the resource's policy — CIS AWS S3 SSL-only; passes when no policy exists), `listContains` / `listMustInclude` (list
-attributes — EKS `public_access_cidrs` = `0.0.0.0/0`, control-plane
-logging), `denyValue` (value-in-set — weak ALB `ssl_policy`) and its
-allowlist mirror `mustBeOneOf` (value must be in a set — e.g. Cloud SQL
-`ssl_mode`; absent counts as a violation),
-`denyPlaintextListener` (HTTP/TCP listeners that don't redirect to HTTPS),
-`denyPrivilegedContainers` (privileged ECS containers, by parsing
-literal-JSON *or* `jsonencode(...)` `container_definitions`), `denyPlaintextEnvSecrets` (flags ECS environment variables with secret-like names — PASSWORD, SECRET, KEY, TOKEN, CREDENTIAL — whose value is a plaintext literal, not a reference; uses the lenient jsonencode parser so mixed literal/reference envs are partially evaluated), `denyLiteral` (a hardcoded
-literal where a reference belongs — Secrets Manager `secret_string`, DB
-`password`, cluster `master_password`, ElastiCache `auth_token`; a
-`var`/`data` reference passes, a literal is the violation), and the two
-**presence** conditions — `mustHaveAssociated` (cross-resource: a separate
-resource must *reference* this one, e.g. an S3 bucket must have a matching
-`aws_s3_bucket_server_side_encryption_configuration` / versioning resource,
-a Secrets Manager secret a matching rotation resource; association is by
-resource reference, indexed once per run — a `var`/`local` chain that
-bottoms out at a resource ref is followed via an explicit `resolvedRef`
-on the normalized value, and an *unresolvable* chain degrades to
-could-not-evaluate rather than a false violation), `mustHaveBlock` (same-resource:
-a nested block must be declared, e.g. EKS `encryption_config`) and its
-inverse `denyBlockPresence` (a nested block must NOT be declared, e.g. a GCP
-instance `network_interface.access_config` = a public IP — detected via
-recorded block paths, so even an *empty* block is caught) — across an
-AWS vocabulary spanning security groups, RDS (instances + clusters +
-cluster instances),
-Redshift, ElastiCache, S3 (+ACL, +public-access-block, +bucket-policy,
-+SSE/versioning), EBS, EFS, KMS, EC2, DynamoDB, ECR, IAM policies, ECS
-(services + task definitions), EKS, load balancers (+ listeners), Secrets
-Manager, VPC (flow logs + subnet public-IP/IPv6 exposure), CloudTrail
-(multi-region / log-file validation / KMS), AWS Config (recording-group
-all-supported + global-resource-types), the IAM account password
-policy (CIS AWS §1.8–1.9), and API Gateway (method `authorization` != NONE,
-stage access-logging + X-Ray). **The engine is provider-neutral** and now spans
-three clouds. **Azure (azurerm)** CIS slice — NSG SSH/RDP ingress (inline
-`security_rule` + standalone `azurerm_network_security_rule`), Storage
-public-blob/TLS/public-network, MSSQL hardcoded-password/weak-TLS, Key Vault
-purge protection, AKS private cluster + local-account-disabled, App Service
-HTTPS-only, PostgreSQL/MySQL single-server SSL-enforcement + public-network,
-Container Registry admin-user, Cosmos DB public-network, ownership tags, and
-RBAC over-permission (`role_definition` `actions:["*"]` via `listContains` —
-the analog of AWS `Action:"*"` — and `role_assignment` Owner via `denyValue`;
-Azure RBAC needed *no* new parse shape, since `permissions{actions=[…]}`
-flattens to a list), plus CIS-L1 breadth: storage/Key-Vault network
-default-deny, managed-disk CMK, Key-Vault diagnostic-logging presence
-(`mustHaveAssociated` on `azurerm_monitor_diagnostic_setting`), and API
-Management legacy-TLS/SSL rejection + public-network.
-**GCP (google)** CIS slice — `google_compute_firewall` SSH/RDP from
-`0.0.0.0/0`, Storage public-access-prevention + uniform-bucket-level-access,
-the public-IAM anti-pattern (`allUsers`/`allAuthenticatedUsers` members) and
-primitive roles (`roles/owner`/`editor`) — the GCP analog of an `Action:"*"`
-wildcard, via `denyValue` — instance broad `cloud-platform` scope +
-`can_ip_forward` + Shielded-VM secure-boot + no-public-IP (`access_config`
-via `denyBlockPresence`), GKE legacy-ABAC / private-nodes / network-policy,
-KMS `rotation_period`, subnetwork VPC flow logs (`log_config`), bucket
-versioning + access logging, and Cloud SQL hardcoded root password + public
-IPv4 + `ssl_mode` (a *deep* nested attribute,
-`settings.ip_configuration.*`, which the recursive flattener handles). Both non-AWS slices reuse the *same* conditions and pipeline with
-**zero new conditions**. Multi-provider vocabulary lives in per-provider
-modules (`AwsResource`/`AzureResource`/`GcpResource` +
-`*Attribute`, behind the shared `AnyResource` / `AnyAttribute` unions —
-members drop the provider prefix, e.g. `AwsResource.SecurityGroup` mirrors
-`AzureResource.StorageAccount`). The only provider-specific engine code is
-small `normalize` mappers turning Azure NSG rules and GCP firewalls into the
-cloud-neutral ingress model. All of this runs with exhaustive condition
-dispatch, environment
-scoping (`.environment(X)` applies a rule only to resources whose
-`environment` tag resolves to X), and the three effects (`block` fails
-the build; `warn` and `require_approval` do not, with `require_approval`
-emitting the `DOTZEN_REQUIRES_APPROVAL` CI signal per doc 04). Terminal +
-JSON output (with TTY/`NO_COLOR`-aware ANSI colors), **multi-root
-support** (`terraform` in `dotzen.json` may be an array of roots — e.g.
-per-environment `env/{dev,stg,prd}` — each parsed with an *isolated*
-var/local scope so they never collide; findings report root-relative
-paths). A root may be an object `{ path, environment }` so `.environment(X)`
-rule scoping is folder-driven (the declared environment overrides
-resource tags) — this is how one spec applies stricter rules to prod than
-dev. A `dotzen init` scaffolding command (detects existing Terraform,
-including the multi-root/per-environment layout, guessing environment
-mappings for recognizable folder names), unit + integration tests, and
-the three quality-gate subagents round it out.
-It was built to validate the core static-analysis bet (doc 01) and fires
-correctly on representative AI-generated HCL. It resolves sole
-`${var.x}` / `${local.y}` references (local→var chains, across files) to
-definite verdicts and degrades honestly to "could not evaluate" on values
-it cannot resolve — including expanding `dynamic` blocks whose `for_each`
-resolves to a concrete collection, and flattening nested blocks to dotted
-keys at **arbitrary depth** (e.g. GCP `settings.ip_configuration.ssl_mode`).
-For **tags** it parses `merge(...)`'s top-level arguments (following
-`var`/`local` refs to a map): the result is a *complete* set only when
-**every** argument is knowable (an object literal or a ref resolving to a
-concrete map), so `mustHaveTags` gives a definite verdict — including a real
-*violation* for a genuinely-missing required tag once module-following has
-threaded a caller's concrete `var.tags` map in. If any argument is an
-unresolvable ref or an opaque expression (a function call), the set degrades
-to *partial* → could-not-evaluate (never a false violation, since that arg
-may add more). Refs inside object *values* (e.g. `Ou = var.ou`) are
-correctly ignored — only the map args contribute keys. It also **follows
-local `module {}` calls** (doc 08): each call's inputs are threaded into the
-module's `var.*`, so a module's caller-supplied cidrs/tags become concrete
-verdicts, reported as `env/prd › modules/rds/main.tf`.
+— across AWS, Azure, and GCP (~3,200 recognized types).
+
+**Authoritative condition catalog** (the inline list that used to live here
+was illustrative and rotted between releases; trust these instead):
+
+- `packages/cli/src/spec/rule.ts` — the `Condition` union (source of truth).
+- `docs/ROADMAP.md` — backlog + dogfood log with the why behind each fix.
+- `packages/cli/CHANGELOG.md` — what shipped when.
+- `docs/user/reference/rules/` — auto-generated per-preset/per-resource catalog (`npm run gen-docs`).
+
+The condition families in brief (see the sources above for the full list):
+
+- **Boolean attributes** — `mustBeTrue` / `mustBeFalse` / `denyWhenTrue` / `mustBeSet`.
+- **Value matching** — `mustEqual`, `denyValue`, `mustBeOneOf`, `mustBeAtLeast` / `mustBeAtMost`.
+- **Lists** — `listContains`, `listMustInclude`.
+- **Network exposure** — `denyIngress` / `denyEgress`, `denyAcl`, `denyPlaintextListener`, `denyPublicPrincipal`, `requireSslOnlyPolicy`.
+- **IAM** — `denyIamWildcard` (literal-JSON *and* `jsonencode`, incl. `NotAction` over-broad-grant), `denyValue` on Azure RBAC `actions:["*"]` and GCP primitive roles.
+- **Secrets** — `denyLiteral` (hardcoded secret), `denyPlaintextEnvSecrets` (ECS env-var name pattern).
+- **Containers** — `denyPrivilegedContainers`.
+- **Block presence** — `mustHaveBlock` / `denyBlockPresence` (e.g. GCP `access_config` = public IP).
+- **Cross-resource association** — `mustHaveAssociated` (S3 ↔ SSE/versioning resource, Secrets Manager ↔ rotation).
+- **Topology-aware (graph layer)** — `denyIfReachable` (EFS mount target → public subnet → IGW), `denyIfSharedWith` (no shared SG between public LB and private DB), `denyIfReachableAttr` (bucket's KMS key must be customer-managed).
+- **Region / data residency** — `denyNonApprovedRegion`.
+
+All conditions degrade honestly to `couldNotEvaluate` for unresolvable
+values (a `var`-supplied CIDR, an opaque `for_each`) — for a governance
+tool, a false positive is worse than an honest gap. The pipeline threads
+`var`/`local` refs (incl. `merge(...)` tag maps, `dynamic` blocks, nested
+module inputs), and **follows local `module {}` calls** (doc 08) so
+caller-supplied values become concrete verdicts. Multi-root support:
+`terraform` in `dotzen.json` may be an array of roots, each parsed with
+isolated var/local scope. A `dotzen init` scaffolding command detects
+existing Terraform (incl. multi-root layouts) and writes a version-pinned
+`dotzen.json` + `.zen/spec.ts`.
+
 Not built yet (see `docs/ROADMAP.md`):
-`data.aws_iam_policy_document`, `Resource`-only / service-scoped IAM
-wildcards (full `Action: "*"` **and** `NotAction`-on-`Allow` are flagged;
-`Resource: "*"` alone and `s3:*`-style service wildcards are deliberately
-not — to avoid false positives), ECS plaintext env secrets, more
-resource/attribute vocabulary, resource-level `count`/`for_each`,
-function-wrapped collections (`toset(...)`)/`each.*`, `.tfvars`, and — for
-module-following (doc 08) — remote (registry/git) sources, nested modules,
-and module `count`/`for_each` (local single-level following IS built). The
-`docs/specs` and `.claude` content remains the
-authoritative design; treat anything beyond the v0 slice as not yet
-written unless you find it.
+`data.aws_iam_policy_document`, service-scoped IAM wildcards (deliberately
+not flagged — to avoid false positives), ECS plaintext env secrets (more
+shapes), more resource/attribute vocabulary, resource-level
+`count`/`for_each`, function-wrapped collections (`toset(...)`/`each.*`),
+`.tfvars`, and — for module-following (doc 08) — remote (registry/git)
+sources. The `docs/specs` and `.claude` content remains the authoritative
+design; treat anything beyond the shipped slice as not yet written unless
+you find it.
 
 ## 8. Working conventions for this repo
 

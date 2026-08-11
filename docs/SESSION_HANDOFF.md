@@ -1,6 +1,8 @@
 # Session handoff — for the next context window
 
-> Read this + `docs/ROADMAP.md` + `AGENTS.md` to resume. Delete this file after the next session absorbs it.
+> **Rolling log.** Append a new `## Session N — YYYY-MM-DD` section at the end of each non-trivial session. Don't delete old sections — supersede stale facts in place with a `~~struck~~ superseded YYYY-MM-DD` marker, or move them into `docs/LESSONS.md` under the matching topic tag. Pairs with `docs/LESSONS.md` (two-sided lessons, KEEP + AVOID) and `docs/ROADMAP.md` (backlog + dogfood log). Run `npm run context` from `packages/cli/` for a deterministic state blob.
+>
+> Read this + `docs/ROADMAP.md` + `docs/LESSONS.md` + `AGENTS.md` to resume.
 
 ## Current state (v1.9.37, 2026-08-05)
 
@@ -67,3 +69,29 @@ git log --oneline -10             # latest commits
 ```
 
 Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session context) + `AGENTS.md` (conventions) and pick a direction.
+
+## Session N+1 — 2026-08-11 — session memory harness
+
+**Goal:** close the "agent didn't proactively pull context at session start" gap + the "wins rot, only failures captured" asymmetry. Built the full Tier 1 + Tier 2 + Tier 3 stack from the design discussion.
+
+**Shipped (uncommitted, on `main` working tree):**
+
+- `docs/LESSONS.md` — two-sided append-only log (KEEP/AVOID), 5 seeded entries covering release/parser/CI/engine/process.
+- `docs/DECISIONS.md` — one-liner choice log with rejected alternatives.
+- `packages/cli/scripts/session-context.ts` + `npm run context` script — deterministic state blob (last tag, drift, npm ver, lesson count).
+- `docs/SESSION_HANDOFF.md` — switched from "delete after absorb" → rolling append-only.
+- `AGENTS.md` — new "Session bootstrap" section + "Persistence mechanisms" inventory + "When to append to the logs" rules.
+- `.opencode/plugins/memory.js` — fires on `experimental.session.compacting`; injects the 4 memory files into compaction context so memory survives context-window compression mid-session.
+- `.opencode/plugins/session-state.js` — one-shot reminder on first bash of each session (mirrors `graphify.js` pattern).
+- `.githooks/post-commit` + `core.hooksPath = .githooks` — regenerates `.session/state.md` on every commit. Gitignored.
+- `CLAUDE.md` — extracted §7's 140-line illustrative condition list (which rotted between releases and explicitly deferred to authoritative sources) into a tight family summary + pointers. 442 → 350 lines, 27K → 20K.
+- `.gitignore` — added `.session/`.
+
+**Verified:** typecheck + lint + format + 816 unit tests green. Plugin/hook syntax checked. `npm run context` runs clean. `.githooks/post-commit` writes correct `.session/state.md`. Graphify updated.
+
+**Not done:**
+- Aggressive caveman-compress of `CLAUDE.md` — declined as lossy on technical reference; structural trim done instead.
+- No release. Nothing here is version-bearing (all meta/tooling/docs).
+
+**Next session resume:** run `npm run context` from `packages/cli/`, grep `docs/LESSONS.md` for the topic, decide direction. If adopting a real engine change, this harness now forces you to see the rolling memory before acting.
+
