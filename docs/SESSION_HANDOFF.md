@@ -95,3 +95,22 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 
 **Next session resume:** run `npm run context` from `packages/cli/`, grep `docs/LESSONS.md` for the topic, decide direction. If adopting a real engine change, this harness now forces you to see the rolling memory before acting.
 
+## Session N+2 — 2026-08-18 — rebrand recovery + naming sprint (INCOMPLETE — see docs/REBRAND.md)
+
+**Goal:** recover the lost rebranding plan (original discussion died with a pre-harness session) and drive it to a locked name.
+
+**Recovered + decided (full detail in `docs/REBRAND.md`):**
+- Trigger confirmed: trademark conflict on "dotzen". Scope: total rebrand (all 6 axes).
+- Locked: umbrella **tafros** · pattern **C** (mascot + coined technical name) · mascot **crocodile** · GH `tafros-hq` direction · domain `tafros.dev` direction.
+- Naming sprint: ~40 candidates screened (npm + GitHub + DDG common-law). Front-runners: **Squama, Sphragis, Gharial, Erkos**. Sobek was the user's pick but stepped back for zero-risk (Hi-Rez/Smite class-9 adjacency + 4 live USPTO apps). Suchus deprioritized (pronunciation). Animal-type architecture dead on npm.
+- Strategy: governance-OS endgame accepted as direction (npx-compatible, NixOS as reference architecture, "pure function of the spec" thesis), launch stays wedge-shaped ("control plane" for buyers, "NixOS for governance" for devs). OS architecture work = DomainAdapter isolation, 3-6mo, post-rebrand.
+
+**Open (blocking Phase C-E execution):**
+- Tool name — user holding. Live candidates + screening data in `docs/REBRAND.md` matrix. Don't re-screen; data is current as of 2026-08-11/18.
+- Contract-file renames (`dotzen.json`, `.zen/`) — recommend yes, decide with name.
+- tafros-hq org / npm org / tafros.dev — unclaimed, user action required.
+
+**Also this session:** model switch prep — glm-5.3 exists only under `zai-coding-plan` provider (not plain `zai`); restart + `/models` → ZAI Coding Plan group, or pin `"model": "zai-coding-plan/glm-5.3"` in config. Session restarted for this.
+
+**Next session resume:** read `docs/REBRAND.md` first. If name locked → Phase C checklist. If still holding → live candidates are Squama/Sphragis/Gharial/Erkos; present, don't push.
+

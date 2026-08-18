@@ -18,3 +18,9 @@ Choice: build interpolation strings via concatenation in `normalize.ts`. Why: Co
 
 ## 2026-08-11 — process — session memory harness
 Choice: add `SESSION_HANDOFF.md` (rolling) + `LESSONS.md` (KEEP/AVOID) + `DECISIONS.md` (this file) + `npm run context` + opencode compaction plugin + `.githooks/post-commit` writing `.session/state.md`. Why: agent didn't proactively pull context at session start — auto-injection closes that gap. Rejected: a single big CLAUDE.md — too long to skim, agent skips sections.
+
+## 2026-08-18 — brand — Pattern C (mascot + coined technical name)
+Choice: package/CLI gets a coined technical name; beast + character name live in marketing/docs only. Why: character-as-package (B) is weak trademark + enterprise-tone risk; marketing-only beast (A) loses narrative integration. Rejected: B (Sotiris-as-package), A (no character).
+
+## 2026-08-18 — brand — tafros stays umbrella; erkos demoted to tool-name candidate
+Choice: keep tafros (moat) as the umbrella brand. Why: beast-in-moat narrative only works with the moat; erkos-as-umbrella breaks the crocodile story and costs a mental-model rebuild. Erkos survives only as a first-tool name option. Rejected: erkos as umbrella (identity-tie with gharial was poetic but not worth losing the moat).

@@ -80,3 +80,18 @@
 - Don't put "delete this file after absorbing" in a handoff doc — it fights persistence and the file stays anyway. Rolling-append is the right model.
 - Don't bury bootstrap instructions in 26K-char CLAUDE.md — agents skim long files. Top of `AGENTS.md`, short and explicit.
 - Don't capture only failures. Wins rot fastest because success feels self-explanatory in the moment. Two-sided log or none.
+
+## 2026-08-18 — brand — rebrand recovery + naming sprint
+
+**KEEP** (do again):
+- Screen names against npm + GitHub + common-law BEFORE falling in love — killed ~60% of candidates in minutes (all common animal names npm-taken; Tagma/Styx/Nomos/Lorica too).
+- Capture brand decisions to disk the session they're made. Original rebrand discussion was lost with its session; this sprint's conclusions now live in `docs/REBRAND.md`. The harness already paid for itself.
+- Trade-off tables + blunt recommendation + wait. User holds under pressure; presenting cleanly and waiting worked.
+- Positioning split by audience: "NixOS for governance" (devs) vs "control plane for AI-generated infrastructure" (buyers). Same product, two framings.
+
+**AVOID** (don't repeat):
+- Mythological/commercial-collision names without a TM budget — Sobek (Smite/Hi-Rez) + 4 live USPTO applications forced a retreat after emotional investment.
+- Common animal words as npm package names — namespace exhausted; `croc` additionally collides with schollz/croc file-transfer CLI.
+- Personal names as package names (Sotiris etc.) — weak trademarks (need secondary meaning), reads wrong as a CLI.
+- `krokodil` — Russian street drug. Never.
+- Declaring "OS" at launch. Earn the platform framing via a second domain adapter; ship the wedge.
