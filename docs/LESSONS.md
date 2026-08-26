@@ -95,3 +95,12 @@
 - Personal names as package names (Sotiris etc.) — weak trademarks (need secondary meaning), reads wrong as a CLI.
 - `krokodil` — Russian street drug. Never.
 - Declaring "OS" at launch. Earn the platform framing via a second domain adapter; ship the wedge.
+
+## 2026-08-26 — ci/security — audit-gate blind spot + transitive pin override
+
+**KEEP** (do again):
+- Full-project security review surfaced zero engine-code findings (all dynamic regexes escaped, no child_process/eval, OIDC trusted publishing, scoped workflow permissions).
+- `overrides` in package.json for exact-pinned transitive deps — `typed-rest-client@2.3.1` pins `qs: '6.15.1'` (exact, no caret), so `npm audit fix` silently does nothing ("up to date") while audit still reports the GHSA. Scoped override `{"typed-rest-client": {"qs": "6.15.3"}}` fixed it; verify with `npm ls qs` → "overridden".
+
+**AVOID** (don't repeat):
+- Trusting `--audit-level=high` as the whole dependency story — it lets moderates linger indefinitely in dev-only chains. Run a bare `npm audit` (no level floor) periodically; when audit says "fix available" but `audit fix` reports "up to date", suspect an exact transitive pin and go straight to an override.
