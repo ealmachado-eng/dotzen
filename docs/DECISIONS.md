@@ -24,3 +24,18 @@ Choice: package/CLI gets a coined technical name; beast + character name live in
 
 ## 2026-08-18 — brand — tafros stays umbrella; erkos demoted to tool-name candidate
 Choice: keep tafros (moat) as the umbrella brand. Why: beast-in-moat narrative only works with the moat; erkos-as-umbrella breaks the crocodile story and costs a mental-model rebuild. Erkos survives only as a first-tool name option. Rejected: erkos as umbrella (identity-tie with gharial was poetic but not worth losing the moat).
+
+## 2026-09-01 — vscode-ext — engine delivery
+Choice: bundle engine in-process (import `check()` in the extension host). Why: zero user setup, no version-skew subprocess surface; prereq = export `check` + finding types from the package index. Rejected: spawning user-installed CLI (breaks zero-friction thesis); LSP server (overkill, single editor).
+
+## 2026-09-01 — vscode-ext — versioning
+Choice: extension version lockstep with engine, cut from the same tag. Why: one number, coherent `dotzen.json` pin semantics. Rejected: independent extension semver (two numbers to juggle, more pin-mismatch warnings).
+
+## 2026-09-01 — vscode-ext — build timing
+Choice: park build until rebrand name locked; design captured in `docs/specs/11-vscode-extension.md`. Why: extension id/publisher/icon/README are brand-bearing; marketplace renames painful. Rejected: placeholder-id build now.
+
+## 2026-09-01 — vscode-ext — distribution
+Choice: Marketplace + Open VSX at publish time. Why: covers Cursor/Windsurf/VSCodium where AI-Terraform authors disproportionately are. Rejected: Marketplace-only.
+
+## 2026-09-01 — deps — qs override vs wait
+Choice: scoped `overrides` forcing qs 6.15.3. Why: `typed-rest-client@2.3.1` pins qs exact so no semver-compatible fix exists; dev-only chain, zero runtime risk. Rejected: waiting for upstream; leaving the moderate (CI gate is high-level).

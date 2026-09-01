@@ -104,3 +104,11 @@
 
 **AVOID** (don't repeat):
 - Trusting `--audit-level=high` as the whole dependency story — it lets moderates linger indefinitely in dev-only chains. Run a bare `npm audit` (no level floor) periodically; when audit says "fix available" but `audit fix` reports "up to date", suspect an exact transitive pin and go straight to an override.
+
+## 2026-09-01 — ci — owner push bypasses required checks
+
+**KEEP** (do again):
+- Pull/rebase before push — origin had Renovate #9 the local clone didn't; rebased clean because commits were separated per concern (docs vs deps).
+
+**AVOID** (don't repeat):
+- Pushing straight to main as owner bypasses the required-checks ruleset ("Bypassed rule violations: 8 of 8"). CI ran afterward, but the protection record shows bypasses. For version-bearing changes prefer a PR; accept the bypass consciously only for docs/dev-dep-only commits.

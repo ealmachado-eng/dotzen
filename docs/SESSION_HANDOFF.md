@@ -114,3 +114,22 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 
 **Next session resume:** read `docs/REBRAND.md` first. If name locked → Phase C checklist. If still holding → live candidates are Squama/Sphragis/Gharial/Erkos; present, don't push.
 
+## Session N+3 — 2026-09-01 — VS Code spec + full security audit + qs fix
+
+**Goal:** session-start memory recovery, then VS Code extension design, then a full cybersecurity review of the project.
+
+**Shipped:**
+- `docs/specs/11-vscode-extension.md` (NEW) — name-agnostic extension design: bundled in-process engine (prereq: export `check` from package index), CLI coexistence, severity/trigger tables, lockstep versioning, Marketplace + Open VSX, P1–P3 phasing gated on rebrand name. Commit `2c3296c`.
+- Full security audit (engine src, CI workflows, release pipeline, gitleaks config, SARIF/terminal rendering, dynamic regexes, prototype-pollution vectors): zero critical/high; all 8 dynamic-RegExp sites escape-verified (`parse.ts:43`, `normalize.ts:2487`, `evaluate.ts:1781`); no child_process/eval/vm; OIDC trusted publishing confirmed.
+- `packages/cli/package.json` + lockfile — `overrides.typed-rest-client.qs = "6.15.3"` (GHSA-q8mj-m7cp-5q26 moderate DoS; exact pin made `audit fix` a no-op). Dev-only chain via Stryker. Audit → 0 vulns; 816 tests green. Commit `fc12e1d`.
+- `docs/LESSONS.md` — audit-gate blind spot + override lesson (in `fc12e1d`).
+- Both commits rebased onto Renovate #9 (`5faf4e6`) and pushed to origin/main.
+
+**Deferred / blocked:**
+- VS Code extension BUILD — gated on rebrand tool-name decision (`docs/REBRAND.md`; candidates Squama/Sphragis/Gharial/Erkos, user holding).
+- Security hardening recs #2–#3: README trust-boundary note (spec.ts exec), C0/C1 control-char strip in `makePaint` (`src/report/report.ts:23`).
+- Stale `wip-2026-08-18-1540` tag: its work landed in `ee015a1` — delete it.
+
+**Next resume step:**
+- Rebrand decision is the global blocker (name → Phase C → VS Code P1 → launch). Read `docs/REBRAND.md` first; if name locked, run Phase C checklist.
+
