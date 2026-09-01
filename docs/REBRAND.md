@@ -1,6 +1,6 @@
-# Rebrand — dotzen → erkos <tool> (pre-launch)
+# Rebrand — dotzen → erkos/pluvian (pre-launch)
 
-> **Status: IN PROGRESS — tool name not yet locked. Umbrella LOCKED: erkos (2026-09-01, superseding tafros — see the table below).** This file reconstructs the rebrand discussion (the original was lost with a session; this capture prevents recurrence). Read `docs/SESSION_HANDOFF.md` Session N+2 for the original arc, Session N+5 for the erkos flip + the Phase D execution inventory.
+> **Status: NAME LOCKED — pluvian (2026-09-01). Umbrella: erkos.** Phase C (org/repo/TP registration — user actions) and Phase D (mechanical rebrand — playbook below) are active. This file reconstructs the rebrand discussion (the original was lost with a session; this capture prevents recurrence). Read `docs/SESSION_HANDOFF.md` Sessions N+2/N+5/N+6 for the arcs.
 
 ## Trigger
 
@@ -11,11 +11,12 @@
 | Axis | Decision | Notes |
 |---|---|---|
 | **Umbrella brand** | **erkos** (Greek: ἔρκος = enclosure/rampart/hedge) | **Flipped 2026-09-01 (user decision) — supersedes the 2026-08-18 tafros lock.** ~~tafros (τάφρος = moat)~~ superseded 2026-09-01. The beast-in-moat narrative is consciously given up; the perimeter/fortification semantics fit governance directly. Crocodile mascot survives — and see Gharial's *erkos odonton* tie in the matrix. |
+| **Tool name** | **pluvian** (from *Pluvianus aegyptius* — the Egyptian plover, Herodotus's crocodile bird) | **LOCKED 2026-09-01** after 3 screening rounds. The bird that rides in the crocodile's mouth and keeps it clean — the only candidate that PARTNERS with the locked mascot instead of competing with it; the agent-loop story incarnate; purest Pattern C. Binary `pluvian`, package `@erkos/pluvian`, repo `erkos-hq/pluvian`, contract `.pluvian/` + `pluvian.json`. |
 | **Brand pattern** | **C — mascot + coined technical name** | Package/CLI uses a technical name; the beast + character live in marketing/docs. Rejected: B (character-as-package — weak trademark, enterprise-tone risk), A (beast only in marketing — loses narrative integration). |
 | **Mascot (this tool)** | **Crocodile** | Canonical moat beast. Character name DEFERRED (Greek personal names like Sotiris/Nereus considered for the character layer — do NOT use as package names; personal names are weak trademarks). |
 | **GitHub handle** | `erkos-hq` (direction) | ~~`tafros-hq`~~ superseded 2026-09-01. `github.com/erkos` is taken by an inactive personal account (created 2011-09-25, 0 public repos — verified 2026-09-01); `erkos-hq` verified OPEN same day. **NOT YET CLAIMED — do this before publishing.** |
 | **Domain** | `erkos.dev` (direction) | ~~`tafros.dev`~~ superseded 2026-09-01. Umbrella site; products listed at `erkos.dev/<name>` — no per-tool domain hunt. DNS does not resolve as of 2026-09-01 (consistent with unregistered) — verify at registration. |
-| **npm** | `@erkos-hq/<tool>` scope | ~~`@tafros-hq/<tool>`~~ superseded 2026-09-01. Org NOT YET CREATED (unscoped `erkos` on npm is free — verified 2026-09-01 — but the `-hq` scope pattern stays). npm no-republish applies to the new package too. |
+| **npm** | `@erkos/pluvian` | ~~`@erkos-hq/<tool>`~~ superseded 2026-09-01: npm gets the CLEAN name — the npx command is the #1 adoption surface and carries the real brand; GitHub keeps the forced `-hq`; owning the scope is squat-protection. Unscoped `erkos` on npm free (verified 2026-09-01). Org NOT YET CREATED — create `erkos` on npm. npm no-republish applies to the new package too. |
 | **Beast→category mapping** | Deferred until product #2 | Ad-hoc per product for now. |
 
 ## Candidate matrix — tool name (screened 2026-08-11/18)
@@ -50,7 +51,7 @@ Screening = npm (`npm view <name>` 404) + GitHub username + DDG common-law. USPT
 
 | Name | Type | npm | Risk | Tie | Status |
 |---|---|---|---|---|---|
-| **Pluvian** | coined from *Pluvianus aegyptius* — the Egyptian plover, Herodotus's crocodile bird | clean | low | **The bird that rides in the crocodile's mouth and keeps it clean** — the only candidate that PARTNERS with the locked croc mascot instead of competing with it; the agent-loop story incarnate (the small watchbird cleaning up after the beast). Coined form = the purest Pattern C name on the board. 7 letters, no pronunciation drift. | **Alive.** DDG 2026-09-01: a French GEO-marketing agency (pluvian.com, different industry) + an academic "Pluvianus" calcium-imaging GUI (different form) — low risk, not Squama-grade zero. Reads pluvial/rain-adjacent until the story is told. |
+| **Pluvian** | coined from *Pluvianus aegyptius* — the Egyptian plover, Herodotus's crocodile bird | clean | low | **The bird that rides in the crocodile's mouth and keeps it clean** — the only candidate that PARTNERS with the locked croc mascot instead of competing with it; the agent-loop story incarnate (the small watchbird cleaning up after the beast). Coined form = the purest Pattern C name on the board. 7 letters, no pronunciation drift. | **LOCKED 2026-09-01.** DDG: a French GEO-marketing agency (pluvian.com, different industry) + an academic "Pluvianus" calcium-imaging GUI (different form) — low risk, accepted. |
 | **Glaux** | γλαύξ — Athena's little owl on Athenian tetradrachms | clean | high | The state-coin owl: watchful wisdom + the legitimacy stamp; Greek×Greek with erkos. | **Dead 2026-09-01 (DDG).** GLAUX GROUP AG = Swiss software company (~200 staff, 30 yrs) for PUBLIC-ADMINISTRATION software — same industry, governance-adjacent. Plus one-syllable drift (GLAWKS/GLOWKS). |
 | **Erne** | Old English: the sea eagle | clean | med | 4-letter real-word raptor, easy to type. | **Alive, DDG unchecked.** Spoken homophone of "earn" — voice-confusion risk for a CLI name. |
 | **Numida** | helmeted guinea-fowl genus — the farm sentinel bird that alarm-calls at anything strange | clean | med | The alarm-raiser incarnate; echoes ancient Numidia. 6 letters, NOO-mi-da. | **Alive, DDG unchecked** (possible fintech named Numida — verify before finalist). |
@@ -105,6 +106,6 @@ Clean (verified, no action): `.githooks/post-commit`, `stryker.conf.json`, `vite
 
 ## How to resume this file
 
-1. If tool name is locked → update the matrix row to **LOCKED**, fill Phase C checklist items as claimed, proceed to Phase D.
+1. ✅ **Name locked: pluvian (2026-09-01).** Remaining Phase C (user): create GH org `erkos-hq` + npm org `erkos` (+ optional `erkos.dev`); transfer repo → `erkos-hq/pluvian`; register Trusted Publisher on npm (`@erkos/pluvian`, owner=erkos-hq, repo=pluvian, workflow=release.yml). Then Phase D from the playbook table below, then Phase E.
 2. If still deciding → the live candidates are: **Squama, Sphragis, Gharial** (round 1) + **Agger, Scute** (round 2) + **Pluvian, Erne, Numida, Tutela** (round 3, birds/watchtower — see the round-3 table; only Pluvian is DDG-checked). Sobek only if user accepts TM risk. All npm-free candidates verified 2026-09-01; don't re-run it. On record, no push: **Pluvian = the crocodile-bird pick** (partners with the locked mascot, purest Pattern C); Squama = usability/zero-risk pick; Gharial = *erkos odonton* narrative pick; Agger = the Terraform double-meaning pick (accept Dagger-adjacency).
 3. User decision style this session: holds under pressure, wants zero-risk options, responds well to trade-off tables + blunt recommendations. Don't push; present and wait.
