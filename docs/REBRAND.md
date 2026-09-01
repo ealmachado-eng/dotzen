@@ -38,6 +38,14 @@ Screening = npm (`npm view <name>` 404) + GitHub username + DDG common-law. USPT
 | **Sotiris / Nereus / etc.** | Greek personal names | clean | weak TM | Character layer only | Rejected as package names (personal names need secondary meaning to register; reads wrong as CLI). |
 | Tagma / Styx / Candor / Lorica / Thesmos / Phraxis / Temenos / Nomos / Teichos / Talos / Argus / Janus / etc. | Various classical | most TAKEN | — | — | Killed by npm filter in first sweep (Tagma, Nomos, Styx, Lorica, Thesmos, Phraxis, Temenos all npm-taken except where noted clean above). |
 
+### Round 2 — screened 2026-09-01 (under the erkos umbrella, new naming logics)
+
+| Name | Type | npm | Risk | Tie | Status |
+|---|---|---|---|---|---|
+| **Agger** | Latin "earthen rampart" (the Roman camp earthwork) | clean | low-med | **The Terraform-specific pun**: terra (earth) + agger (earthwork defense) — a governance rampart for *Terra*form. Under erkos, the tool IS the rampart. 5 letters, no pronunciation drift. | **Alive.** npm free; no standalone "agger" tool on DDG. Cons: reads as "Dagger minus d" in the exact infra/CI market (Dagger CI is huge there); a small cybersecurity firm "Agger Labs" exists. |
+| **Scute** | The bony armor plate in crocodile skin | clean | med | The mascot's armor UNIT — "every rule is a scute; the rules form the rampart." 5 letters, English. | **Alive, with priors.** npm free, but two existing software users: the GnuPG smartcard plugin (Debian/Gentoo-packaged) and e280/scute (Rust build tool with a coding-agent CLI). Fails the "zero dev-space use" bar that made Squama clean. |
+| Ephor / Phylax / Vallum / Custos | watchman/rampart/keeper family | **TAKEN** | — | ephor was the Spartan overseer of kings (the AI-oversight narrative); phylax the watchman (prophylaxis = prevention before the fact); vallum the stone rampart; custos the keeper. | **Dead 2026-09-01.** ephor = "governed agent organization" npm package (Jul 2026 — *AI-governance adjacent*); phylax = name-squat (Jun 2026); vallum = an active AI-agent shell-security Rust CLI (22 releases since Jun 2026); custos = dormant 2016 JS client. Classical names in the AI-security space are being eaten fast — claim the winner's handles early. |
+
 ## Strategy layer (decided orientation, not launch posture)
 
 **Governance OS endgame — yes; launch message — no.**
@@ -87,5 +95,5 @@ Clean (verified, no action): `.githooks/post-commit`, `stryker.conf.json`, `vite
 ## How to resume this file
 
 1. If tool name is locked → update the matrix row to **LOCKED**, fill Phase C checklist items as claimed, proceed to Phase D.
-2. If still deciding → the live candidates are: **Squama, Sphragis, Gharial** (erkos was promoted to umbrella 2026-09-01; + Sobek if user accepts TM risk). Screening re-verified 2026-09-01 — all three free on npm; don't re-run it. On record, no push: Squama = usability/zero-risk pick; Gharial = narrative pick under erkos (*erkos odonton*).
+2. If still deciding → the live candidates are: **Squama, Sphragis, Gharial** (round 1) + **Agger, Scute** (round 2, 2026-09-01 — see the round-2 table; both carry more prior-use risk than the round-1 clean three). Sobek only if user accepts TM risk. All npm-free candidates re-verified 2026-09-01; don't re-run it. On record, no push: Squama = usability/zero-risk pick; Gharial = narrative pick under erkos (*erkos odonton*); Agger = the Terraform double-meaning pick (accept Dagger-adjacency).
 3. User decision style this session: holds under pressure, wants zero-risk options, responds well to trade-off tables + blunt recommendations. Don't push; present and wait.
