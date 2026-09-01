@@ -168,3 +168,22 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 
 **Next resume step:** read `docs/REBRAND.md` (updated matrix + playbook). If tool name locked → Phase C items 2/4 (repo transfer + TP registration), then execute Phase D from the embedded table.
 
+## Session N+6 — 2026-09-01 — PLUVIAN LOCKED + Phase D executed on `rebrand/v2`
+
+**Decided:** tool name = **pluvian** (user; after 3 screening rounds — see REBRAND.md rounds 1-3). Package **`@erkos/pluvian`**, binary `pluvian`, repo `erkos-hq/pluvian`, contract `.pluvian/` + `pluvian.json`. npm keeps the clean `@erkos` scope (decision entry in DECISIONS.md).
+
+**Phase D EXECUTED** (branch `rebrand/v2`, pushed, tip `4a667cf`; 4 commits to squash):
+- Package identity: `@erkos/pluvian@2.0.0`, bin `pluvian` → `bin/pluvian.js`, URLs → `erkos-hq/pluvian`, lockfile regenerated.
+- All contract surfaces: jiti alias `@erkos/pluvian` (load.ts), `pluvian.json`/`.pluvian/` discovery (config.ts), scaffold output, `PLUVIAN_REQUIRES_APPROVAL`/`PLUVIAN_ENV_FILE`/`pluvian.env`, ruleIds `pluvian.module-following`+`pluvian.ungoverned`, `# pluvian:ignore`, SARIF driver `@erkos/pluvian`, ci-templates, internal identifiers `EngineError`/`EngineConfig`/`readEngineConfig`.
+- 93 on-disk renames (43 pluvian.json, 46 .pluvian/, bin, 3 skill dirs); generators re-run; docs sweep (historical logs preserved w/ dated notes); CHANGELOG 2.0.0 w/ migration checklist; README brand line (crocodile-bird story).
+- **Full gate green: typecheck, lint, format, 816 unit + 40 integration, coverage, check-docs.** Repo-wide audit: zero `dotzen` refs outside historical logs. Graphify updated.
+- One accident fixed in-branch: `git add -A` briefly committed the untracked tooling dirs (75 files); untracked again — untracked set now identical to pre-branch.
+
+**Blocked on user (Phase C + merge + Phase E):**
+1. Create GitHub org **erkos-hq**; create npm org **erkos**; optionally register **erkos.dev**.
+2. Transfer repo → `erkos-hq/pluvian`; `git remote set-url origin https://github.com/erkos-hq/pluvian.git`.
+3. Register Trusted Publisher on npm: `@erkos/pluvian`, owner=erkos-hq, repo=pluvian, workflow=release.yml (else publish fails ENEEDAUTH at tag time).
+4. Open PR: `https://github.com/ealmachado-eng/dotzen/compare/main...rebrand/v2` → squash-merge AFTER the transfer (so new links resolve on landing).
+5. Phase E: tag `v2.0.0` → publish w/ provenance → verify → `npm deprecate @dotzen/dotzen@*` → re-record demo GIF (demo.tape updated; the gif still shows old output) → launch post rewrite/post.
+- Note: VS Code extension P1 (spec 11) unblocks after merge.
+
