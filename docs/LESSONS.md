@@ -112,3 +112,12 @@
 
 **AVOID** (don't repeat):
 - Pushing straight to main as owner bypasses the required-checks ruleset ("Bypassed rule violations: 8 of 8"). CI ran afterward, but the protection record shows bypasses. For version-bearing changes prefer a PR; accept the bypass consciously only for docs/dev-dep-only commits.
+
+## 2026-09-01 — docs — hand-written user docs rotted behind the generated catalog
+
+**KEEP** (do again):
+- Cross-reading hand-written user docs against the shipped engine caught contradictions the `check-docs` gate can't — the gate keeps the auto-generated catalog fresh, but `what-it-does.md` / `dsl.md` only update by hand.
+- Verify a stale claim against source before rewriting it (grep'd `classifyEdge`/`STRUCTURAL_REF_BY_TYPE` in `evaluate.ts`, counted the generated catalog's 144 rules) so the fix cites shipped code, not memory.
+
+**AVOID** (don't repeat):
+- Shipping an engine feature without sweeping hand-written docs for claims it invalidates — "no multi-hop dependency graph (yet)" sat in `what-it-does.md` for ~10 releases while the graph layer was the README's headline differentiator. Engine-release checklist: grep `docs/user/` (hand-written pages only — the catalog regenerates itself) for the feature's keywords.

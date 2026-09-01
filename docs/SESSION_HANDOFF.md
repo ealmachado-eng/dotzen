@@ -133,3 +133,38 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 **Next resume step:**
 - Rebrand decision is the global blocker (name → Phase C → VS Code P1 → launch). Read `docs/REBRAND.md` first; if name locked, run Phase C checklist.
 
+## Session N+4 — 2026-09-01 — docs deep-read + stale user-docs fixes
+
+**Goal:** onboard a fresh agent via a full docs read (all 11 specs + user docs + memory files), then fix the staleness the read surfaced.
+
+**Shipped:**
+- Full read-through: specs 00–08/10/11, user docs, REBRAND/ROADMAP/LESSONS/DECISIONS, launch post. Context loaded.
+- `docs/user/what-it-does.md` — replaced stale "No multi-hop dependency graph (yet)" bullet (graph layer shipped v1.9.26–29) with the real limit (graph rules are module-scoped; module-output edges are a future iteration, per spec 10); added a topology-aware bullet to the capabilities list; rule counts 140 → 144 (verified against the generated catalog).
+- `docs/user/reference/dsl.md` — rewrote the "known edge case" note about NAT-gateway `subnet_id`: resource-type-aware classification shipped in v1.9.29 (`classifyEdge` + `STRUCTURAL_REF_BY_TYPE`, `engine/evaluate.ts:330`).
+- Commit `ced968d` "docs(user): fix stale graph-layer claims" pushed to origin/main (owner-push bypass accepted — docs-only, per the 2026-09-01 ci lesson). check-docs gate green.
+- LESSONS: docs-staleness entry appended (same date).
+
+**Not done / notes:**
+- `dsl.md` has a **pre-existing** prettier warn — root `docs/` is outside the `packages/cli` format gate; left as-is deliberately.
+- N+3 deferred security recs still open: README trust-boundary note (spec.ts exec), C0/C1 control-char strip in `makePaint` (`src/report/report.ts:23`), stale `wip-2026-08-18-1540` tag deletion.
+- This section + the LESSONS entry are uncommitted by design (`/handoff` never commits — explicit user action).
+
+**Next resume step:** unchanged from N+3 — the rebrand tool-name decision is the global blocker (`docs/REBRAND.md`; live candidates Squama / Sphragis / Gharial / Erkos — present, don't push).
+
+## Session N+5 — 2026-09-01 — rebrand: erkos umbrella locked + Phase D inventory
+
+**Decided:**
+- **Umbrella brand = erkos** (user decision; supersedes the 2026-08-18 tafros lock — DECISIONS.md entry added). Derived identities: GH org **erkos-hq** (github.com/erkos taken by an inactive 2011 account — verified; erkos-hq verified open), npm scope **@erkos-hq/<tool>**, domain direction **erkos.dev** (DNS unresolved — verify at registration).
+- **Tool name still open** (user holding: "None for now. I'll rebrand the tool name"). Live candidates: Squama / Sphragis / Gharial — all re-verified free on npm 2026-09-01. Gharial's *erkos odonton* tie is restored by the flip; Erkos is no longer a candidate (it's the umbrella).
+
+**Shipped:**
+- Full rebrand blast-radius inventory (3 explore agents): **1,063 textual occurrences / 112 files** + filename-only artifacts (43 `dotzen.json`, 46 `.zen/` dirs, `bin/dotzen.js`, 3 `.claude/skills/dotzen-*` dirs). Discovered beyond the original Phase D list: second synthetic ruleId `dotzen.ungoverned` (`report.ts:308`), `DOTZEN_ENV_FILE`/`dotzen.env` + `.gitignore:8`, SARIF driver name (`report.ts:327`), ci-templates emitted YAML, trusted-publisher binding being npm-side repo-identity (not just YAML).
+- **Phase D execution playbook embedded in `docs/REBRAND.md`** (18-row coupling table + ordering + clean-files list) — the mechanical rebrand is executable by any future session with zero re-discovery the moment the tool name locks.
+- REBRAND/DECISIONS/SESSION_HANDOFF updated per append-only convention (tafros rows superseded with dates, not deleted).
+
+**Blocked on user:**
+- Tool name → then Phase C remainder (repo transfer to `erkos-hq/<tool>`, Trusted Publisher registration), Phase D (one branch/PR, squash as v2.0.0 prep), Phase E (publish, deprecate `@dotzen/dotzen`, launch post), VS Code P1.
+- Name-independent NOW: create GitHub org **erkos-hq**, npm org **erkos-hq**, optionally register **erkos.dev** (~15 min).
+
+**Next resume step:** read `docs/REBRAND.md` (updated matrix + playbook). If tool name locked → Phase C items 2/4 (repo transfer + TP registration), then execute Phase D from the embedded table.
+

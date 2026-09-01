@@ -39,3 +39,6 @@ Choice: Marketplace + Open VSX at publish time. Why: covers Cursor/Windsurf/VSCo
 
 ## 2026-09-01 — deps — qs override vs wait
 Choice: scoped `overrides` forcing qs 6.15.3. Why: `typed-rest-client@2.3.1` pins qs exact so no semver-compatible fix exists; dev-only chain, zero runtime risk. Rejected: waiting for upstream; leaving the moderate (CI gate is high-level).
+
+## 2026-09-01 — brand — umbrella flipped tafros → erkos
+Choice: erkos (ἔρκος, enclosure/rampart) is the umbrella brand. Why: user decision — perimeter/fortification semantics fit governance directly; supersedes the 2026-08-18 tafros-umbrella entry (beast-in-moat narrative consciously given up; crocodile mascot survives). Derived handles follow: GH org erkos-hq (github.com/erkos taken by an inactive 2011 account — verified), npm @erkos-hq/<tool>, domain erkos.dev. Rejected: keeping tafros; bare `erkos` GitHub handle (unavailable).
