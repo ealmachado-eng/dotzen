@@ -18,7 +18,8 @@ Three design commitments shape everything below:
 
 ## What dotzen does
 
-- **Catches violations across AWS, Azure, and GCP** — network exposure (open SSH/RDP/DB ports), encryption at rest, IAM least-privilege, audit logging, hardcoded secrets, required tags, public access, plaintext protocols, and more. See the [rule catalog](./reference/rules/all-rules.md): **140 rules across 8 composable presets**.
+- **Catches violations across AWS, Azure, and GCP** — network exposure (open SSH/RDP/DB ports), encryption at rest, IAM least-privilege, audit logging, hardcoded secrets, required tags, public access, plaintext protocols, and more. See the [rule catalog](./reference/rules/all-rules.md): **144 rules across 8 composable presets**.
+- **Topology-aware rules** — a dependency-graph layer walks multi-hop reference chains that per-resource tools can't express: "no DB in a public subnet" (`denyIfReachable` traverses `db → subnet → route table → internet gateway`), "no security group shared between a public LB and a private DB" (`denyIfSharedWith`), and KMS-key provenance (`denyIfReachableAttr`).
 - **Three output formats** — human-readable terminal, machine-readable JSON, and **SARIF 2.1.0** (the OASIS standard for security findings — ingests into GitHub Code Scanning, GitLab security artifacts, Azure DevOps, VS Code).
 - **Curated presets** — a `coreSecurity` baseline plus per-cloud CIS packs (AWS/Azure/GCP) and framework packs (PCI DSS, SOC 2, NIST 800-53, data-protection). Spread them into your spec: `export const spec = [...coreSecurity, ...cisAws, /* your rules */]`.
 - **A readable rule DSL** — rules are written in TypeScript meant to be reviewable by a security architect who isn't a developer:
@@ -46,7 +47,7 @@ Honest boundaries — knowing these prevents misuse reports and sets the right e
 - **Not a general secret scanner.** For "find any secret anywhere in the repo," use **gitleaks** (or truffleHog). dotzen does _structural_ hardcoded-secret detection as defense-in-depth — e.g. a `master_password` attribute set to a literal string on an `aws_db_instance` — but it complements, not replaces, a dedicated secret scanner. See `docs/specs/01-product-overview.md`.
 - **Cannot resolve dynamic values.** A `var.x` with no default and no module-caller input, a Terraform built-in function dotzen doesn't model, a compound expression — these degrade to could-not-evaluate. This is the honest outcome; dotzen refuses to guess. (The set of modeled expressions grows over time — e.g. `toset`/`concat`/`flatten`/`merge` are statically evaluated as of v1.9.19.)
 - **Does not govern every resource type.** dotzen recognizes ~3200 resource/data types across the three clouds but only **~60-70 carry rules** today. The rest are _recognized_ (so they don't inflate false "unknown type" noise) but surface as `ungoverned` so you see the coverage gap. Add custom rules for the types your org cares about.
-- **No multi-hop dependency graph (yet).** Some controls need a graph join — e.g. "no database in a public subnet" requires `subnet → route_table_association → route → internet_gateway`. dotzen is deliberately per-resource + single-hop association today; this class of control is a future v2 capability (see `docs/ROADMAP.md` → "Future directions").
+- **Graph rules are module-scoped.** The dependency graph doesn't yet traverse `module.x.y` output references across module boundaries (a future iteration — see `docs/specs/10-graph-layer.md`). An unresolvable link in a chain (e.g. `subnet_id = var.x` with no default) degrades to could-not-evaluate — never a false pass.
 - **Follows local modules only.** Registry/git/HTTP module sources can't be inspected locally, so their internals surface as could-not-evaluate under the stable rule id `dotzen.module-following` (never a silent `0 checks`). Pin and vendor a module, or govern it at its own repo.
 - **Not a policy enforcement engine.** dotzen reports findings and sets exit codes; it does not block `terraform apply` itself. Wire it as a CI gate / pre-commit hook / approval step — the [CI templates](../README.md#ci-integration) show how.
 - **Not an HCL linter.** It does not check formatting, naming conventions, or style. Use `terraform fmt` / `tflint` for that. dotzen is about _policy_, not _style_.
@@ -74,7 +75,7 @@ Those tools ship a fixed, opinionated rule set baked into the binary. dotzen's r
 - **Clouds:** AWS, Azure, GCP (single engine, per-cloud vocabulary + CIS presets).
 - **Recognized types:** ~3200 across the three clouds.
 - **Governed types:** ~60-70 today (the rest surface as `ungoverned`). See the [resource → rules index](./reference/rules/resource-index.md) for exactly which.
-- **Rules:** 140 across 8 presets. See the [master table](./reference/rules/all-rules.md).
+- **Rules:** 144 across 8 presets. See the [master table](./reference/rules/all-rules.md).
 - **Output:** terminal, JSON, SARIF 2.1.0.
 - **Platforms:** anywhere Node ≥18 runs (macOS, Linux, Windows). No native binary.
 
