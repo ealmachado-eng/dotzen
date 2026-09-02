@@ -1,0 +1,7 @@
+{
+  "spec": ".pluvian/spec.ts",
+  "terraform": [
+    { "path": "./dev", "environment": "development" },
+    { "path": "./prod", "environment": "production" }
+  ]
+}

@@ -7,7 +7,7 @@ provider "aws" {
 
 # The module call passes `providers = { aws = aws.dr }` — the child's default
 # aws provider runs under the dr alias. The child resource has NO explicit
-# `provider` arg, so dotzen remaps it to alias "dr" (#13).
+# `provider` arg, so pluvian remaps it to alias "dr" (#13).
 module "m" {
   source   = "./modules/mod"
   providers = {

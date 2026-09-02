@@ -20,26 +20,26 @@ import {
 } from './profiles'
 import { CI_TEMPLATE_HINT } from '../templates/ci-templates'
 
-/** The output format for `dotzen check`. `sarif` emits the SARIF 2.1.0
+/** The output format for `pluvian check`. `sarif` emits the SARIF 2.1.0
  *  interchange format for CI security dashboards (GitHub Code Scanning,
  *  GitLab security report artifacts, Azure DevOps, VS Code). */
 type Format = 'terminal' | 'json' | 'sarif'
 
 /**
  * Emit the approval signal for CI (doc 04), so a later manual-approval job
- * can gate on DOTZEN_REQUIRES_APPROVAL. CI-agnostic:
+ * can gate on PLUVIAN_REQUIRES_APPROVAL. CI-agnostic:
  *  - GitLab CI (and any CI): write a dotenv file the pipeline exposes via
- *    `artifacts:reports:dotenv` (path overridable with DOTZEN_ENV_FILE,
- *    default `dotzen.env`).
+ *    `artifacts:reports:dotenv` (path overridable with PLUVIAN_ENV_FILE,
+ *    default `pluvian.env`).
  *  - GitHub Actions: also append to $GITHUB_ENV if present.
  * No-op outside CI, so local runs never leave a stray file.
  */
 function emitApprovalSignal(report: CheckReport): void {
-  const line = `DOTZEN_REQUIRES_APPROVAL=${requiresApproval(report)}\n`
+  const line = `PLUVIAN_REQUIRES_APPROVAL=${requiresApproval(report)}\n`
   const ghEnv = process.env.GITHUB_ENV
   if (ghEnv) fs.appendFileSync(ghEnv, line)
   if (process.env.GITLAB_CI || process.env.CI) {
-    fs.writeFileSync(process.env.DOTZEN_ENV_FILE ?? 'dotzen.env', line)
+    fs.writeFileSync(process.env.PLUVIAN_ENV_FILE ?? 'pluvian.env', line)
   }
 }
 
@@ -52,7 +52,7 @@ function engineInfo(): { version: string; informationUri: string } {
   return {
     version: j.version,
     // homepage points at the canonical docs/repo page (package.json homepage).
-    informationUri: j.homepage ?? 'https://github.com/ealmachado-eng/dotzen',
+    informationUri: j.homepage ?? 'https://github.com/erkos-hq/pluvian',
   }
 }
 
@@ -137,8 +137,8 @@ function runInit(
     process.stdout.write(`  skipped  ${s} (already exists)\n`)
 
   process.stdout.write(
-    '\nFor editor autocomplete + type-checking of .zen/spec.ts, install the\n' +
-      'types locally:  npm i -D @dotzen/dotzen   (and add node_modules/ to\n' +
+    '\nFor editor autocomplete + type-checking of .pluvian/spec.ts, install the\n' +
+      'types locally:  npm i -D @erkos/pluvian   (and add node_modules/ to\n' +
       '.gitignore). Running `check` via npx needs no local install.\n',
   )
 
@@ -151,13 +151,13 @@ function runInit(
         ? `${roots.length} Terraform roots: ${roots.map(fmt).join(', ')}`
         : `existing Terraform at ${fmt(roots[0]!)}`
     process.stdout.write(
-      `\nUsing ${label} (from dotzen.json).\n` +
-        `If that's not right, edit "terraform" in dotzen.json (or re-run with --terraform <path>).\n` +
-        `Then run: npx @dotzen/dotzen check\n`,
+      `\nUsing ${label} (from pluvian.json).\n` +
+        `If that's not right, edit "terraform" in pluvian.json (or re-run with --terraform <path>).\n` +
+        `Then run: npx @erkos/pluvian check\n`,
     )
   } else {
     process.stdout.write(
-      '\nNext: add .tf files under terraform/, then run: npx @dotzen/dotzen check\n',
+      '\nNext: add .tf files under terraform/, then run: npx @erkos/pluvian check\n',
     )
   }
   process.stdout.write(CI_TEMPLATE_HINT)
@@ -171,8 +171,8 @@ export async function run(argv: string[]): Promise<number> {
 
   if (command !== 'check') {
     process.stderr.write(
-      'usage: dotzen <check|init> [projectRoot] [--format json|sarif]\n' +
-        '       dotzen init [projectRoot] [--profile startup|enterprise|regulated]\n' +
+      'usage: pluvian <check|init> [projectRoot] [--format json|sarif]\n' +
+        '       pluvian init [projectRoot] [--profile startup|enterprise|regulated]\n' +
         '                                  [--presets coreSecurity,cisAws,...]\n',
     )
     return 2

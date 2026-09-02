@@ -1,12 +1,12 @@
-# dotzen example specs
+# pluvian example specs
 
-Copy-paste starting points for `.zen/spec.ts`, sized to an org's maturity. Each
-is a **standalone spec** — copy the one that fits, drop a `dotzen.json` next to
-it (`dotzen init`), edit the org-specific bits (tag keys, approved regions,
+Copy-paste starting points for `.pluvian/spec.ts`, sized to an org's maturity. Each
+is a **standalone spec** — copy the one that fits, drop a `pluvian.json` next to
+it (`pluvian init`), edit the org-specific bits (tag keys, approved regions,
 approvers), and run:
 
 ```bash
-npx @dotzen/dotzen@1.9.29 check
+npx @erkos/pluvian@2.0.0 check
 ```
 
 > These are **templates**, not a registry. A spec is a flat array of rules, so
@@ -18,16 +18,16 @@ npx @dotzen/dotzen@1.9.29 check
 
 | Profile | Use when | What's in it |
 | --- | --- | --- |
-| [`startup/`](./startup/.zen/spec.ts) | Lean team, ship fast, secure-by-default | `coreSecurity` + one ownership tag (warn) |
-| [`enterprise/`](./enterprise/.zen/spec.ts) | Poly-cloud estate, change governance | Startup baseline + 3 CIS packs + ownership tags (block) + prod `prevent_destroy` approval gate |
-| [`regulated/`](./regulated/.zen/spec.ts) | Compliance regime (PCI / SOC 2 / NIST / GDPR / LGPD) | Enterprise baseline + framework packs + data-residency (region sovereignty) |
+| [`startup/`](./startup/.pluvian/spec.ts) | Lean team, ship fast, secure-by-default | `coreSecurity` + one ownership tag (warn) |
+| [`enterprise/`](./enterprise/.pluvian/spec.ts) | Poly-cloud estate, change governance | Startup baseline + 3 CIS packs + ownership tags (block) + prod `prevent_destroy` approval gate |
+| [`regulated/`](./regulated/.pluvian/spec.ts) | Compliance regime (PCI / SOC 2 / NIST / GDPR / LGPD) | Enterprise baseline + framework packs + data-residency (region sovereignty) |
 
 ## Customization points
 
 - **Tag keys** — the `startup` profile uses the built-in `Tag` enum; the
   `enterprise` profile declares an `OrgTag` enum. Tag *keys* are org-defined, so
   declare yours as an enum (never bare strings — a typo'd tag key is a silently
-  never-fires rule). See the dotzen-spec-authoring skill.
+  never-fires rule). See the pluvian-spec-authoring skill.
 - **Approved regions** (`regulated`) — edit the `ApprovedRegion` enum to your
   jurisdiction (GDPR → EU; LGPD → `sa-east-1` / `southamerica-east1`).
 - **Approvers / stateful types** (`enterprise`) — the `prevent_destroy` gate's
@@ -37,7 +37,7 @@ npx @dotzen/dotzen@1.9.29 check
 ## Composing presets (the general pattern)
 
 ```ts
-import { coreSecurity, cisAws, pciDss, rule, AwsResource, Effect } from '@dotzen/dotzen'
+import { coreSecurity, cisAws, pciDss, rule, AwsResource, Effect } from '@erkos/pluvian'
 
 export const spec = [
   ...coreSecurity,   // secure-by-default baseline (secrets, encryption, public access)

@@ -23,7 +23,7 @@ function tmpProject(files: Record<string, string>): {
   dir: string
   cleanup: () => void
 } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dotzen-parse-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pluvian-parse-'))
   for (const [rel, content] of Object.entries(files)) {
     const full = path.join(dir, rel)
     fs.mkdirSync(path.dirname(full), { recursive: true })
@@ -393,12 +393,12 @@ module "db" {
     // must not leave the scanned project.
     const dir = scratch({
       [`${ENV}/main.tf`]: caller(`module "db" {
-  source        = "../../../dotzen-outside-mod"
+  source        = "../../../pluvian-outside-mod"
   allowed_cidrs = ["0.0.0.0/0"]
 }`),
       'modules/rds/main.tf': moduleRds,
     })
-    const sibling = path.join(path.dirname(dir), 'dotzen-outside-mod')
+    const sibling = path.join(path.dirname(dir), 'pluvian-outside-mod')
     fs.mkdirSync(sibling, { recursive: true })
     fs.writeFileSync(path.join(sibling, 'main.tf'), moduleRds)
     dirs.push(() => fs.rmSync(sibling, { recursive: true, force: true }))

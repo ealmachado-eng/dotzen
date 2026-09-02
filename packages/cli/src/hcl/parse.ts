@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { parse as hcl2json } from '@cdktf/hcl2json'
 import { Result, ok, err } from '../result/result'
-import { DotzenError } from '../result/errors'
+import { EngineError } from '../result/errors'
 import {
   NormalizedResource,
   NormalizedOutput,
@@ -50,8 +50,8 @@ interface ParsedFile {
 }
 
 /**
- * A `module {}` call dotzen did NOT follow (doc 08 DoD: never silently pass).
- * Surfaced as `couldNotEvaluate` (ruleId `dotzen.module-following`) by the
+ * A `module {}` call pluvian did NOT follow (doc 08 DoD: never silently pass).
+ * Surfaced as `couldNotEvaluate` (ruleId `pluvian.module-following`) by the
  * CLI so the user knows a gap exists — remote sources, escapes, missing dirs.
  */
 export interface ModuleSkip {
@@ -78,7 +78,7 @@ export interface ParseOutput {
   readonly settings: NormalizedTerraformSettings[]
   readonly moduleCalls: NormalizedModuleCall[]
   readonly ignores: IgnoreDirective[]
-  /** Resources dotzen saw but could NOT govern (type not in the vocabulary).
+  /** Resources pluvian saw but could NOT govern (type not in the vocabulary).
    *  Surfaced as informational telemetry so users know what's NOT covered —
    *  a silent skip is worse than an honest gap. */
   readonly ungoverned: UngovernedResource[]
@@ -92,7 +92,7 @@ export interface ParseOutput {
 }
 
 /**
- * A resource dotzen parsed but could not govern — its type is not in the
+ * A resource pluvian parsed but could not govern — its type is not in the
  *  closed vocabulary (`KNOWN_TYPES`). Surfaced as informational telemetry
  *  (not a violation, not could-not-evaluate) so users know coverage gaps.
  */
@@ -104,7 +104,7 @@ export interface UngovernedResource {
 }
 
 /**
- * An inline `# dotzen:ignore` (or `// dotzen:ignore`) directive. Suppresses
+ * An inline `# pluvian:ignore` (or `// pluvian:ignore`) directive. Suppresses
  * ALL findings (violations + could-not-evaluate) on the block it precedes (or
  * is on the same line as). The optional `: <reason>` text is a human
  * justification (auditability), not a matcher. Matched by (file, line) where
@@ -114,34 +114,34 @@ export interface IgnoreDirective {
   readonly file: string
   readonly line: number
   /** Optional ruleId to suppress ONLY that rule on this block
-   *  (`# dotzen:ignore rule-5: <reason>`). Undefined = suppress ALL rules. */
+   *  (`# pluvian:ignore rule-5: <reason>`). Undefined = suppress ALL rules. */
   readonly ruleId?: string
   readonly reason?: string
 }
 
-/** An own-line `# dotzen:ignore[: reason]` / `// dotzen:ignore[: reason]`
- *  comment. Supports an optional ruleId: `# dotzen:ignore rule-5: <reason>`
+/** An own-line `# pluvian:ignore[: reason]` / `// pluvian:ignore[: reason]`
+ *  comment. Supports an optional ruleId: `# pluvian:ignore rule-5: <reason>`
  *  to suppress only that rule. Without a ruleId, suppresses ALL findings.
  *  Anchored at `^\s*` so a token inside a string value does NOT false-match. */
 const IGNORE_OWN_LINE_RE =
-  /^\s*(#|\/\/)\s*dotzen:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
+  /^\s*(#|\/\/)\s*pluvian:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
 
 /** A trailing comment on a block-start line (same semantics as own-line). */
 const IGNORE_TRAILING_RE =
-  /(#|\/\/)\s*dotzen:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
+  /(#|\/\/)\s*pluvian:ignore(?:\s+([a-z][a-z0-9-]*))?(?::\s*(.*))?$/i
 
 /** A top-level block header — the target of an ignore directive. */
 const BLOCK_START_RE =
   /^\s*(?:resource|data|output|variable|module|provider|terraform|locals)\b/
 
 /**
- * Scan raw text for `dotzen:ignore` directives. Two forms:
- *  1. Own-line: `# dotzen:ignore\nresource "x" "y"` → targets the NEXT
+ * Scan raw text for `pluvian:ignore` directives. Two forms:
+ *  1. Own-line: `# pluvian:ignore\nresource "x" "y"` → targets the NEXT
  *     block-start line at or after the comment.
- *  2. Trailing: `resource "x" "y" { # dotzen:ignore` → targets THIS line
+ *  2. Trailing: `resource "x" "y" { # pluvian:ignore` → targets THIS line
  *     (the block-start line the comment trails).
- * A `dotzen:ignore` token inside a string value (e.g.
- * `description = "# dotzen:ignore"`) is NOT matched — the own-line regex
+ * A `pluvian:ignore` token inside a string value (e.g.
+ * `description = "# pluvian:ignore"`) is NOT matched — the own-line regex
  * is anchored at `^\s*`, and the trailing regex only runs on block-start
  * lines. Returns directives keyed by physical file rel path + targeted line.
  */
@@ -180,7 +180,7 @@ export function scanIgnores(text: string, fileRel: string): IgnoreDirective[] {
 /** Parse every `.tf` under `dir` (no normalization). */
 async function parseDir(
   dir: string,
-): Promise<Result<ParsedFile[], DotzenError>> {
+): Promise<Result<ParsedFile[], EngineError>> {
   if (!fs.existsSync(dir)) return err({ kind: 'PathNotFound', path: dir })
   const out: ParsedFile[] = []
   for (const file of findTfFiles(dir)) {
@@ -271,7 +271,7 @@ async function followModules(
    *  in (child's aliases override). Threaded to `normalize` and the recursive
    *  `followModules` for GDPR/LGPD residency rules. */
   inheritedRegions?: ProviderRegionMap,
-): Promise<Result<ParseOutput, DotzenError>> {
+): Promise<Result<ParseOutput, EngineError>> {
   const out: NormalizedResource[] = []
   const skips: ModuleSkip[] = []
   const outputs: NormalizedOutput[] = []
@@ -534,7 +534,7 @@ async function followModules(
 
 /**
  * Read a terraform directory, parse each .tf via the official parser
- * (hcl2json / WASM), and normalize into dotzen's model. Async because
+ * (hcl2json / WASM), and normalize into pluvian's model. Async because
  * the WASM parser is async. Reported file paths are made relative to
  * `projectRoot` (defaults to `dir`) so output is readable and portable —
  * and, for multi-root layouts, shows which root each finding came from.
@@ -549,7 +549,7 @@ export async function parseTf(
   dir: string,
   projectRoot: string = dir,
   environmentOverride?: string,
-): Promise<Result<ParseOutput, DotzenError>> {
+): Promise<Result<ParseOutput, EngineError>> {
   const parsedFiles = await parseDir(dir)
   if (!parsedFiles.ok) return parsedFiles
 

@@ -9,18 +9,18 @@ describe('scaffoldFiles', () => {
   const files = scaffoldFiles('1.2.3', './terraform', composeSpec())
   const byPath = (p: string) => files.find((f) => f.path === p)
 
-  it('writes dotzen.json pinned to the engine version', () => {
-    const cfg = JSON.parse(byPath('dotzen.json')!.content)
+  it('writes pluvian.json pinned to the engine version', () => {
+    const cfg = JSON.parse(byPath('pluvian.json')!.content)
     expect(cfg).toEqual({
       version: '1.2.3',
-      spec: '.zen/spec.ts',
+      spec: '.pluvian/spec.ts',
       terraform: './terraform',
     })
   })
 
   it('scaffolds a spec.ts that imports from the published package', () => {
     const spec = files.find((f) => f.path.endsWith('spec.ts'))!.content
-    expect(spec).toContain("from '@dotzen/dotzen'")
+    expect(spec).toContain("from '@erkos/pluvian'")
     expect(spec).toContain('export const spec')
     // Default spec spreads coreSecurity (the secure-by-default baseline).
     expect(spec).toContain('...coreSecurity')
@@ -32,7 +32,7 @@ describe('scaffoldFiles', () => {
 describe('initProject', () => {
   const tmp: string[] = []
   const mk = () => {
-    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dotzen-init-'))
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'pluvian-init-'))
     tmp.push(d)
     return d
   }
@@ -40,14 +40,15 @@ describe('initProject', () => {
     tmp.forEach((d) => fs.rmSync(d, { recursive: true, force: true })),
   )
   const terraformOf = (dir: string) =>
-    JSON.parse(fs.readFileSync(path.join(dir, 'dotzen.json'), 'utf8')).terraform
+    JSON.parse(fs.readFileSync(path.join(dir, 'pluvian.json'), 'utf8'))
+      .terraform
 
   it('greenfield: creates config, spec, and a ./terraform dir', () => {
     const dir = mk()
     const res = initProject(dir, '0.0.1')
     expect(res.detected).toBe(false)
     expect(res.terraform).toBe('./terraform')
-    expect(fs.existsSync(path.join(dir, '.zen', 'spec.ts'))).toBe(true)
+    expect(fs.existsSync(path.join(dir, '.pluvian', 'spec.ts'))).toBe(true)
     expect(fs.existsSync(path.join(dir, 'terraform'))).toBe(true)
   })
 
@@ -56,7 +57,7 @@ describe('initProject', () => {
     initProject(dir, '0.0.1')
     const { created, skipped } = initProject(dir, '0.0.1')
     expect(created).toHaveLength(0)
-    expect(skipped).toContain('dotzen.json')
+    expect(skipped).toContain('pluvian.json')
   })
 
   it('detects .tf at the project root -> terraform "."', () => {
@@ -127,7 +128,7 @@ describe('initProject', () => {
   it('--profile enterprise: writes the enterprise spec (CIS spread + bespoke)', () => {
     const dir = mk()
     initProject(dir, '0.0.1', { profile: 'enterprise' })
-    const spec = fs.readFileSync(path.join(dir, '.zen', 'spec.ts'), 'utf8')
+    const spec = fs.readFileSync(path.join(dir, '.pluvian', 'spec.ts'), 'utf8')
     expect(spec).toContain('...cisAws,')
     expect(spec).toContain('enum OrgTag')
     expect(spec).toContain('LifecycleAttribute.PreventDestroy')
@@ -136,7 +137,7 @@ describe('initProject', () => {
   it('--presets cisAws,pciDss: writes exactly that spread (no implicit coreSecurity)', () => {
     const dir = mk()
     initProject(dir, '0.0.1', { presets: ['cisAws', 'pciDss'] })
-    const spec = fs.readFileSync(path.join(dir, '.zen', 'spec.ts'), 'utf8')
+    const spec = fs.readFileSync(path.join(dir, '.pluvian', 'spec.ts'), 'utf8')
     expect(spec).toContain('...cisAws,')
     expect(spec).toContain('...pciDss,')
     expect(spec).not.toContain('...coreSecurity,')

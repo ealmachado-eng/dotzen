@@ -1,5 +1,5 @@
 # Environment layer: only module calls, no direct resources. Without
-# module-following, dotzen would report "0 checks" here. The concrete
+# module-following, pluvian would report "0 checks" here. The concrete
 # governance values (cidrs, tags) live in these inputs.
 
 module "db_good" {

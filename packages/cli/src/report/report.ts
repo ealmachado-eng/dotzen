@@ -1,5 +1,5 @@
 import { CheckReport, Violation } from '../engine/evaluate'
-import { DotzenError } from '../result/errors'
+import { EngineError } from '../result/errors'
 import { Effect } from '../vocabulary'
 
 const assertNever = (x: never): never => {
@@ -123,7 +123,7 @@ export function renderTerminal(
     if (requiresApproval(report))
       lines.push(
         paint(
-          '⏸ approval required before apply (DOTZEN_REQUIRES_APPROVAL)',
+          '⏸ approval required before apply (PLUVIAN_REQUIRES_APPROVAL)',
           ANSI.yellow,
         ),
       )
@@ -167,13 +167,13 @@ const SARIF_SCHEMA =
   'https://docs.oasis-open.org/sarif/sarif/v2.1.0/cs01/schemas/sarif-schema-2.1.0.json'
 
 /**
- * The raw `file` dotzen carries may embed a module-trace annotation from
+ * The raw `file` pluvian carries may embed a module-trace annotation from
  * `followModules` — e.g. `modules/rds/main.tf (db_bad)`. That suffix (spaces,
  * parens) is NOT a valid RFC 3986 URI reference, and GitHub/GitLab code-
  * scanning deep-links by `uri`, so a trace-laden uri would 404 the annotation.
  * Strip the annotation for the SARIF `artifactLocation.uri` (the clean
  * filesystem path — what a dashboard opens) and surface the full trace via
- * `properties.moduleTrace` so the dotzen-specific context round-trips.
+ * `properties.moduleTrace` so the pluvian-specific context round-trips.
  */
 const TRACE_SUFFIX = /\s*\([^)]*\)\s*$/
 const cleanUri = (file: string): string => file.replace(TRACE_SUFFIX, '')
@@ -194,7 +194,7 @@ const isProjectFinding = (file: string, line: number): boolean =>
   file === '<project>' || line <= 0
 
 /**
- * Map a dotzen `Effect` to a SARIF result `level` (none | note | warning |
+ * Map a pluvian `Effect` to a SARIF result `level` (none | note | warning |
  * error). `Block` → `error` (fails the build); `Warn` and `RequireApproval`
  * → `warning` (RequireApproval needs human action, not a silent note). The
  * could-not-evaluate / ungoverned informational entries use `note`.
@@ -206,14 +206,14 @@ const effectToSarifLevel = (e: Effect): 'error' | 'warning' =>
  * Render the report as a SARIF 2.1.0 document — the OASIS-standard JSON
  * schema consumed by GitHub Code Scanning (`github/codeql-action/upload-
  * sarif`), GitLab's security report artifacts, Azure DevOps, and VS Code's
- * SARIF viewer. Makes dotzen a first-class CI security stage: findings land
+ * SARIF viewer. Makes pluvian a first-class CI security stage: findings land
  * in the Security tab / MR widgets with file:line deep-links, alongside
  * semgrep/gitleaks, instead of a CI log.
  *
  * Maps:
  *  - Each violation → a `results[]` entry with ruleId, level (effect→error/
  *    warning), message, file:line `locations`, and a `properties` bag that
- *    round-trips dotzen-specific data (resource, effect, rationale,
+ *    round-trips pluvian-specific data (resource, effect, rationale,
  *    approvers) so consumers can filter/group beyond the SARIF baseline.
  *  - Each could-not-evaluate / ungoverned entry → a `note`-level result so
  *    the engine's "gaps must be visible" discipline carries through (they
@@ -255,7 +255,7 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
    * Build a SARIF location array for a finding. Returns `[]` for project-level
    * findings (no valid file:line) so the result carries no physical location
    * (SARIF-permitted) instead of a schema-invalid one. Otherwise emits a
-   * clean URI (trace suffix stripped) + startLine, with the dotzen trace
+   * clean URI (trace suffix stripped) + startLine, with the pluvian trace
    * annotation surfaced separately via `properties.moduleTrace` by the caller.
    */
   const locationsFor = (
@@ -305,7 +305,7 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
   }))
 
   const ungovernedResults = report.ungoverned.map((u) => ({
-    ruleId: 'dotzen.ungoverned',
+    ruleId: 'pluvian.ungoverned',
     level: 'note' as const,
     message: { text: `resource type not governed by any rule: ${u.type}` },
     locations: locationsFor(u.file, u.line),
@@ -324,7 +324,7 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
         {
           tool: {
             driver: {
-              name: '@dotzen/dotzen',
+              name: '@erkos/pluvian',
               version: tool.version,
               informationUri: tool.informationUri,
               rules,
@@ -339,18 +339,18 @@ export function renderSarif(report: CheckReport, tool: SarifToolInfo): string {
   )
 }
 
-/** Exhaustive over DotzenError.kind (doc 06). */
-export function renderError(error: DotzenError): string {
+/** Exhaustive over EngineError.kind (doc 06). */
+export function renderError(error: EngineError): string {
   switch (error.kind) {
     case 'ConfigNotFound':
-      return `✗ dotzen config not found: ${error.path}`
+      return `✗ pluvian config not found: ${error.path}`
     case 'VersionMismatch':
       return [
-        `✗ dotzen version mismatch`,
-        `  required: ${error.required} (from dotzen.json)`,
+        `✗ pluvian version mismatch`,
+        `  required: ${error.required} (from pluvian.json)`,
         `  running:  ${error.running}`,
         ``,
-        `  run: npx @dotzen/dotzen@${error.required} check`,
+        `  run: npx @erkos/pluvian@${error.required} check`,
       ].join('\n')
     case 'SpecLoadFailed':
       return `✗ could not load spec ${error.path}: ${error.detail}`

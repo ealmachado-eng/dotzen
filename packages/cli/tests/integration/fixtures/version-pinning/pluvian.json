@@ -1,0 +1,4 @@
+{
+  "spec": ".pluvian/spec.ts",
+  "terraform": "./terraform"
+}

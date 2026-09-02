@@ -15,7 +15,7 @@ variable "location" {
 variable "project_name" {
   description = "Project name used for resource naming"
   type        = string
-  default     = "dotzen-demo"
+  default     = "pluvian-demo"
 }
 
 variable "sql_admin_password" {

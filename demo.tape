@@ -12,7 +12,7 @@ Set Theme "Dracula"
 # Pre-warm uses --yes so the cold install doesn't hang on its own prompt.
 Set TypingSpeed 0.01
 Hide
-Type "cd /Users/ealmachado/projects/dotzen/demo"
+Type "cd /Users/ealmachado/projects/pluvian/demo"
 Enter
 Type "PS1='$ '"
 Enter
@@ -20,7 +20,7 @@ Type "export BAT_THEME=Dracula"
 Enter
 Type "alias bat='bat --paging=never'"
 Enter
-Type "npx --yes @dotzen/dotzen@1 check >/dev/null 2>&1"
+Type "npx --yes @erkos/pluvian@2 check >/dev/null 2>&1"
 Enter
 Sleep 10s
 Type "clear"
@@ -44,7 +44,7 @@ Enter
 Sleep 4s
 
 # 3. The catch: public DB flagged, private DB clean.
-Type "npx @dotzen/dotzen@1 check"
+Type "npx @erkos/pluvian@2 check"
 Sleep 500ms
 Enter
 Sleep 1s

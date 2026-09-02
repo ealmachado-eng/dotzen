@@ -16,7 +16,7 @@ Unlike GitLab (where npm trusted publishing only worked on shared runners), **Gi
 
 - **An always-on machine** — the runner only polls while it's up. A Mac mini, a NUC, or a Linux VPS all work.
 - **The machine's OS/arch** must match the jobs you'll route there. `runs-on: self-hosted` accepts any OS; add OS labels (`ubuntu`, `macos`) if jobs assume one.
-- **Docker** — if you route container-based jobs to the runner. (dotzen's jobs run Node directly via `actions/setup-node`, so Docker is optional.)
+- **Docker** — if you route container-based jobs to the runner. (pluvian's jobs run Node directly via `actions/setup-node`, so Docker is optional.)
 
 ## Register the runner (project-scoped)
 
@@ -29,7 +29,7 @@ GitHub generates the exact commands per OS — these are the shape:
    mkdir actions-runner && cd actions-runner
    curl -o actions-runner-linux-x64-<ver>.tar.gz -L <github-url>
    tar xzf actions-runner-linux-x64-<ver>.tar.gz
-   ./config.sh --url https://github.com/ealmachado-eng/dotzen --token <TOKEN> \
+   ./config.sh --url https://github.com/erkos-hq/pluvian --token <TOKEN> \
      --name "mac-mini" --labels "self-hosted,linux" --unattended
    ```
    macOS uses `actions-runner-osx-x64-<ver>.tar.gz`; the flow is identical.
@@ -85,5 +85,5 @@ On GitLab, npm trusted publishing worked **only** on shared runners — so the o
 ## See also
 
 - `.github/workflows/ci.yml`, `.github/workflows/release.yml` — the workflow definitions (`runs-on` lives here).
-- `.claude/skills/dotzen-release/SKILL.md` — the trusted-publishing flow on GitHub.
+- `.claude/skills/pluvian-release/SKILL.md` — the trusted-publishing flow on GitHub.
 - GitHub docs: [self-hosted runners](https://docs.github.com/actions/hosting-your-own-runners).

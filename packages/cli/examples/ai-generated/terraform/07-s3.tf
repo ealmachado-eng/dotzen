@@ -1,6 +1,6 @@
 # Modern AWS provider style: the ACL is a separate aws_s3_bucket_acl
 # resource (the inline `acl` argument on aws_s3_bucket was deprecated in
-# provider v4). dotzen governs the decomposed resource via a rule that
+# provider v4). pluvian governs the decomposed resource via a rule that
 # targets aws_s3_bucket, so it catches a public ACL in either form.
 
 resource "aws_s3_bucket" "public_assets" {

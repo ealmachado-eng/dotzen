@@ -1,5 +1,5 @@
 # Prompt: "Terraform for an EC2 security group allowing SSH and web access"
-# Typical literal output — the classic case dotzen targets.
+# Typical literal output — the classic case pluvian targets.
 resource "aws_security_group" "app" {
   name        = "app-sg"
   description = "Allow SSH and HTTP inbound traffic"

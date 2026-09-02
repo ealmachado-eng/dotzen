@@ -75,7 +75,7 @@ describe('composeSpec — generated spec.ts content', () => {
   it('default: spreads coreSecurity, imports it, no bespoke', () => {
     const spec = composeSpec()
     expect(spec).toContain('...coreSecurity,')
-    expect(spec).toContain("import { coreSecurity } from '@dotzen/dotzen'")
+    expect(spec).toContain("import { coreSecurity } from '@erkos/pluvian'")
     // No bespoke rules/enums on the default.
     expect(spec).not.toContain('mustHaveTags')
     expect(spec).not.toContain('enum ')

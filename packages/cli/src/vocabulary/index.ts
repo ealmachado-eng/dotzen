@@ -47,7 +47,7 @@ export enum Block {
 /**
  * Terraform provisioner types (the `"x"` in `provisioner "x" {}`). These run
  * arbitrary commands on apply/destroy — a supply-chain / exfiltration surface
- * dotzen can govern with `denyProvisioner`. `local-exec` runs on the operator's
+ * pluvian can govern with `denyProvisioner`. `local-exec` runs on the operator's
  * machine; `remote-exec` runs on the provisioned resource over SSH/WinRM.
  */
 export enum Provisioner {

@@ -150,7 +150,7 @@ rule()
   .message("No plaintext secrets in container environment variables");
 ```
 
-dotzen is **not** a general secret scanner (use gitleaks for that) — these are _structural_ checks on known secret-bearing attributes. See [what-it-does](../what-it-does.md).
+pluvian is **not** a general secret scanner (use gitleaks for that) — these are _structural_ checks on known secret-bearing attributes. See [what-it-does](../what-it-does.md).
 
 ### IAM policies
 
@@ -190,7 +190,7 @@ rule()
 You usually don't write rules from scratch — you **spread a preset and add your own**:
 
 ```ts
-import { coreSecurity, cisAws } from '@dotzen/dotzen'
+import { coreSecurity, cisAws } from '@erkos/pluvian'
 
 export const spec = [
   ...coreSecurity,        // the 80% baseline
@@ -203,7 +203,7 @@ See [use the CIS presets](./use-the-cis-presets.md) and the [rule catalog](../re
 
 ## Verifying a rule
 
-The fastest feedback loop: write the rule, run `npx @dotzen/dotzen check`, confirm it fires (or passes) on a resource you control. For editor autocomplete + a compile-time check, install the types locally: `npm i -D @dotzen/dotzen`, then `tsc --noEmit .zen/spec.ts` catches typos in resource types / attributes / ports.
+The fastest feedback loop: write the rule, run `npx @erkos/pluvian check`, confirm it fires (or passes) on a resource you control. For editor autocomplete + a compile-time check, install the types locally: `npm i -D @erkos/pluvian`, then `tsc --noEmit .pluvian/spec.ts` catches typos in resource types / attributes / ports.
 
 ## See also
 

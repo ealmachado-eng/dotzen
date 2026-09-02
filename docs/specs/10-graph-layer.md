@@ -1,7 +1,7 @@
 # 10 — Graph Layer (dependency-graph rules)
 
 Status: **Implemented (v1.9.26–29).** This document defined a new capability for
-the dotzen engine: a **multi-hop dependency graph** over normalized resources,
+the pluvian engine: a **multi-hop dependency graph** over normalized resources,
 enabling rule conditions that traverse chains of references (e.g. "no database
 in a public subnet" requires walking `db → subnet → route_table → route → igw`).
 It is the natural next capability after the per-resource + single-hop
@@ -23,7 +23,7 @@ Read `06-engine-architecture.md` first — this doc extends its model.
 
 ## The problem: per-resource + single-hop is not enough
 
-dotzen today evaluates each resource in isolation, with ONE cross-resource
+pluvian today evaluates each resource in isolation, with ONE cross-resource
 primitive: `mustHaveAssociated` / `denyIfAssociated` (single-hop: "does a
 child resource reference me via attribute X?"). This covers most CIS controls
 — encryption, tags, ports, IAM, block presence. But a class of real-world
@@ -248,7 +248,7 @@ resource and the other type → violation.
 | No path exists | No edges to traverse | `reachable: false` | **pass** (definite absence) |
 | Start resource has no edges at all | Empty adjacency | `reachable: false` | **pass** |
 
-This preserves dotzen's core discipline: **never a guess, never a false
+This preserves pluvian's core discipline: **never a guess, never a false
 verdict.** A partially-resolved chain degrades to CNE, not a violation and
 not a pass.
 

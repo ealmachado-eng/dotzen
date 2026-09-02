@@ -1,10 +1,10 @@
 # How to understand "could not evaluate"
 
-> **Audience:** security reviewers triaging findings; spec authors. This is dotzen's most-misunderstood output — read this once and the tool makes sense.
+> **Audience:** security reviewers triaging findings; spec authors. This is pluvian's most-misunderstood output — read this once and the tool makes sense.
 
 ## The principle: a false positive is worse than an honest gap
 
-When dotzen cannot _statically_ prove a rule passes or fails, it reports **could-not-evaluate** — not a guess. A tool that silently passes a check it can't actually run is worse than no tool: it gives false confidence. dotzen refuses to guess.
+When pluvian cannot _statically_ prove a rule passes or fails, it reports **could-not-evaluate** — not a guess. A tool that silently passes a check it can't actually run is worse than no tool: it gives false confidence. pluvian refuses to guess.
 
 ```
 ✗ 1 violation(s), 3 passed, 2 could not be evaluated
@@ -14,15 +14,15 @@ The `could not be evaluated` count is **informational, not a failure** — the e
 
 ## Why it fires
 
-dotzen reads HCL statically — no `terraform plan`, no cloud, no state. A rule becomes could-not-evaluate when the value it needs can't be resolved from HCL alone:
+pluvian reads HCL statically — no `terraform plan`, no cloud, no state. A rule becomes could-not-evaluate when the value it needs can't be resolved from HCL alone:
 
 - **A `var` with no default and no module-caller input.**
   ```hcl
   cidr_blocks = var.allowed_cidrs   # var.allowed_cidrs has no default → unknown
   ```
-- **A compound expression dotzen doesn't model.** dotzen evaluates common Terraform built-ins (`toset`, `concat`, `flatten`, `merge`, conservative ternaries, single-interpolation string concat) — but not everything. `length(var.x)`, a function call dotzen doesn't recognize, or arithmetic stays unresolved.
-- **A resource-attribute reference.** `member = google_service_account.x.email` — dotzen can't see the apply-time email address.
-- **A registry/remote module.** A `module {}` whose source dotzen can't read locally (`terraform-aws-modules/...`) surfaces its internals as could-not-evaluate under the stable rule id `dotzen.module-following` — never a silent `0 checks`.
+- **A compound expression pluvian doesn't model.** pluvian evaluates common Terraform built-ins (`toset`, `concat`, `flatten`, `merge`, conservative ternaries, single-interpolation string concat) — but not everything. `length(var.x)`, a function call pluvian doesn't recognize, or arithmetic stays unresolved.
+- **A resource-attribute reference.** `member = google_service_account.x.email` — pluvian can't see the apply-time email address.
+- **A registry/remote module.** A `module {}` whose source pluvian can't read locally (`terraform-aws-modules/...`) surfaces its internals as could-not-evaluate under the stable rule id `pluvian.module-following` — never a silent `0 checks`.
 
 ## How to read a could-not-evaluate finding
 
@@ -49,11 +49,11 @@ Decide which of these you're in:
    variable "allowed_cidrs" { default = ["10.0.0.0/8"] }
    ```
 
-   dotzen now resolves it to a definite verdict (pass or violation).
+   pluvian now resolves it to a definite verdict (pass or violation).
 
 3. **You don't actually need the rule on this resource.** Narrow the rule's [scope](./scope-to-environment.md) (e.g. environment- or provider-alias-scoped), or [suppress it with an ignore directive](./handle-exceptions.md) + a reason.
 
-4. **dotzen doesn't model an expression you rely on heavily** (e.g. a Terraform built-in not yet supported). Check `docs/ROADMAP.md` for the compound-input coverage list, and consider filing an issue — the supported set grows release over release.
+4. **pluvian doesn't model an expression you rely on heavily** (e.g. a Terraform built-in not yet supported). Check `docs/ROADMAP.md` for the compound-input coverage list, and consider filing an issue — the supported set grows release over release.
 
 ## Could-not-evaluate vs. ungoverned — don't confuse them
 
@@ -61,8 +61,8 @@ Two distinct "gap" categories, both surfaced but for different reasons:
 
 | Output category        | Meaning                                                                            | Action                                                                 |
 | ---------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **could not evaluate** | dotzen has a rule for this resource, but can't statically resolve a value it needs | Review the reason; accept, supply a default, narrow scope, or suppress |
-| **ungoverned**         | dotzen _recognizes_ the resource type but has no rule for it                       | Add a custom rule, or accept the coverage gap                          |
+| **could not evaluate** | pluvian has a rule for this resource, but can't statically resolve a value it needs | Review the reason; accept, supply a default, narrow scope, or suppress |
+| **ungoverned**         | pluvian _recognizes_ the resource type but has no rule for it                       | Add a custom rule, or accept the coverage gap                          |
 
 Both are visible so coverage is honest. A clean run is `0 violations, 0 could not evaluate, 0 ungoverned` — that's a fully-governed, fully-resolved project.
 
@@ -72,6 +72,6 @@ Could-not-evaluate entries appear as `note`-level results in SARIF (visible in t
 
 ## See also
 
-- [What dotzen does / doesn't](../what-it-does.md) — the static-only boundary.
+- [What pluvian does / doesn't](../what-it-does.md) — the static-only boundary.
 - [Read the output](./read-the-output.md) — exit codes, JSON, SARIF.
 - [Handle exceptions](./handle-exceptions.md) — when could-not-evaluate is a legit gap you want to suppress.

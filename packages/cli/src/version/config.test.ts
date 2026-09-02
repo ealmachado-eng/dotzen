@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { enforceVersion, DotzenConfig } from './config'
+import { enforceVersion, EngineConfig } from './config'
 
-const cfg: DotzenConfig = {
+const cfg: EngineConfig = {
   version: '1.2.0',
-  spec: '.zen/spec.ts',
+  spec: '.pluvian/spec.ts',
   terraform: './terraform',
 }
 
@@ -25,7 +25,7 @@ describe('enforceVersion', () => {
   })
 
   it('passes when no version is pinned', () => {
-    const noPin: DotzenConfig = { spec: 's', terraform: 't' }
+    const noPin: EngineConfig = { spec: 's', terraform: 't' }
     expect(enforceVersion(noPin, '9.9.9')).toEqual({ ok: true, value: noPin })
   })
 })

@@ -31,12 +31,12 @@ order to understand (and not re-open) the decision.
 
 ## Decision drivers (in priority order for a public product)
 
-1. **Adoption friction** — time from "developer hears about dotzen" to
+1. **Adoption friction** — time from "developer hears about pluvian" to
    "developer successfully runs a check." This was ultimately weighted
    above every other criterion, because a governance tool that isn't
    run provides zero governance.
 2. **Spec (DSL) readability** — can a security architect who does not
-   write code read `.zen/spec.ts` and understand it correctly.
+   write code read `.pluvian/spec.ts` and understand it correctly.
 3. **Type safety / correctness** — can the engine make invalid rule
    combinations unrepresentable, and does the language support
    exhaustive pattern matching so that adding a new resource type forces
@@ -47,7 +47,7 @@ order to understand (and not re-open) the decision.
    accept the tool without friction based on its implementation
    language.
 6. **Community contribution potential** — how many developers can read
-   and meaningfully contribute to dotzen itself.
+   and meaningfully contribute to pluvian itself.
 
 ## Why npx-based Node/TypeScript won on the decisive criterion
 
@@ -56,7 +56,7 @@ kind — a package-manager install, a `curl | sh` script, or a runtime
 that itself needs installing first. **Node.js is the one runtime that is
 already present on essentially every developer machine and every major
 CI runner (GitHub Actions, GitLab CI, CircleCI, Jenkins) without any
-setup step.** `npx @dotzen/dotzen check ./terraform/` is a complete,
+setup step.** `npx @erkos/pluvian check ./terraform/` is a complete,
 zero-install, cross-platform invocation on day one.
 
 This single property — "the adoption flywheel requires zero
@@ -68,8 +68,8 @@ governs nothing.
 
 The objection to Node/npx is usually "but you lose control over which
 version runs." This is solved, not a fundamental limitation:
-`npx @dotzen/dotzen@1.2.0` pins an exact version, and — more
-importantly — the engine itself reads a `dotzen.json` file committed to
+`npx @erkos/pluvian@1.2.0` pins an exact version, and — more
+importantly — the engine itself reads a `pluvian.json` file committed to
 the repository and **refuses to run** if its own version doesn't match
 the pinned version, printing the exact corrective `npx` command. See
 `/docs/specs/03-distribution-and-cli.md`. This makes governance
@@ -121,7 +121,7 @@ categories are not re-opened one language at a time.
 
 The single property that beat every group: **Node is already present on
 essentially every developer machine and CI runner, so
-`npx @dotzen/dotzen check` is a complete, zero-install, cross-platform
+`npx @erkos/pluvian check` is a complete, zero-install, cross-platform
 invocation on day one.**
 
 ## The decision depends on staying pure-JS
@@ -151,11 +151,11 @@ no security patches, and medium-term install-rot risk if a transitive
 dependency breaks. This is accepted for now (documented, monitored) rather than
 acted on. The mitigation path if it bites: compile `hashicorp/hcl/v2` to WASM
 ourselves and **vendor the `.wasm` artifact** in this repo — same parser
-correctness, same no-native-binary/no-Gatekeeper distribution, but dotzen owns
+correctness, same no-native-binary/no-Gatekeeper distribution, but pluvian owns
 the build (a build-time Go toolchain, not a user-facing one). Owning the build
 matters beyond the archived-upstream risk: `hashicorp/hcl/v2` itself continues
 to release (parser fixes, new HCL constructs, security patches), and a frozen
-`@cdktf/hcl2json` snapshot means dotzen cannot track those — only a dotzen-owned
+`@cdktf/hcl2json` snapshot means pluvian cannot track those — only a pluvian-owned
 build lets us bump `hcl/v2` on our own cadence. Bundling the Go parser as a
 native subprocess binary is *not* the mitigation — that reintroduces the
 per-OS / signing / Gatekeeper cost this decision deliberately avoids.
@@ -176,7 +176,7 @@ not currently pursued.
   unions, and optionally `ts-pattern` for exhaustiveness in the engine
   (not the spec surface).
 - The distribution model (`/docs/specs/03-distribution-and-cli.md`) is
-  built entirely around `npx` and `dotzen.json`-driven version
+  built entirely around `npx` and `pluvian.json`-driven version
   enforcement.
 - A future v2 rewrite of the *engine* in a native-compiled language
   remains an open, explicitly-considered option — but the

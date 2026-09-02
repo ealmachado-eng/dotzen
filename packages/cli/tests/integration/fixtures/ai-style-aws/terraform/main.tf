@@ -1,7 +1,7 @@
 # AI-generated Terraform — "create a Terraform module for a web application on AWS"
 #
 # This fixture deliberately includes COMMON AI-GENERATED MISTAKES to test
-# whether dotzen catches them. Every block below mirrors a real failure
+# whether pluvian catches them. Every block below mirrors a real failure
 # pattern from Copilot / ChatGPT / Claude outputs.
 
 # ── Variables ────────────────────────────────────────────────────────────

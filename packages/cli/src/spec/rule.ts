@@ -270,9 +270,9 @@ export class RuleBuilder {
 
   /**
    * Assign a stable, human-readable rule ID for use in ignore directives
-   * and JSON output. If not set, dotzen auto-generates `rule-<N>` (positional
+   * and JSON output. If not set, pluvian auto-generates `rule-<N>` (positional
    * — fragile if rules are reordered). A stable ID (`no-public-ssh`) makes
-   * `# dotzen:ignore no-public-ssh: <reason>` safe across reorders. Must be
+   * `# pluvian:ignore no-public-ssh: <reason>` safe across reorders. Must be
    * unique within the spec and match `[a-z][a-z0-9-]*`.
    */
   id(id: string): this {

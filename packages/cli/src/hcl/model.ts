@@ -1,7 +1,7 @@
 import { AnyResource } from '../vocabulary'
 
 /**
- * dotzen's own resource model. The engine only ever sees this — never the
+ * pluvian's own resource model. The engine only ever sees this — never the
  * parser's raw output (doc 06). Unresolvable expressions are explicit,
  * which is what feeds the `couldNotEvaluate` outcome.
  */
@@ -149,7 +149,7 @@ export interface NormalizedResource {
    * The provider alias the resource is pinned to (`provider = aws.dr` → "dr"),
    * or undefined for the default provider. A rule can scope by alias with
    * `.providerAlias(X)` (e.g. govern only resources in the dr account/region).
-   * The alias is the discriminator — dotzen does not map alias→region (the
+   * The alias is the discriminator — pluvian does not map alias→region (the
    * alias itself is the org's handle for "which account/region provider").
    */
   readonly providerAlias?: string

@@ -49,7 +49,7 @@ const PRESETS: PresetMeta[] = [
     description:
       'The 80% baseline shared across CIS, PCI DSS, SOC 2, NIST 800-53, and ' +
       'GDPR/LGPD. A composable `Rule[]` — spread alongside a framework pack:\n\n' +
-      "```ts\nimport { coreSecurity, pciDss } from '@dotzen/dotzen'\n" +
+      "```ts\nimport { coreSecurity, pciDss } from '@erkos/pluvian'\n" +
       'export const spec = [...coreSecurity, ...pciDss]\n```\n\n' +
       'Covers network exposure, encryption at rest, IAM least-privilege, ' +
       'audit logging, no hardcoded secrets, required tags, and provisioner ' +
@@ -63,7 +63,7 @@ const PRESETS: PresetMeta[] = [
     description:
       'AWS-specific additions on top of `coreSecurity` aligned to the CIS ' +
       'Amazon Web Services Foundations Benchmark. Spread with coreSecurity:\n\n' +
-      "```ts\nimport { coreSecurity, cisAws } from '@dotzen/dotzen'\n" +
+      "```ts\nimport { coreSecurity, cisAws } from '@erkos/pluvian'\n" +
       'export const spec = [...coreSecurity, ...cisAws]\n```',
     builders: cisAws as PresetMeta['builders'],
   },
@@ -73,7 +73,7 @@ const PRESETS: PresetMeta[] = [
     description:
       'Azure-specific additions on top of `coreSecurity` aligned to the CIS ' +
       'Microsoft Azure Foundations. Spread with coreSecurity:\n\n' +
-      "```ts\nimport { coreSecurity, cisAzure } from '@dotzen/dotzen'\n" +
+      "```ts\nimport { coreSecurity, cisAzure } from '@erkos/pluvian'\n" +
       'export const spec = [...coreSecurity, ...cisAzure]\n```',
     builders: cisAzure as PresetMeta['builders'],
   },
@@ -83,7 +83,7 @@ const PRESETS: PresetMeta[] = [
     description:
       'GCP-specific additions on top of `coreSecurity` aligned to the CIS ' +
       'Google Cloud Platform Foundation Benchmark. Spread with coreSecurity:\n\n' +
-      "```ts\nimport { coreSecurity, cisGcp } from '@dotzen/dotzen'\n" +
+      "```ts\nimport { coreSecurity, cisGcp } from '@erkos/pluvian'\n" +
       'export const spec = [...coreSecurity, ...cisGcp]\n```',
     builders: cisGcp as PresetMeta['builders'],
   },
@@ -243,7 +243,7 @@ function targetTypes(t: ResourceTarget): readonly string[] {
 }
 
 /** Best-effort parse of framework control IDs from the rationale text.
- *  dotzen stores framework mapping inside the rationale string (not a
+ *  pluvian stores framework mapping inside the rationale string (not a
  *  structured field), so this is a heuristic — surfacing CIS/PCI/NIST/SOC
  *  references where present. Control IDs contain dots/dashes (5.2, 1.2.1,
  *  AC-17) and are comma/semicolon-separated, so the terminator is `,`/`;`/
@@ -401,7 +401,7 @@ function buildResourceIndex(): string {
     '',
     'Reverse view: for each governed resource type, the rules that apply to it.',
     'Resources not listed here are *recognized* but ungoverned (see the',
-    '`ungoverned` output category and `what-it-does.md` → "What dotzen does',
+    '`ungoverned` output category and `what-it-does.md` → "What pluvian does',
     'not do"). ~60-70 of ~3200 recognized types carry rules today.',
     '',
   ]

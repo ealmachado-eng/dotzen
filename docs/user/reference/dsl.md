@@ -1,13 +1,13 @@
-# DSL reference — `.zen/spec.ts`
+# DSL reference — `.pluvian/spec.ts`
 
 > **Audience:** spec authors. The authoritative reference for the rule-building language. For _what the shipped rules check_, see the [rule catalog](./rules/all-rules.md); this page documents the _language itself_.
 
 ## The spec file
 
-`.zen/spec.ts` exports a `spec` array of rules (builders). The engine resolves the `@dotzen/dotzen` import itself — no local install required to run. Install the types locally (`npm i -D @dotzen/dotzen`) for editor autocomplete + a `tsc --noEmit` typo check.
+`.pluvian/spec.ts` exports a `spec` array of rules (builders). The engine resolves the `@erkos/pluvian` import itself — no local install required to run. Install the types locally (`npm i -D @erkos/pluvian`) for editor autocomplete + a `tsc --noEmit` typo check.
 
 ```ts
-import { rule, AwsResource, Port, Effect } from "@dotzen/dotzen";
+import { rule, AwsResource, Port, Effect } from "@erkos/pluvian";
 
 export const spec = [
   rule()
@@ -132,7 +132,7 @@ These parse literal-JSON, `jsonencode(...)`, and `data.aws_iam_policy_document` 
 | `.denyPlaintextEnvSecrets()`       | An env-var name (PASSWORD/SECRET/KEY/TOKEN/CREDENTIAL) has a literal value in ECS/Lambda env vars. |
 | `.denyPlaintextConnectionSecret()` | A `connection {}` block has a plaintext private_key/password/token.                                |
 
-dotzen is **not** a general secret scanner (use gitleaks) — these are structural checks on known secret-bearing attributes.
+pluvian is **not** a general secret scanner (use gitleaks) — these are structural checks on known secret-bearing attributes.
 
 ### Lifecycle / supply-chain
 
@@ -186,22 +186,22 @@ See [how to scope](../how-to/scope-to-environment.md).
 | ----------------- | ------------------------------------------------------------------------- | ---------------- |
 | `Block` (default) | Fails the build                                                           | exit 1           |
 | `Warn`            | Visible, non-blocking                                                     | exit 0           |
-| `RequireApproval` | Non-blocking; emits `DOTZEN_REQUIRES_APPROVAL=true` for a downstream gate | exit 0           |
+| `RequireApproval` | Non-blocking; emits `PLUVIAN_REQUIRES_APPROVAL=true` for a downstream gate | exit 0           |
 
 ## Inline ignore directive
 
 Suppress findings on a specific block, with a reason (auditable in the diff):
 
 ```hcl
-# dotzen:ignore: bastion — SSH is intentional behind a corp-VPN CIDR
-# dotzen:ignore <ruleId>: specific rule + reason
+# pluvian:ignore: bastion — SSH is intentional behind a corp-VPN CIDR
+# pluvian:ignore <ruleId>: specific rule + reason
 ```
 
-No global bypass (no `.dotzenignore`, no `--no-check`). See [handle exceptions](../how-to/handle-exceptions.md).
+No global bypass (no `.pluvianignore`, no `--no-check`). See [handle exceptions](../how-to/handle-exceptions.md).
 
 ## Vocabulary
 
-Resource types, attributes, ports, tags, blocks live in typed enums under `@dotzen/dotzen`:
+Resource types, attributes, ports, tags, blocks live in typed enums under `@erkos/pluvian`:
 
 - `AwsResource`, `AzureResource`, `GcpResource`, `DataResource` — the resource types (~3200 recognized).
 - `AwsAttribute`, `AzureAttribute`, `GcpAttribute`, `DataAttribute` — the flattened attribute paths.
@@ -213,4 +213,4 @@ A value not in the enum resolves to `undefined` at runtime → the rule fails `v
 
 - [Rule catalog](./rules/all-rules.md) — the shipped rules using this DSL.
 - [Add a custom rule](../how-to/add-a-custom-rule.md) — copy-paste patterns by control family.
-- [What dotzen does / doesn't](../what-it-does.md) — the could-not-evaluate / ungoverned discipline behind every condition.
+- [What pluvian does / doesn't](../what-it-does.md) — the could-not-evaluate / ungoverned discipline behind every condition.

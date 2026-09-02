@@ -5,8 +5,8 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# dotzen's CI approval signal (written only when running in CI).
-dotzen.env
+# pluvian's CI approval signal (written only when running in CI).
+pluvian.env
 
 # Logs & OS cruft
 *.log

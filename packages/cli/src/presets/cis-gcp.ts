@@ -8,7 +8,7 @@
  * `coreSecurity` is AWS-primary and most GCP CIS controls are cloud-specific.
  *
  * Usage:
- *   import { coreSecurity, cisGcp } from '@dotzen/dotzen'
+ *   import { coreSecurity, cisGcp } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...cisGcp]
  */
 import { rule } from '../spec/rule'

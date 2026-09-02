@@ -1,7 +1,7 @@
 /**
- * Generate the `examples/{startup,enterprise,regulated}/.zen/spec.ts` templates
+ * Generate the `examples/{startup,enterprise,regulated}/.pluvian/spec.ts` templates
  * from the profiles module (`src/cli/profiles.ts`) — the single source of truth
- * shared with `dotzen init --profile`. Run after editing profiles:
+ * shared with `pluvian init --profile`. Run after editing profiles:
  *   npm run gen-examples   (from packages/cli)
  * The generated files are covered by `src/spec/examples.test.ts` (loaded via
  * the real jiti spec loader), so a profile change that breaks load-validity
@@ -18,15 +18,15 @@ for (const name of PROFILE_NAMES) {
     profile: name,
     header: PROFILES[name].docblock,
   })
-  const file = path.join(repoRoot, 'examples', name, '.zen', 'spec.ts')
+  const file = path.join(repoRoot, 'examples', name, '.pluvian', 'spec.ts')
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const prev = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
   if (prev !== content) {
     fs.writeFileSync(file, content)
     changed++
-    console.log(`  wrote examples/${name}/.zen/spec.ts`)
+    console.log(`  wrote examples/${name}/.pluvian/spec.ts`)
   } else {
-    console.log(`  unchanged examples/${name}/.zen/spec.ts`)
+    console.log(`  unchanged examples/${name}/.pluvian/spec.ts`)
   }
 }
 console.log(

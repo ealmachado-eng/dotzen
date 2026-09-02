@@ -1,19 +1,19 @@
-# Tutorial — dotzen in 5 minutes
+# Tutorial — pluvian in 5 minutes
 
 > **Goal:** go from zero to a custom rule catching a real violation, then green, then wired to CI. Copy-paste each block. ~5 minutes, no cloud credentials, no Terraform install required.
 
-You'll build a tiny Terraform project, scaffold dotzen, add **one custom tag rule**, watch it flag a missing tag, fix the `.tf`, re-run green, and ship it to CI.
+You'll build a tiny Terraform project, scaffold pluvian, add **one custom tag rule**, watch it flag a missing tag, fix the `.tf`, re-run green, and ship it to CI.
 
 ## 0. Prerequisites
 
-- **Node.js ≥ 18** (to run dotzen via `npx`).
-- **Terraform `.tf` files** — you don't need `terraform` installed; dotzen reads HCL directly (no `plan`).
-- **No dotzen install** — `npx` pulls a pinned version per run.
+- **Node.js ≥ 18** (to run pluvian via `npx`).
+- **Terraform `.tf` files** — you don't need `terraform` installed; pluvian reads HCL directly (no `plan`).
+- **No pluvian install** — `npx` pulls a pinned version per run.
 
 ## 1. Make a tiny Terraform project
 
 ```bash
-mkdir dotzen-demo && cd dotzen-demo
+mkdir pluvian-demo && cd pluvian-demo
 mkdir terraform
 cat > terraform/main.tf <<'EOF'
 resource "aws_s3_bucket" "data" {
@@ -26,38 +26,38 @@ resource "aws_s3_bucket" "data" {
 EOF
 ```
 
-That bucket is missing any org-level governance tags — exactly the kind of thing AI code-gen omits. dotzen will catch it.
+That bucket is missing any org-level governance tags — exactly the kind of thing AI code-gen omits. pluvian will catch it.
 
-## 2. Scaffold dotzen
+## 2. Scaffold pluvian
 
 ```bash
-npx @dotzen/dotzen@1 init
+npx @erkos/pluvian@2 init
 ```
 
 This creates two files:
 
-- **`.zen/spec.ts`** — your rule spec (TypeScript). The scaffold ships a sensible starter.
-- **`dotzen.json`** — points dotzen at the spec and the terraform dir, and pins the version (so CI never silently drifts).
+- **`.pluvian/spec.ts`** — your rule spec (TypeScript). The scaffold ships a sensible starter.
+- **`pluvian.json`** — points pluvian at the spec and the terraform dir, and pins the version (so CI never silently drifts).
 
 > The scaffold prints the exact `npx` command for the pinned version. Use that — never `@latest` (a governance tool that floats its own version defeats its own purpose).
 
 ## 3. Run the starter spec
 
 ```bash
-npx @dotzen/dotzen@1 check
+npx @erkos/pluvian@2 check
 ```
 
 You'll see output from the bundled `coreSecurity` rules. The bucket above is likely clean against the starter (no public ACL, etc.) — but it's missing your org's tags. Time to add a rule for that.
 
 ## 4. Add a custom rule (the bit that matters)
 
-Open `.zen/spec.ts`. Add this rule to the `spec` array — require the tags your org mandates:
+Open `.pluvian/spec.ts`. Add this rule to the `spec` array — require the tags your org mandates:
 
 ```ts
-import { rule, AwsResource, Tag } from "@dotzen/dotzen";
+import { rule, AwsResource, Tag } from "@erkos/pluvian";
 
 // Your org's tag taxonomy — a TypeScript enum gives you autocomplete +
-// typo-proofing in your editor (run `npm i -D @dotzen/dotzen` for the types).
+// typo-proofing in your editor (run `npm i -D @erkos/pluvian` for the types).
 enum OrgTag {
   Owner = "owner",
   CostCenter = "cost_center",
@@ -77,12 +77,12 @@ export const spec = [
 ];
 ```
 
-> **Tip — editor autocomplete:** `npm i -D @dotzen/dotzen` installs the types locally so your editor lights up `AwsResource.`, `Tag.`, and every rule condition with autocomplete + red squiggles on typos. CI stays zero-install via `npx`.
+> **Tip — editor autocomplete:** `npm i -D @erkos/pluvian` installs the types locally so your editor lights up `AwsResource.`, `Tag.`, and every rule condition with autocomplete + red squiggles on typos. CI stays zero-install via `npx`.
 
 ## 5. Re-run — see the violation
 
 ```bash
-npx @dotzen/dotzen@1 check
+npx @erkos/pluvian@2 check
 ```
 
 Output:
@@ -118,7 +118,7 @@ resource "aws_s3_bucket" "data" {
 ## 7. Re-run — green
 
 ```bash
-npx @dotzen/dotzen@1 check
+npx @erkos/pluvian@2 check
 ```
 
 ```
@@ -133,7 +133,7 @@ Some resources legitimately violate a rule — a bastion host needs public SSH, 
 
 ```hcl
 resource "aws_security_group" "bastion" {
-  # dotzen:ignore: bastion host — SSH is intentionally public behind a CIDR allowlist
+  # pluvian:ignore: bastion host — SSH is intentionally public behind a CIDR allowlist
   ingress {
     from_port   = 22
     to_port     = 22
@@ -149,10 +149,10 @@ The directive suppresses findings on that block; the reason is right there in th
 
 That's the whole CI integration — pin the version, run `check`:
 
-**GitHub Actions** (`.github/workflows/dotzen.yml`):
+**GitHub Actions** (`.github/workflows/pluvian.yml`):
 
 ```yaml
-name: dotzen check
+name: pluvian check
 on: [pull_request, push]
 jobs:
   check:
@@ -161,16 +161,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: npx @dotzen/dotzen@1 check
+      - run: npx @erkos/pluvian@2 check
 ```
 
 **GitLab CI** (`.gitlab-ci.yml`):
 
 ```yaml
-dotzen:check:
+pluvian:check:
   stage: test
   image: node:20
-  script: [npx @dotzen/dotzen@1 check]
+  script: [npx @erkos/pluvian@2 check]
 ```
 
 Want findings in the GitHub **Security tab** with file:line PR annotations? Emit SARIF and upload it — see [read the output](./how-to/read-the-output.md#sarif--github-security-tab).
@@ -185,7 +185,7 @@ You now have:
 
 ## Where next
 
-- **[What dotzen does / doesn't](./what-it-does.md)** — the honest boundaries (could-not-evaluate, ungoverned, static-only).
+- **[What pluvian does / doesn't](./what-it-does.md)** — the honest boundaries (could-not-evaluate, ungoverned, static-only).
 - **[Rule reference](./reference/rules/all-rules.md)** — every shipped rule, what it checks, its rationale, framework mapping.
 - **[DSL reference](./reference/dsl.md)** — every rule condition, scoping knob, and effect.
 - **[How-tos](./how-to/)** — common tasks (require org tags, scope to prod, read could-not-evaluate, …).

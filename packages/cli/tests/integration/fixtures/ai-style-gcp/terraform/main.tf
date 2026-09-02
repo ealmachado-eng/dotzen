@@ -1,6 +1,6 @@
 # =============================================================================
 # AI-generated Terraform: "web application on GCP"
-# Deliberately includes COMMON AI failure patterns for dotzen fixture testing.
+# Deliberately includes COMMON AI failure patterns for pluvian fixture testing.
 # No terraform {} block (no state encryption).
 # =============================================================================
 

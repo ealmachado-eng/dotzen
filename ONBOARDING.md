@@ -1,6 +1,6 @@
-# ONBOARDING — resuming dotzen on a new machine / Claude instance
+# ONBOARDING — resuming pluvian on a new machine / Claude instance
 
-This file exists so a fresh Claude (or human) can pick up dotzen with zero
+This file exists so a fresh Claude (or human) can pick up pluvian with zero
 prior conversation context. **Read `CLAUDE.md` first** (root) — it is the
 authoritative orientation and hard-constraints doc. This file adds the things
 `CLAUDE.md` can't: current state, machine setup, and the immediate next task.
@@ -12,11 +12,11 @@ _Last updated: 2026-07-10, at published version **0.1.2**._
 ## 0. TL;DR — get running in 5 steps
 
 ```bash
-git clone https://github.com/ealmachado-eng/dotzen.git
-cd dotzen/packages/cli
+git clone https://github.com/erkos-hq/pluvian.git
+cd pluvian/packages/cli
 npm install                 # NOT `npm ci` — see §3
 npm run typecheck && npm run lint && npx vitest run && npm run build   # gate: all green (217 tests)
-node bin/dotzen.js check examples/ai-generated                          # see it fire on the corpus
+node bin/pluvian.js check examples/ai-generated                          # see it fire on the corpus
 ```
 
 If the gate is green and the corpus check prints violations, you are fully
@@ -24,24 +24,24 @@ set up. Then read `CLAUDE.md`, then §5–§6 below.
 
 ---
 
-## 1. What dotzen is (one paragraph)
+## 1. What pluvian is (one paragraph)
 
 A **governance layer for AI-generated Terraform** — "Prose as Code." A
-Node/TypeScript CLI (`@dotzen/dotzen`, run via `npx`) that statically
+Node/TypeScript CLI (`@erkos/pluvian`, run via `npx`) that statically
 analyses HCL against rules written in a fluent, enum-backed TypeScript DSL
-(`.zen/spec.ts`). Parsing uses the official `hashicorp/hcl` parser compiled
+(`.pluvian/spec.ts`). Parsing uses the official `hashicorp/hcl` parser compiled
 to WASM (`@cdktf/hcl2json`), in-process. Full rationale in `CLAUDE.md` and
 `docs/specs/*` (read `00-architecture-decision-record.md` before any
 architectural change).
 
 ## 2. Current state (source of truth: `origin/main`)
 
-- **Published:** `@dotzen/dotzen@0.1.2` is npm `latest`. `package.json`
+- **Published:** `@erkos/pluvian@0.1.2` is npm `latest`. `package.json`
   version = `0.1.2` and **matches npm**.
-- **Repo:** `github.com/ealmachado-eng/dotzen`. `main` is fully synced and
+- **Repo:** `github.com/erkos-hq/pluvian`. `main` is fully synced and
   contains everything below. Just clone it.
 - **Coverage:** three clouds at CIS-L1 (AWS deepest; Azure + GCP slices),
-  ~24 conditions, multi-root + per-environment scoping, `dotzen init`
+  ~24 conditions, multi-root + per-environment scoping, `pluvian init`
   scaffolding, and **module-following** (local sources, single level).
 - **Version discipline:** the **next runtime change must bump to `0.1.3`**
   before publishing. Test/docs-only changes do **not** bump (tests aren't
@@ -62,14 +62,14 @@ architectural change).
   `git config --global --add safe.directory <repo-path>`.
 - **GitLab push auth:** needs a credential (PAT / OS credential manager).
 - **npm publish auth:** `npm login`, or a granular automation token in
-  `.npmrc`. See `.claude/skills/dotzen-release/SKILL.md`.
+  `.npmrc`. See `.claude/skills/pluvian-release/SKILL.md`.
 
 ## 4. How to run
 
 | Task | Command (from `packages/cli/`) |
 |---|---|
-| Check a project | `node bin/dotzen.js check <dir>` (or `npx @dotzen/dotzen check`) |
-| Scaffold | `node bin/dotzen.js init` |
+| Check a project | `node bin/pluvian.js check <dir>` (or `npx @erkos/pluvian check`) |
+| Scaffold | `node bin/pluvian.js init` |
 | Unit tests | `npx vitest run` |
 | Integration | `npm run test:integration` |
 | Full gate | `typecheck` + `lint` + `format:check` + `vitest` + `build` |
@@ -91,15 +91,15 @@ all three pass and CI is green (`.github/workflows/ci.yml`).
    **two spec styles** (see §7).
 3. **No bare strings for domain values** — resource types, ports, effects,
    attributes are enum-backed. The one exception: **tag KEYS** (org-defined).
-4. **Never `@latest`** in any script/CI/docs example — always `dotzen.json`
+4. **Never `@latest`** in any script/CI/docs example — always `pluvian.json`
    version pinning.
-5. **jiti alias:** a scaffolded spec's `import … from '@dotzen/dotzen'`
+5. **jiti alias:** a scaffolded spec's `import … from '@erkos/pluvian'`
    resolves to the *running engine* via an alias in `src/spec/load.ts`. Don't
    break it, or `npx`-run specs stop resolving.
 6. **Module-following:** local sources only, single level, **confined to
    `projectRoot`** (never follow a path that escapes the scanned project).
-7. Read the matching skill before editing: `.claude/skills/dotzen-engine-dev`
-   (engine), `dotzen-spec-authoring` (`.zen/spec.ts`), `dotzen-release`
+7. Read the matching skill before editing: `.claude/skills/pluvian-engine-dev`
+   (engine), `pluvian-spec-authoring` (`.pluvian/spec.ts`), `pluvian-release`
    (publishing).
 
 ## 6. Immediate next task (recommended)
@@ -124,7 +124,7 @@ with a fixture module that uses the `local` indirection.
 - **Env-layer spec** — governs *caller-supplied* values at the deployment
   layer; module-following threads the caller's inputs in. Worked example +
   regression fixture: `packages/cli/tests/integration/fixtures/env-layer/`
-  (`.zen/spec.ts`, per-env `dotzen.json`, module + env layout).
+  (`.pluvian/spec.ts`, per-env `pluvian.json`, module + env layout).
 
 ## 8. Where everything is
 

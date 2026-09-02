@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { Result, ok, err } from '../result/result'
-import { DotzenError } from '../result/errors'
+import { EngineError } from '../result/errors'
 
 /**
  * A Terraform root: a bare path, or a path with a declared `environment`
@@ -10,7 +10,7 @@ import { DotzenError } from '../result/errors'
 export type TerraformRoot =
   string | { readonly path: string; readonly environment?: string }
 
-export interface DotzenConfig {
+export interface EngineConfig {
   readonly version?: string
   readonly spec: string
   /** One Terraform root, or several (each evaluated with its own scope). */
@@ -19,21 +19,23 @@ export interface DotzenConfig {
 
 /** Resolved config plus the directory it was found in (for relative paths). */
 export interface LoadedConfig {
-  readonly config: DotzenConfig
+  readonly config: EngineConfig
   readonly baseDir: string
 }
 
-const CANDIDATES = ['dotzen.json', path.join('.zen', 'dotzen.json')]
+const CANDIDATES = ['pluvian.json', path.join('.pluvian', 'pluvian.json')]
 
-export function readDotzenJson(cwd: string): Result<LoadedConfig, DotzenError> {
+export function readEngineConfig(
+  cwd: string,
+): Result<LoadedConfig, EngineError> {
   for (const rel of CANDIDATES) {
     const p = path.join(cwd, rel)
     if (fs.existsSync(p)) {
-      const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as DotzenConfig
+      const parsed = JSON.parse(fs.readFileSync(p, 'utf8')) as EngineConfig
       return ok({ config: parsed, baseDir: path.dirname(p) })
     }
   }
-  return err({ kind: 'ConfigNotFound', path: path.join(cwd, 'dotzen.json') })
+  return err({ kind: 'ConfigNotFound', path: path.join(cwd, 'pluvian.json') })
 }
 
 /**
@@ -43,7 +45,7 @@ export function readDotzenJson(cwd: string): Result<LoadedConfig, DotzenError> {
 export function enforceVersion<T extends { version?: string }>(
   config: T,
   running: string,
-): Result<T, DotzenError> {
+): Result<T, EngineError> {
   if (!config.version) return ok(config)
   if (config.version === running) return ok(config)
   return err({

@@ -1,7 +1,7 @@
 # Prompt: "an IAM policy so my app can do what it needs"
 # The #1 dangerous AI-generated pattern: a wildcard admin policy.
 
-# Heredoc JSON — statically parseable, so dotzen flags the wildcard.
+# Heredoc JSON — statically parseable, so pluvian flags the wildcard.
 resource "aws_iam_policy" "admin" {
   name = "app-admin"
 
@@ -31,7 +31,7 @@ POLICY
 }
 
 # NotAction on an Allow: "allow everything EXCEPT iam:*" — an over-broad
-# grant AWS warns against. dotzen flags it too.
+# grant AWS warns against. pluvian flags it too.
 resource "aws_iam_policy" "not_action" {
   name = "app-almost-admin"
 

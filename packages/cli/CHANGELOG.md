@@ -1,10 +1,57 @@
 # Changelog
 
-All notable changes to `@dotzen/dotzen` are documented here. Versions follow
+All notable changes to this package are documented here. Versions follow
 [semver](https://semver.org/). Notably, **new spec DSL vocabulary (new rule
 conditions, resource types, or attributes) is treated as a feature release**,
 not a patch — even when strictly backward-compatible, consumers should know
 whether re-reading their spec is warranted.
+
+> Pre-2.0.0 entries below were published as `@dotzen/dotzen` — the same tool,
+> before the rebrand (see 2.0.0).
+
+## 2.0.0
+
+**Rebrand: dotzen → pluvian.** Same engine, same verdicts, same discipline —
+new name. pluvian (from _Pluvianus aegyptius_, Herodotus's crocodile bird —
+the bird that cleans the beast's teeth) is the first tool under the
+**erkos** umbrella. The engine, rules, presets, and outputs are unchanged;
+only names changed. Migration below.
+
+### Breaking changes (all name-bearing surfaces)
+
+- **Package**: `@dotzen/dotzen` → **`@erkos/pluvian`**. The old package is
+  deprecated; install/command invocations change:
+  `npx @erkos/pluvian@2 check ./terraform/`.
+- **Binary**: `dotzen` → `pluvian` (`pluvian check`, `pluvian init`).
+- **Contract files**: `dotzen.json` → **`pluvian.json`**; `.zen/spec.ts` →
+  **`.pluvian/spec.ts`** (update the `"spec"` path inside the config).
+- **Ignore directive**: `# dotzen:ignore` → **`# pluvian:ignore`** — old
+  directives stop matching, so previously-suppressed findings re-fire (the
+  loud, safe direction: rename them when you upgrade).
+- **CI env vars**: `DOTZEN_REQUIRES_APPROVAL` → `PLUVIAN_REQUIRES_APPROVAL`;
+  `DOTZEN_ENV_FILE` → `PLUVIAN_ENV_FILE`; default dotenv artifact
+  `dotzen.env` → `pluvian.env` (and SARIF upload file `pluvian.sarif`).
+- **Stable ruleIds**: `dotzen.module-following` → `pluvian.module-following`;
+  `dotzen.ungoverned` → `pluvian.ungoverned` (SARIF filters keyed on these
+  must be updated).
+- **SARIF**: `tool.driver.name` is now `@erkos/pluvian`.
+
+### Migration checklist
+
+1. `npx @erkos/pluvian@2 init` in a fresh clone, or manually: rename
+   `dotzen.json` → `pluvian.json`, `.zen/` → `.pluvian/`, and fix the
+   `"spec"` path inside the config.
+2. In your spec, the import is `from '@erkos/pluvian'` (the engine resolves
+   it to itself — still no local install needed to run).
+3. Update CI: `npx @erkos/pluvian@2 check`, env-var renames, dotenv/SARIF
+   artifact names.
+4. Rename `# dotzen:ignore` directives in your `.tf` files.
+5. Spec DSL API is otherwise unchanged — `rule()`, presets, conditions, and
+   effects are identical to 1.9.37.
+
+### No engine change · 144 rules across 8 presets
+
+816 unit + 40 integration green post-rename; zero behavior differences.
 
 ## 1.9.37
 

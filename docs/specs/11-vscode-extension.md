@@ -9,7 +9,7 @@ name-agnostic; only identifiers swap post-rename.
 
 ## The problem
 
-dotzen today has two surfaces: the CLI (`npx @dotzen/dotzen init/check`) and CI
+pluvian today has two surfaces: the CLI (`npx @erkos/pluvian init/check`) and CI
 (SARIF in GitHub/GitLab). Both are pipeline-shaped — findings arrive after a
 commit or a push. The gap is the edit loop: the moment an LLM (or a human)
 writes `publicly_accessible = true`, there should be a squiggle in the editor,
@@ -18,14 +18,14 @@ concepts — same engine, same spec, same verdicts.
 
 ## Non-goals
 
-- **Not a spec editor.** `.zen/spec.ts` stays authored in TypeScript with
+- **Not a spec editor.** `.pluvian/spec.ts` stays authored in TypeScript with
   existing tooling; the extension does not validate rule DSL as you type
   (beyond what a TS language server already gives for free).
 - **Not a Terraform language server.** No completion, no formatting, no
   `terraform validate` — Terraform's own extension owns that. We only produce
   diagnostics.
 - **Not an auto-fixer.** The engine is a judge, not a rewriter. The one
-  mutation offered is the `# dotzen:ignore` directive (a deliberate human
+  mutation offered is the `# pluvian:ignore` directive (a deliberate human
   decision, which is the product's thesis).
 
 ## Architecture
@@ -37,7 +37,7 @@ packages/vscode/
   src/extension.ts       # activate: watchers, command, status bar
   src/engine-bridge.ts   # import { check } from the engine package
   src/diagnostics.ts     # CheckReport → vscode.Diagnostic[]
-  src/codeactions.ts     # quick-fix: insert `# dotzen:ignore <ruleId>`
+  src/codeactions.ts     # quick-fix: insert `# pluvian:ignore <ruleId>`
   esbuild.js             # bundle extension host code
 ```
 
@@ -47,7 +47,7 @@ The extension runs the engine **in-process in the extension host** by importing
 the same library the CLI uses:
 
 - `check(projectRoot, engineVersion)` (`packages/cli/src/cli/check.ts`) is a
-  clean async `Result<CheckReport, DotzenError>` with no process-state —
+  clean async `Result<CheckReport, EngineError>` with no process-state —
   directly callable from the extension host (Node runtime).
 - Dependencies are Node-compatible already: `jiti` for spec loading,
   `@cdktf/hcl2json` (WASM) for parsing. No subprocess, no `npx` spawn, no
@@ -59,7 +59,7 @@ the same library the CLI uses:
 
 Rejected alternatives:
 
-- **Spawn the user-installed CLI** (`dotzen check --format json`) — respects
+- **Spawn the user-installed CLI** (`pluvian check --format json`) — respects
   the pin exactly, but requires local install (breaks the zero-friction
   thesis), adds process plumbing, and introduces CLI/extension version skew as
   a failure mode.
@@ -73,10 +73,10 @@ Rejected alternatives:
 Not either/or — both are faces of one engine package:
 
 ```
-@dotzen/<name> (npm)
+@pluvian/<name> (npm)
    ├── bin/<name>            # CLI: npx init/check — CI, terminal, pipelines
    └── library export        # VS Code extension imports the same check()
-contract shared by both: dotzen.json pin + .zen/spec.ts + # dotzen:ignore
+contract shared by both: pluvian.json pin + .pluvian/spec.ts + # pluvian:ignore
 ```
 
 CI keeps `npx … check`; developers get squiggles in-editor. Verdicts are
@@ -88,7 +88,7 @@ diverge from the pipeline pass.
 | Trigger | Action |
 |---|---|
 | `.tf` file save/open (debounced ~500ms) | full `check()` run on the workspace project; diagnostics pushed to all open `.tf` editors |
-| `.zen/spec.ts` or `dotzen.json` change | re-run (spec edits must reflect immediately) |
+| `.pluvian/spec.ts` or `pluvian.json` change | re-run (spec edits must reflect immediately) |
 | Command: `<name>: Check Project` | force run; summary in output channel |
 
 - Full-project runs (not single-file): module-following, graph conditions, and
@@ -117,7 +117,7 @@ information model, one click deeper.
 
 ### Version pinning
 
-`dotzen.json` pins an engine version (`enforceVersion`). The extension knows
+`pluvian.json` pins an engine version (`enforceVersion`). The extension knows
 both the pin and its bundled engine version:
 
 - pin satisfied by bundled engine → run, silent.
@@ -127,8 +127,8 @@ both the pin and its bundled engine version:
 
 ### Quick fix: ignore directive
 
-The only code action: on a finding, offer *Insert `# dotzen:ignore`* — inserts
-`# dotzen:ignore <ruleId>: <reason placeholder>` on the block, which the
+The only code action: on a finding, offer *Insert `# pluvian:ignore`* — inserts
+`# pluvian:ignore <ruleId>: <reason placeholder>` on the block, which the
 engine already honors on the next run (check.ts applies directives by physical
 file + block-start line). The reason placeholder forces the human to justify —
 the directive is a decision, not a dismiss button.
@@ -136,7 +136,7 @@ the directive is a decision, not a dismiss button.
 ## Versioning
 
 **Lockstep with the engine.** Extension version == bundled engine version,
-cut from the same tag. One product, one number; `dotzen.json` pin semantics
+cut from the same tag. One product, one number; `pluvian.json` pin semantics
 stay coherent ("extension bundles 1.9.38, your pin ≥1.9.30 ✓"). Cost: an
 extension-only UI fix bumps a number that *looks* like an engine change —
 the changelog entry says "extension-only". (Independent extension semver was

@@ -1,5 +1,5 @@
 # A genuinely unresolvable case: the SSH CIDR comes from a variable with
-# no default, so static analysis cannot know it — dotzen must report
+# no default, so static analysis cannot know it — pluvian must report
 # "could not evaluate", never a silent pass. (Its own CI would pass a
 # value at plan time; the pipeline gate still runs the check there too.)
 variable "partner_cidr" {

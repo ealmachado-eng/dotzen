@@ -5,7 +5,7 @@
 GCP-specific additions on top of `coreSecurity` aligned to the CIS Google Cloud Platform Foundation Benchmark. Spread with coreSecurity:
 
 ```ts
-import { coreSecurity, cisGcp } from '@dotzen/dotzen'
+import { coreSecurity, cisGcp } from '@erkos/pluvian'
 export const spec = [...coreSecurity, ...cisGcp]
 ```
 

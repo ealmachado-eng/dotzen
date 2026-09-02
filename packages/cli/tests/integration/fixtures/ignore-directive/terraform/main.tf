@@ -8,7 +8,7 @@ resource "aws_security_group" "flagged" {
   }
 }
 
-# dotzen:ignore: bastion host — SSH is intentionally public behind a CIDR allowlist
+# pluvian:ignore: bastion host — SSH is intentionally public behind a CIDR allowlist
 resource "aws_security_group" "ignored" {
   ingress {
     from_port   = 22
@@ -19,7 +19,7 @@ resource "aws_security_group" "ignored" {
 }
 
 # Same violation, suppressed via a TRAILING comment on the block line.
-resource "aws_security_group" "trailing" { # dotzen:ignore
+resource "aws_security_group" "trailing" { # pluvian:ignore
   ingress {
     from_port   = 22
     to_port     = 22

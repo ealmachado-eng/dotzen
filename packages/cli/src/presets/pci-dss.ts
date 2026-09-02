@@ -7,7 +7,7 @@
  * public DB endpoints.
  *
  * Usage:
- *   import { coreSecurity, pciDss } from '@dotzen/dotzen'
+ *   import { coreSecurity, pciDss } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...pciDss]
  */
 import { rule } from '../spec/rule'

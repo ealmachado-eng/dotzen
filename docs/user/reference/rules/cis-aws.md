@@ -5,7 +5,7 @@
 AWS-specific additions on top of `coreSecurity` aligned to the CIS Amazon Web Services Foundations Benchmark. Spread with coreSecurity:
 
 ```ts
-import { coreSecurity, cisAws } from '@dotzen/dotzen'
+import { coreSecurity, cisAws } from '@erkos/pluvian'
 export const spec = [...coreSecurity, ...cisAws]
 ```
 

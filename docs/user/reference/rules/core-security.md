@@ -5,7 +5,7 @@
 The 80% baseline shared across CIS, PCI DSS, SOC 2, NIST 800-53, and GDPR/LGPD. A composable `Rule[]` — spread alongside a framework pack:
 
 ```ts
-import { coreSecurity, pciDss } from '@dotzen/dotzen'
+import { coreSecurity, pciDss } from '@erkos/pluvian'
 export const spec = [...coreSecurity, ...pciDss]
 ```
 

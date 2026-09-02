@@ -23,7 +23,7 @@ Or by hand:
 git describe --tags --abbrev=0                # last release tag
 git log --oneline <tag>..HEAD                 # what landed since
 git rev-parse --short HEAD origin/main        # local vs remote drift
-npm view @dotzen/dotzen version               # what's on npm
+npm view @erkos/pluvian version               # what's on npm
 ```
 
 Then read:

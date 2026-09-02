@@ -3,7 +3,7 @@ import { renderSarif } from './report'
 import { CheckReport } from '../engine/evaluate'
 import { Effect } from '../vocabulary'
 
-const TOOL = { version: '9.9.9', informationUri: 'https://example/dotzen' }
+const TOOL = { version: '9.9.9', informationUri: 'https://example/pluvian' }
 
 const full: CheckReport = {
   violations: [
@@ -100,9 +100,9 @@ describe('renderSarif — SARIF 2.1.0 output', () => {
 
   it('the tool driver carries name, version, and informationUri', () => {
     const driver = sarif().runs[0]!.tool.driver
-    expect(driver.name).toBe('@dotzen/dotzen')
+    expect(driver.name).toBe('@erkos/pluvian')
     expect(driver.version).toBe('9.9.9')
-    expect(driver.informationUri).toBe('https://example/dotzen')
+    expect(driver.informationUri).toBe('https://example/pluvian')
   })
 
   it('deduplicates rules by id (one entry per unique ruleId)', () => {
@@ -137,7 +137,7 @@ describe('renderSarif — SARIF 2.1.0 output', () => {
       r.locations[0]?.physicalLocation.artifactLocation.uri.endsWith('main.tf'),
     )!
     expect(web.locations[0]?.physicalLocation.region.startLine).toBe(4)
-    // dotzen-specific data round-trips through the properties bag.
+    // pluvian-specific data round-trips through the properties bag.
     expect(web.properties?.resource).toBe('aws_security_group.web')
     expect(web.properties?.effect).toBe('block')
     expect(web.properties?.rationale).toMatch(/CIS 5.2/)
@@ -204,7 +204,7 @@ describe('renderSarif — SARIF 2.1.0 output', () => {
   })
 
   it('strips the module-trace annotation from the uri (RFC 3986 validity)', () => {
-    // dotzen embeds the followModules trace in `file` as `path (label)`. The
+    // pluvian embeds the followModules trace in `file` as `path (label)`. The
     // SARIF uri must be a clean path (GitHub deep-links by uri → a trace-laden
     // uri would 404); the full trace round-trips via properties.moduleTrace.
     const doc = JSON.parse(

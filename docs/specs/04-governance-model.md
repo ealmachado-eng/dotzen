@@ -1,6 +1,6 @@
 # 04 — Governance Model
 
-This document covers how dotzen's rules are actually applied across an
+This document covers how pluvian's rules are actually applied across an
 organization's repositories and CI pipelines: repository topology,
 defense-in-depth layering, exceptions, and production-approval
 workflows. This is operational/process design, distinct from the DSL
@@ -12,11 +12,11 @@ This is the single highest-leverage recommendation in this document.
 
 ### The polyrepo problem
 
-If every service/team owns its own `dotzen.json` and its own copy of
-`.zen/spec.ts`:
+If every service/team owns its own `pluvian.json` and its own copy of
+`.pluvian/spec.ts`:
 
-- **Version drift is inevitable.** Team A is on dotzen `1.3.0`, Team B
-  never updated from `1.1.0`, Team C's repo has no dotzen at all because
+- **Version drift is inevitable.** Team A is on pluvian `1.3.0`, Team B
+  never updated from `1.1.0`, Team C's repo has no pluvian at all because
   onboarding was missed. Compliance coverage is a patchwork that nobody
   can state with confidence.
 - **Rule updates require N coordinated MRs.** A new mandatory rule (e.g.
@@ -28,15 +28,15 @@ If every service/team owns its own `dotzen.json` and its own copy of
   across all services in the last 30 days" requires querying N separate
   CI systems with potentially different log-retention policies.
 - **New-service onboarding is opt-in and therefore skippable.** A new
-  repository must remember to add dotzen; if it doesn't, it is silently
+  repository must remember to add pluvian; if it doesn't, it is silently
   ungoverned.
 
 ### The monorepo solution
 
 ```
 platform-monorepo/
-├── .zen/
-│   ├── dotzen.json      ← ONE version, for every service
+├── .pluvian/
+│   ├── pluvian.json      ← ONE version, for every service
 │   └── spec.ts           ← ONE spec, for every service
 └── services/
     ├── payments-api/terraform/
@@ -45,7 +45,7 @@ platform-monorepo/
     └── checkout-service/terraform/
 ```
 
-- **One `dotzen.json` update = every service updated simultaneously.**
+- **One `pluvian.json` update = every service updated simultaneously.**
   A single MR, one review, one merge. No coordination overhead, no
   stragglers.
 - **New services are governed automatically.** A new
@@ -53,7 +53,7 @@ platform-monorepo/
   spec with zero onboarding steps — governance coverage is a property of
   the directory structure, not an opt-in action.
 - **Audit trail is a single Git history + single CI pipeline history.**
-  One `dotzen check --format json` artifact per pipeline run, in one
+  One `pluvian check --format json` artifact per pipeline run, in one
   place, queryable via one API.
 - **Exceptions are visible and centrally reviewed** — see below.
 
@@ -61,12 +61,12 @@ platform-monorepo/
 
 Real repos rarely have one flat Terraform directory — they have several
 **root modules** (`env/{dev,stg,prd}`, or `services/*/terraform`). Each
-root is a separate module with its own variables, so `dotzen.json`'s
+root is a separate module with its own variables, so `pluvian.json`'s
 `terraform` accepts an **array of roots**, and the engine parses each
 independently with an **isolated `var`/`local` scope** (a `var.cidr` in
-`dev` and a different one in `prd` never collide). One `dotzen.json` + one
+`dev` and a different one in `prd` never collide). One `pluvian.json` + one
 `spec.ts` still governs them all; findings are reported with root-relative
-paths so you can tell which environment each came from. `dotzen init`
+paths so you can tell which environment each came from. `pluvian init`
 detects this layout and writes the array. See
 `/docs/specs/03-distribution-and-cli.md` for the config shape.
 
@@ -75,24 +75,24 @@ declared `environment` (`{ "path": "./env/prd", "environment": "production" }`),
 and `.environment(Production)` rules apply to that root by *folder* — no
 reliance on per-resource `environment` tags. This is how you make prod
 stricter than dev from a single spec. The mapping is a **policy decision
-the platform team owns**: `dotzen init` guesses it from folder names, but
+the platform team owns**: `pluvian init` guesses it from folder names, but
 it is meant to be edited — e.g. a team that wants **staging held to
 production-level rules** maps both `./env/stg` and `./env/prd` to
 `production`. For genuinely *independent* rulesets (not just strictness
-tiers), give each root its own `dotzen.json` + `spec.ts` and run `check`
+tiers), give each root its own `pluvian.json` + `spec.ts` and run `check`
 per root instead.
 
 ### If the organization is already polyrepo
 
-dotzen still functions correctly per-repository. Document the
+pluvian still functions correctly per-repository. Document the
 version-drift and coordination-overhead risks explicitly to the
-platform team, but do not block dotzen adoption on a monorepo migration
+platform team, but do not block pluvian adoption on a monorepo migration
 — that is a separate, larger organizational decision. The
-`dotzen.json`-driven version enforcement (see
+`pluvian.json`-driven version enforcement (see
 `/docs/specs/03-distribution-and-cli.md`) still prevents *silent* drift
 within any single repo; it just doesn't prevent drift *between* repos
 without additional process (Renovate Bot / broadcast notifications —
-optional, not core to dotzen).
+optional, not core to pluvian).
 
 ## Three-layer defense in depth
 
@@ -101,13 +101,13 @@ overlap and each catches what the others might miss:
 
 ```
 1. LOCAL (pre-commit hook)
-   npx @dotzen/dotzen check
+   npx @erkos/pluvian check
    Static HCL analysis, sub-second, no credentials needed.
    Fail-fast: developer fixes the issue before it's ever committed.
         │
         ▼
 2. PIPELINE (CI gate)
-   Same engine, same dotzen.json-pinned version.
+   Same engine, same pluvian.json-pinned version.
    Runs again before `terraform plan`/`apply`.
    Cannot be bypassed by a developer skipping their local hook —
    this is the non-negotiable institutional gate.
@@ -123,17 +123,17 @@ overlap and each catches what the others might miss:
 ```yaml
 stages: [governance, plan, approval, apply]
 
-dotzen-check:
+pluvian-check:
   stage: governance
   script:
-    - npx @dotzen/dotzen check ./terraform/ --format json > dotzen-report.json
+    - npx @erkos/pluvian check ./terraform/ --format json > pluvian-report.json
   artifacts:
-    paths: [dotzen-report.json]
+    paths: [pluvian-report.json]
     expire_in: 90 days
 
 terraform-plan:
   stage: plan
-  needs: [dotzen-check]
+  needs: [pluvian-check]
   script:
     - terraform plan -out=tfplan
 
@@ -141,7 +141,7 @@ human-approval:
   stage: approval
   when: manual
   rules:
-    - if: $DOTZEN_REQUIRES_APPROVAL == "true"
+    - if: $PLUVIAN_REQUIRES_APPROVAL == "true"
 
 terraform-apply:
   stage: apply
@@ -150,7 +150,7 @@ terraform-apply:
     - terraform apply tfplan
 ```
 
-`dotzen check` sets `DOTZEN_REQUIRES_APPROVAL=true` (via a CI variable
+`pluvian check` sets `PLUVIAN_REQUIRES_APPROVAL=true` (via a CI variable
 file or dotenv artifact) when any evaluated rule has effect
 `RequireApproval` and fired. If no such rule fired, the `human-approval`
 manual job never appears and the pipeline proceeds straight through —
@@ -169,10 +169,10 @@ The engine distinguishes effects so CI can react correctly:
   `approvers`.
 - **`warn`** → exit **0**. Reported prominently but never fails the build.
 
-The engine emits `DOTZEN_REQUIRES_APPROVAL=true|false` so a later
+The engine emits `PLUVIAN_REQUIRES_APPROVAL=true|false` so a later
 manual-approval job can gate on it. It's CI-agnostic: in **GitLab CI** it
-writes a dotenv file (default `dotzen.env`, overridable with
-`DOTZEN_ENV_FILE`) that the job exposes via `artifacts:reports:dotenv`; on
+writes a dotenv file (default `pluvian.env`, overridable with
+`PLUVIAN_ENV_FILE`) that the job exposes via `artifacts:reports:dotenv`; on
 **GitHub Actions** it also appends to `$GITHUB_ENV`. GitLab consumer
 pipeline:
 
@@ -181,23 +181,23 @@ pipeline:
 governance-check:
   stage: check
   script:
-    - npx @dotzen/dotzen check ./terraform/   # writes dotzen.env
+    - npx @erkos/pluvian check ./terraform/   # writes pluvian.env
   artifacts:
     reports:
-      dotenv: dotzen.env                       # exposes DOTZEN_REQUIRES_APPROVAL
+      dotenv: pluvian.env                       # exposes PLUVIAN_REQUIRES_APPROVAL
 
 approval:
   stage: approve
   needs: [governance-check]
   rules:
-    - if: '$DOTZEN_REQUIRES_APPROVAL == "true"'
+    - if: '$PLUVIAN_REQUIRES_APPROVAL == "true"'
   when: manual                                 # blocks the pipeline for sign-off
   allow_failure: false
   script: [echo "approved"]
 ```
 
 Note this is the *consumer's* pipeline governing their Terraform — not
-dotzen's own CI (`/docs/specs/07-development-workflow.md`).
+pluvian's own CI (`/docs/specs/07-development-workflow.md`).
 
 ## Exception handling
 
@@ -214,7 +214,7 @@ must be:
 - **Auditable** — visible in Git history indefinitely.
 
 ```typescript
-// .zen/spec.ts — exceptions section, reviewed like any other rule
+// .pluvian/spec.ts — exceptions section, reviewed like any other rule
 export const exceptions = [
   exception({
     rule: 'no-public-ssh',

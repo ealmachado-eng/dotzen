@@ -1,6 +1,6 @@
 # 03 — Distribution and CLI Specification
 
-This document defines exactly how dotzen reaches a developer's machine
+This document defines exactly how pluvian reaches a developer's machine
 or a CI runner, how versioning is enforced, and how the (optional) Go
 HCL parser subprocess is bundled without breaking macOS. Read
 `/docs/specs/00-architecture-decision-record.md` first for *why* this
@@ -9,7 +9,7 @@ distribution model was chosen over every alternative.
 ## The invocation contract
 
 ```bash
-npx @dotzen/dotzen check ./terraform/
+npx @erkos/pluvian check ./terraform/
 ```
 
 This is the only command a developer or a CI pipeline needs to know.
@@ -59,9 +59,9 @@ rule, not a preference, because for a governance tool specifically,
   passes, or vice versa, unpredictably).
 - **Audit trail collapse** — "what rules applied to this infrastructure
   change on March 15th" becomes unanswerable if the CI log just says
-  `npx @dotzen/dotzen@latest`.
+  `npx @erkos/pluvian@latest`.
 
-### The `dotzen.json` mechanism
+### The `pluvian.json` mechanism
 
 A file committed to the repository (ideally at the root of a monorepo —
 see `/docs/specs/04-governance-model.md`) is the single source of truth
@@ -70,7 +70,7 @@ for which version must run:
 ```json
 {
   "version": "1.3.0",
-  "spec": ".zen/spec.ts",
+  "spec": ".pluvian/spec.ts",
   "terraform": "./terraform"
 }
 ```
@@ -83,12 +83,12 @@ relative to the project root so you can tell which root each came from:
 ```json
 {
   "version": "1.3.0",
-  "spec": ".zen/spec.ts",
+  "spec": ".pluvian/spec.ts",
   "terraform": ["./env/dev", "./env/stg", "./env/prd"]
 }
 ```
 
-`dotzen init` auto-detects this layout (every directory containing `.tf`
+`pluvian init` auto-detects this layout (every directory containing `.tf`
 directly becomes a root) and writes the array for you.
 
 A root entry may also be an object that **declares its environment**, so
@@ -98,7 +98,7 @@ A root entry may also be an object that **declares its environment**, so
 ```json
 {
   "version": "1.3.0",
-  "spec": ".zen/spec.ts",
+  "spec": ".pluvian/spec.ts",
   "terraform": [
     { "path": "./environment/sandbox",    "environment": "development" },
     { "path": "./environment/production",  "environment": "production" }
@@ -110,7 +110,7 @@ A declared `environment` **overrides** any `environment` tag on resources
 in that root. Folder names are arbitrary; only the mapped value must be a
 valid `Environment`.
 
-**`dotzen init`'s mapping is only a best-effort guess — review and edit it
+**`pluvian init`'s mapping is only a best-effort guess — review and edit it
 by hand.** It infers the environment from recognizable folder names
 (`dev`/`stg`/`prd`, `sandbox`, …) and leaves anything it doesn't recognize
 as a plain path for you to annotate. The mapping is a deliberate policy
@@ -134,7 +134,7 @@ On every invocation, the engine's very first action is:
 
 ```typescript
 async function enforceVersion(): Promise<void> {
-  const config = readDotzenJson()
+  const config = readEngineConfig()
   if (!config?.version) return // no pin configured, proceed
 
   const running = ENGINE_VERSION // from the package's own package.json
@@ -143,11 +143,11 @@ async function enforceVersion(): Promise<void> {
   if (running === required) return
 
   console.error(`
-✗ dotzen version mismatch
-  required: ${required} (from dotzen.json)
+✗ pluvian version mismatch
+  required: ${required} (from pluvian.json)
   running:  ${running}
 
-  run: npx @dotzen/dotzen@${required} check
+  run: npx @erkos/pluvian@${required} check
 `)
   process.exit(1)
 }
@@ -158,7 +158,7 @@ This means:
   team bumps the version — the tool tells them, at the exact moment
   they run it, with the exact fix command.
 - CI and local always agree, because both read the same committed
-  `dotzen.json`.
+  `pluvian.json`.
 - The Slack-bot / Renovate-bot / broadcast-message notification schemes
   considered during design remain **optional conveniences for polyrepo
   setups** (see `/docs/specs/04-governance-model.md`) — they are not
@@ -167,22 +167,22 @@ This means:
 ### Recommended developer shell alias
 
 ```bash
-alias dotzen='npx @dotzen/dotzen'
+alias pluvian='npx @erkos/pluvian'
 ```
 
-With this alias, `dotzen check` always resolves the correct pinned
-version via the `dotzen.json` mechanism above, with no version string
+With this alias, `pluvian check` always resolves the correct pinned
+version via the `pluvian.json` mechanism above, with no version string
 in the command at all. Document this in the README as the recommended
-workflow, but the raw `npx @dotzen/dotzen@x.y.z` form must always work
+workflow, but the raw `npx @erkos/pluvian@x.y.z` form must always work
 too (it's what CI configs should use explicitly).
 
 ## Package structure
 
 ```
-@dotzen/dotzen/
-├── package.json          { "bin": { "dotzen": "./bin/dotzen.js" } }
+@erkos/pluvian/
+├── package.json          { "bin": { "pluvian": "./bin/pluvian.js" } }
 ├── bin/
-│   └── dotzen.js          ← thin entry point (Node)
+│   └── pluvian.js          ← thin entry point (Node)
 └── dist/                  ← compiled TypeScript engine
     ├── engine/
     ├── hcl/
@@ -204,7 +204,7 @@ losing the official `hashicorp/hcl` parser.
 > resolution ladder** — the *preferred* path — achieved for free: we get
 > official-parser correctness AND WASM's properties (no Gatekeeper, no
 > notarization, no Windows AV/EDR alerts, one cross-platform artifact, no
-> per-OS build matrix), with zero binary-distribution work. So dotzen is
+> per-OS build matrix), with zero binary-distribution work. So pluvian is
 > **not** on the community-JS-parser baseline — it is already on the
 > official Go parser via WASM. A trial of `@evops/hcl-terraform-parser`
 > was rejected because it returns only resource metadata, not attribute
@@ -259,10 +259,10 @@ Why WASM first:
 - **One artifact, every platform.** The same `.wasm` runs identically on
   Windows/macOS/Linux and every CI runner wherever Node runs — no
   per-OS build matrix.
-- **It keeps dotzen off its own audience's threat radar.** A governance
+- **It keeps pluvian off its own audience's threat radar.** A governance
   tool that trips endpoint security, or strips OS security attributes to
   run, is the wrong first impression for the security-conscious
-  organizations dotzen targets.
+  organizations pluvian targets.
 - **Cost:** Go→WASM plumbing (build, module size, call-in/out
   marshalling) is a one-time engineering cost, not the recurring
   signing/AV-support burden a native binary carries.
@@ -273,22 +273,22 @@ never sees the parser, so this swap touches one module.
 
 #### Fallback: per-platform native binary
 
-Only if WASM proves impractical, bundle `dotzen-hclparse` (Go, using the
+Only if WASM proves impractical, bundle `pluvian-hclparse` (Go, using the
 official `hashicorp/hcl` library) as a subprocess, one binary per
 platform:
 
 ```
 bin/
-├── dotzen.js                 ← Node wrapper, selects + execs binary
-├── dotzen-linux-x64
-├── dotzen-linux-arm64
-├── dotzen-macos-x64
-├── dotzen-macos-arm64
-└── dotzen-win-x64.exe
+├── pluvian.js                 ← Node wrapper, selects + execs binary
+├── pluvian-linux-x64
+├── pluvian-linux-arm64
+├── pluvian-macos-x64
+├── pluvian-macos-arm64
+└── pluvian-win-x64.exe
 ```
 
 ```javascript
-// bin/dotzen.js — platform selection logic
+// bin/pluvian.js — platform selection logic
 const { execFileSync } = require('child_process')
 const path = require('path')
 const os = require('os')
@@ -296,11 +296,11 @@ const os = require('os')
 function getBinary() {
   const key = `${os.platform()}-${os.arch()}`
   const map = {
-    'linux-x64':    'dotzen-linux-x64',
-    'linux-arm64':  'dotzen-linux-arm64',
-    'darwin-x64':   'dotzen-macos-x64',
-    'darwin-arm64': 'dotzen-macos-arm64',
-    'win32-x64':    'dotzen-win-x64.exe',
+    'linux-x64':    'pluvian-linux-x64',
+    'linux-arm64':  'pluvian-linux-arm64',
+    'darwin-x64':   'pluvian-macos-x64',
+    'darwin-arm64': 'pluvian-macos-arm64',
+    'win32-x64':    'pluvian-win-x64.exe',
   }
   const binary = map[key]
   if (!binary) {
@@ -340,11 +340,11 @@ notarized.
    (~$99/year):
    ```bash
    codesign --sign "Developer ID: <name> (<TEAMID>)" \
-     --options runtime --timestamp dotzen-macos-arm64
-   xcrun notarytool submit dotzen-macos-arm64.zip \
+     --options runtime --timestamp pluvian-macos-arm64
+   xcrun notarytool submit pluvian-macos-arm64.zip \
      --apple-id "$APPLE_ID" --password "$APPLE_APP_PASSWORD" \
      --team-id "$APPLE_TEAM_ID" --wait
-   xcrun stapler staple dotzen-macos-arm64
+   xcrun stapler staple pluvian-macos-arm64
    ```
 4. **(Interim only — discouraged, never permanent) `postinstall` script
    strips the quarantine xattr:**
@@ -355,7 +355,7 @@ notarized.
    const os = require('os')
 
    if (os.platform() === 'darwin') {
-     ['dotzen-macos-x64', 'dotzen-macos-arm64'].forEach((bin) => {
+     ['pluvian-macos-x64', 'pluvian-macos-arm64'].forEach((bin) => {
        try {
          execSync(
            `xattr -d com.apple.quarantine "${path.join(__dirname, '..', 'bin', bin)}"`,
@@ -374,7 +374,7 @@ notarized.
 ## Optional-dependency per-platform packages (v2 optimization, not v1)
 
 Tools like `esbuild` and `@biomejs/biome` split each platform binary
-into its own tiny npm package (`@dotzen/dotzen-darwin-arm64`, etc.) using
+into its own tiny npm package (`@erkos/pluvian-darwin-arm64`, etc.) using
 `optionalDependencies` with `os`/`cpu` fields in `package.json`, so a
 developer only downloads the ~5–10MB binary relevant to their machine
 instead of a ~50MB bundle containing every platform. **This is a valid
@@ -387,25 +387,25 @@ complexity for v1.
 ### GitLab CI
 
 ```yaml
-dotzen-check:
+pluvian-check:
   stage: validate
   script:
-    - npx @dotzen/dotzen check ./terraform/
+    - npx @erkos/pluvian check ./terraform/
   rules:
     - changes:
         - "terraform/**/*.tf"
-        - ".zen/**"
+        - ".pluvian/**"
 ```
 
 Node is pre-installed on standard GitLab CI runner images; no setup
-step required. `dotzen` reads its version from the committed
-`dotzen.json`.
+step required. `pluvian` reads its version from the committed
+`pluvian.json`.
 
 ### GitHub Actions
 
 ```yaml
 - name: Governance check
-  run: npx @dotzen/dotzen check ./terraform/
+  run: npx @erkos/pluvian check ./terraform/
 ```
 
 Node is pre-installed on `ubuntu-latest`, `macos-latest`, and
@@ -418,18 +418,18 @@ Node is pre-installed on `ubuntu-latest`, `macos-latest`, and
 repos:
   - repo: local
     hooks:
-      - id: dotzen-check
-        name: Dotzen Governance Check
+      - id: pluvian-check
+        name: Pluvian Governance Check
         language: node
         entry: npx
-        args: ['@dotzen/dotzen', 'check']
+        args: ['@erkos/pluvian', 'check']
         files: \.tf$
         pass_filenames: false
 ```
 
 Developer runs `pre-commit install` once; from then on every commit
 touching `.tf` files is checked automatically, with the version pin
-enforced by `dotzen.json` exactly as in CI.
+enforced by `pluvian.json` exactly as in CI.
 
 ### Cold-start mitigation
 
@@ -439,11 +439,11 @@ instant from cache. If a pre-commit hook's cold-start latency (rare —
 only on first use of a newly-pinned version) becomes a real complaint,
 two mitigations exist, **neither required for v1**:
 
-- Add `@dotzen/dotzen` as a `devDependency` in the project's
+- Add `@erkos/pluvian` as a `devDependency` in the project's
   `package.json` so `npm install` resolves it once, and pre-commit's
-  `entry` calls the local `node_modules/.bin/dotzen` instead of going
+  `entry` calls the local `node_modules/.bin/pluvian` instead of going
   through `npx`'s resolution each time.
-- A long-running `dotzen daemon start` mode that a pre-commit hook talks
+- A long-running `pluvian daemon start` mode that a pre-commit hook talks
   to over a local socket, eliminating process-startup cost entirely.
   This is real engineering effort — defer until cold-start latency is
   an actual, measured complaint from real users, not a theoretical one.

@@ -1,4 +1,4 @@
-/** Public DSL surface — what `.zen/spec.ts` imports. */
+/** Public DSL surface — what `.pluvian/spec.ts` imports. */
 export { rule, RuleBuilder } from './spec/rule'
 export {
   AwsResource,
@@ -39,14 +39,14 @@ export {
 } from './vocabulary'
 
 // Curated CIS preset rule packs (#24). Spread into a spec:
-//   import { cisAws } from '@dotzen/dotzen'
+//   import { cisAws } from '@erkos/pluvian'
 //   export const spec = [...cisAws, /* your rules *\/]
 export { cisAws } from './presets/cis-aws'
 export { cisAzure } from './presets/cis-azure'
 export { cisGcp } from './presets/cis-gcp'
 
 // Composable framework presets — spread coreSecurity + a framework pack:
-//   import { coreSecurity, pciDss } from '@dotzen/dotzen'
+//   import { coreSecurity, pciDss } from '@erkos/pluvian'
 //   export const spec = [...coreSecurity, ...pciDss, /* your rules *\/]
 export { coreSecurity } from './presets/core-security'
 export { pciDss } from './presets/pci-dss'

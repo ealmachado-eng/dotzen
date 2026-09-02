@@ -1,10 +1,10 @@
-# dotzen release — publish @dotzen/dotzen to npm on a vX.Y.Z tag.
+# pluvian release — publish @erkos/pluvian to npm on a vX.Y.Z tag.
 #
 # Uses npm Trusted Publishing (OIDC) — NO stored NPM_TOKEN. The GitHub
 # Actions OIDC token is exchanged for a short-lived npm publish token at
 # publish time. Requires the Trusted Publisher to be configured on npmjs.com:
-#   repository owner = ealmachado-eng, name = dotzen, workflow = release.yml
-# (see .claude/skills/dotzen-release/SKILL.md — a mismatch surfaces only at
+#   repository owner = ealmachado-eng, name = pluvian, workflow = release.yml
+# (see .claude/skills/pluvian-release/SKILL.md — a mismatch surfaces only at
 # publish time as ENEEDAUTH).
 #
 # The repo is PUBLIC on GitHub → `--provenance` works (sigstore attestation

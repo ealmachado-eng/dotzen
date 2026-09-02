@@ -1,6 +1,6 @@
 # How to scope rules to environment / region / provider
 
-> **Audience:** spec authors. Most rules apply everywhere, but some controls are environment-specific ("prod requires MFA delete on buckets"), region-bound ("EU data must stay in approved regions"), or account-scoped ("the DR account enforces stricter encryption"). dotzen has three independent scope filters.
+> **Audience:** spec authors. Most rules apply everywhere, but some controls are environment-specific ("prod requires MFA delete on buckets"), region-bound ("EU data must stay in approved regions"), or account-scoped ("the DR account enforces stricter encryption"). pluvian has three independent scope filters.
 
 ## The three scope knobs
 
@@ -16,11 +16,11 @@ Each is optional and independent — a rule with no scope applies to every match
 
 A rule scoped to `Production` fires **only** on resources whose environment resolves to `production`. Environments come from two places:
 
-1. **An `environment` tag/label** on the resource (`environment = "production"` / GCP `environment` label). dotzen reads it directly.
+1. **An `environment` tag/label** on the resource (`environment = "production"` / GCP `environment` label). pluvian reads it directly.
 2. **A root-folder mapping** — if your repo is laid out `env/prod/terraform/`, `env/dev/terraform/`, the folder name sets the environment for every resource under it (no per-resource tag needed). See the `env-layer` / `env-mapping` integration fixtures in `tests/integration/fixtures/`.
 
 ```ts
-import { Environment } from "@dotzen/dotzen";
+import { Environment } from "@erkos/pluvian";
 
 // Stricter retention only in production.
 rule()
@@ -52,7 +52,7 @@ rule()
 
 ## Region scoping (data residency — GDPR / LGPD)
 
-Data-residency rules: data must **stay in** an approved region list, OR must **not be in** a denied list. dotzen resolves a resource's region from its `provider {}` block.
+Data-residency rules: data must **stay in** an approved region list, OR must **not be in** a denied list. pluvian resolves a resource's region from its `provider {}` block.
 
 ```ts
 // EU data must stay in approved EU regions.

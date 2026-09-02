@@ -44,15 +44,15 @@ describe('importSpecModule', () => {
     if (!r.ok) expect(r.error.kind).toBe('ConfigNotFound')
   })
 
-  // Regression: a scaffolded spec imports the bare `@dotzen/dotzen`
+  // Regression: a scaffolded spec imports the bare `@erkos/pluvian`
   // specifier, which under `npx` isn't installed in the user's project. The
   // loader must alias it to the running engine so the spec still resolves.
-  it('resolves a spec that imports "@dotzen/dotzen" (the npx flow)', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dotzen-spec-'))
+  it('resolves a spec that imports "@erkos/pluvian" (the npx flow)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pluvian-spec-'))
     const specPath = path.join(dir, 'spec.ts')
     fs.writeFileSync(
       specPath,
-      "import { rule, AwsResource, Port } from '@dotzen/dotzen'\n" +
+      "import { rule, AwsResource, Port } from '@erkos/pluvian'\n" +
         'export const spec = [\n' +
         '  rule().resource(AwsResource.SecurityGroup).denyIngress(Port.SSH).message("m"),\n' +
         ']\n',

@@ -1,12 +1,12 @@
-# dotzen demo — a topology rule in action
+# pluvian demo — a topology rule in action
 
-A minimal project showing dotzen's **graph layer** at work: a rule no static
+A minimal project showing pluvian's **graph layer** at work: a rule no static
 per-resource tool can express — "no filesystem mount target reachable from the
 public internet."
 
 ## The rule
 
-[`.zen/spec.ts`](.zen/spec.ts) contains a single rule:
+[`.pluvian/spec.ts`](.pluvian/spec.ts) contains a single rule:
 
 ```ts
 rule()
@@ -26,7 +26,7 @@ private subnet, and **two** EFS mount targets:
 
 ## One rule, two verdicts
 
-A rule targets a **resource type**, and dotzen evaluates it against **each
+A rule targets a **resource type**, and pluvian evaluates it against **each
 matching resource** independently. So this single rule produces two verdicts:
 
 | resource     | reaches an Internet Gateway?                  | verdict      |
@@ -49,7 +49,7 @@ blanket-flagging every mount target.
 
 ```bash
 cd demo
-dotzen check
+pluvian check
 ```
 
 Expected output:
