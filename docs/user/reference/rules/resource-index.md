@@ -4,7 +4,7 @@
 
 Reverse view: for each governed resource type, the rules that apply to it.
 Resources not listed here are *recognized* but ungoverned (see the
-`ungoverned` output category and `what-it-does.md` → "What dotzen does
+`ungoverned` output category and `what-it-does.md` → "What pluvian does
 not do"). ~60-70 of ~3200 recognized types carry rules today.
 
 ## AWS

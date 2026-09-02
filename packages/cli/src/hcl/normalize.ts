@@ -48,7 +48,7 @@ export type Scope = Map<string, unknown>
 
 /**
  * Provider-level tag defaults (AWS `default_tags` / GCP `default_labels` /
- * Azure `default_tags`) that every resource inherits at apply time. dotzen
+ * Azure `default_tags`) that every resource inherits at apply time. pluvian
  * threads these so a `mustHaveTags` rule does not flag a resource whose
  * required tag is supplied by the provider rather than the resource block.
  *  - `tagKeys`: keys guaranteed present on every resource under the provider
@@ -126,7 +126,7 @@ const UTILITY_TYPES = new Set<string>([
   'docker_image',
   'docker_registry_image',
   // Dogfood round 8: Kubernetes provider resources (Helm, kubectl, native
-  // K8s) — not infrastructure Terraform; dotzen governs cloud IaC, not K8s
+  // K8s) — not infrastructure Terraform; pluvian governs cloud IaC, not K8s
   // manifests. Also terraform_remote_state (reads remote state — utility).
   'helm_release',
   'kubectl_manifest',
@@ -918,7 +918,7 @@ export function resolveRaw(
 /**
  * Resolve a `count` against scope to decide if a resource/module is disabled.
  * A literal 0 (or a var/local that resolves to it) → disabled, no instances;
- * dotzen skips it silently (no skip note — it is correct, not a gap). Any
+ * pluvian skips it silently (no skip note — it is correct, not a gap). Any
  * compound expression (`var.x ? 0 : 1`) does not resolve → false → follow once
  * honestly. Shared by resource-level (`normalize`) and module-level
  * (`followModules`) count handling.
@@ -2598,7 +2598,7 @@ function normalizeOne(
 }
 
 /**
- * Adapter boundary (doc 06): parser output -> dotzen's own model.
+ * Adapter boundary (doc 06): parser output -> pluvian's own model.
  * The engine never sees `Hcl2JsonRoot`. `scope` resolves var/local refs.
  * `pd` (provider default_tags/default_labels) is threaded from `parseTf`/
  * `followModules` so a resource inherits its provider's tag defaults.
@@ -2845,7 +2845,7 @@ function findOutputLine(text: string, name: string): number {
  */
 /**
  * Collect resources whose type is NOT in the closed vocabulary (`KNOWN_TYPES`)
- * — dotzen parsed them but cannot govern them. Surfaced as informational
+ * — pluvian parsed them but cannot govern them. Surfaced as informational
  * telemetry so users know what's NOT covered (a silent skip is worse than an
  * honest gap). Returns `{type, name, file, line}` for each ungoverned
  * resource (data sources included). Does NOT normalize — just scans + filters.
@@ -3005,7 +3005,7 @@ function findTerraformLine(text: string): number {
  * (the TF engine constraint string) and `required_providers` (per-provider
  * `{ name, version }` constraints). A separate surface; version-pinning rules
  * govern it. Returns at most one entry (one `terraform` block per dir; extra
- * blocks merge into the first in HCL — dotzen reads the first).
+ * blocks merge into the first in HCL — pluvian reads the first).
  */
 export function normalizeSettings(
   parsed: Hcl2JsonRoot,

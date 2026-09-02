@@ -4,7 +4,7 @@ import { importSpecModule, loadSpec } from './load'
 
 // The example org-profile specs live at the repo root under examples/. Each is
 // a standalone consumer spec (startup / enterprise / regulated). This test
-// loads each through the REAL jiti loader (the same path `dotzen check` uses)
+// loads each through the REAL jiti loader (the same path `pluvian check` uses)
 // and validates every rule — so the templates stay correct as the DSL evolves
 // (a renamed enum, a removed preset export, or a double-spread would fail here).
 const exampleSpec = (name: string) =>
@@ -16,7 +16,7 @@ const exampleSpec = (name: string) =>
     '..',
     'examples',
     name,
-    '.zen',
+    '.pluvian',
     'spec.ts',
   )
 

@@ -5,7 +5,7 @@
 Azure-specific additions on top of `coreSecurity` aligned to the CIS Microsoft Azure Foundations. Spread with coreSecurity:
 
 ```ts
-import { coreSecurity, cisAzure } from '@dotzen/dotzen'
+import { coreSecurity, cisAzure } from '@erkos/pluvian'
 export const spec = [...coreSecurity, ...cisAzure]
 ```
 

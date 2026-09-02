@@ -8,11 +8,11 @@
  * covered by the shared base.
  *
  * Usage:
- *   import { coreSecurity, cisAws } from '@dotzen/dotzen'
+ *   import { coreSecurity, cisAws } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...cisAws, /* your rules *\/]
  *
  * To compose CIS + PCI (no duplicate violations):
- *   import { coreSecurity, cisAws, pciDss } from '@dotzen/dotzen'
+ *   import { coreSecurity, cisAws, pciDss } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...cisAws, ...pciDss]
  */
 import { rule } from '../spec/rule'

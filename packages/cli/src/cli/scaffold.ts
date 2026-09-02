@@ -9,16 +9,17 @@ export interface ScaffoldFile {
   readonly content: string
 }
 
-function dotzenJson(
+function pluvianJson(
   version: string,
   terraform: TerraformRoot | TerraformRoot[],
 ): string {
   return (
-    JSON.stringify({ version, spec: '.zen/spec.ts', terraform }, null, 2) + '\n'
+    JSON.stringify({ version, spec: '.pluvian/spec.ts', terraform }, null, 2) +
+    '\n'
   )
 }
 
-/** The files `dotzen init` writes (pure — no filesystem access). The spec.ts
+/** The files `pluvian init` writes (pure — no filesystem access). The spec.ts
  *  content is composed from the chosen `--profile` / `--presets` by
  *  `profiles.composeSpec` (single source of truth shared with `examples/`). */
 export function scaffoldFiles(
@@ -27,8 +28,8 @@ export function scaffoldFiles(
   specContent: string,
 ): ScaffoldFile[] {
   return [
-    { path: 'dotzen.json', content: dotzenJson(version, terraform) },
-    { path: path.join('.zen', 'spec.ts'), content: specContent },
+    { path: 'pluvian.json', content: pluvianJson(version, terraform) },
+    { path: path.join('.pluvian', 'spec.ts'), content: specContent },
   ]
 }
 
@@ -53,7 +54,7 @@ export function tfRootDirs(dir: string): string[] {
   return [...roots].sort()
 }
 
-// Guess a dotzen Environment from a root folder's leaf name (best-effort;
+// Guess a pluvian Environment from a root folder's leaf name (best-effort;
 // the author edits/removes what doesn't fit). Folder names are arbitrary —
 // only the mapped value must be a valid Environment.
 const ENV_GUESS: Record<string, Environment> = {
@@ -76,7 +77,7 @@ const withEnvGuess = (rootPath: string): TerraformRoot => {
 
 /**
  * Detect where a project's existing Terraform lives, so init points
- * `dotzen.json` at the real path(s) instead of a fresh empty `terraform/`.
+ * `pluvian.json` at the real path(s) instead of a fresh empty `terraform/`.
  * Returns a single path, or an array of roots (multiple, e.g.
  * per-environment) — mapping recognizable env folder names to an
  * `environment` so `.environment(X)` scoping works by folder. Returns
@@ -107,7 +108,7 @@ export interface InitResult {
 }
 
 /**
- * Scaffold a new dotzen project into `dir`. Never overwrites an existing
+ * Scaffold a new pluvian project into `dir`. Never overwrites an existing
  * file (fail-safe). Adapts `terraform` to an existing layout: an explicit
  * `opts.terraform` wins; otherwise it is auto-detected; a greenfield
  * project falls back to `./terraform` (and that dir is created). The

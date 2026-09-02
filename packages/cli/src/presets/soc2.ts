@@ -6,7 +6,7 @@
  * scanning (processing integrity + supply chain).
  *
  * Usage:
- *   import { coreSecurity, soc2 } from '@dotzen/dotzen'
+ *   import { coreSecurity, soc2 } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...soc2]
  */
 import { rule } from '../spec/rule'

@@ -5,11 +5,11 @@
  * encrypt ALL data stores at rest (Art. 32), prevent public exposure of
  * personal data, tag resources with a data-classification label, and
  * protect state (which may contain personal data). Data-residency (keep
- * data in the EU/region) is NOT expressible in dotzen today — see the
+ * data in the EU/region) is NOT expressible in pluvian today — see the
  * documented gap below.
  *
  * Usage:
- *   import { coreSecurity, dataProtection } from '@dotzen/dotzen'
+ *   import { coreSecurity, dataProtection } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...dataProtection]
  *
  * NOTE: the data-class tag key is org-defined. Replace 'data_classification'

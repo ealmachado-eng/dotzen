@@ -3,7 +3,7 @@
  * 800-53, and GDPR/LGPD. A composable `Rule[]` meant to be spread alongside
  * a framework-specific pack:
  *
- *   import { coreSecurity, pciDss } from '@dotzen/dotzen'
+ *   import { coreSecurity, pciDss } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...pciDss, /* your rules *\/]
  *
  * Covers: network exposure, encryption at rest (key resources), IAM least

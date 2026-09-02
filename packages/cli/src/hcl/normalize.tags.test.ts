@@ -163,7 +163,7 @@ describe('normalize — merge() with a concrete threaded var.tags', () => {
 })
 
 // Provider default_tags / default_labels (AWS/Azure `default_tags`, GCP
-// `default_labels`) are inherited by every resource at apply time. dotzen
+// `default_labels`) are inherited by every resource at apply time. pluvian
 // threads them so a `mustHaveTags` rule does not flag a resource whose
 // required tag is supplied by the provider rather than the resource block.
 describe('normalize — provider default_tags / default_labels', () => {

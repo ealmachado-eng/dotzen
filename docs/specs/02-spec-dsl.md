@@ -1,6 +1,6 @@
 # 02 — Spec DSL Specification
 
-This document defines `.zen/spec.ts`: the file a platform team writes
+This document defines `.pluvian/spec.ts`: the file a platform team writes
 and a security architect reads. It is the single most important
 artifact in the product — see `/docs/specs/01-product-overview.md`
 §"Prose as Code" for why.
@@ -320,7 +320,7 @@ function loadSpec(rules: RuleBuilder[]): RuleBuilder[] {
 ## Worked example: a realistic starter spec
 
 ```typescript
-// .zen/spec.ts
+// .pluvian/spec.ts
 export const spec = [
 
   // ── Networking ──────────────────────────────────────
@@ -461,7 +461,7 @@ builds the engine:
 > **literal JSON document** (heredoc / inline string) — the "literal &
 > explicit" pattern from doc 01. A `jsonencode(...)` expression, a
 > variable, or malformed JSON is reported as **"could not evaluate"**, not
-> guessed — dotzen never text-scans an expression it can't parse. Still
+> guessed — pluvian never text-scans an expression it can't parse. Still
 > open: parsing the object argument of `jsonencode(...)`,
 > `data.aws_iam_policy_document` statement blocks, and `Resource`/service
 > (`s3:*`) wildcards (only full `Action: "*"` is flagged today).
@@ -708,11 +708,11 @@ builds the engine:
 - Branded types (Layer 2), discriminated union resource modeling
   (Layer 3), Zod runtime validation (Layer 5) — see table above for
   trigger conditions.
-- ~~A `dotzen init` command that scaffolds `.zen/spec.ts`~~ **Implemented
-  in v0.** `dotzen init [dir]` scaffolds `dotzen.json` (version-pinned),
-  `.zen/spec.ts` (real `@dotzen/dotzen` import + an AWS baseline rule
+- ~~A `pluvian init` command that scaffolds `.pluvian/spec.ts`~~ **Implemented
+  in v0.** `pluvian init [dir]` scaffolds `pluvian.json` (version-pinned),
+  `.pluvian/spec.ts` (real `@erkos/pluvian` import + an AWS baseline rule
   set), refusing to overwrite existing files. It **auto-detects existing
-  Terraform** and points `dotzen.json`'s `terraform` at it: every
+  Terraform** and points `pluvian.json`'s `terraform` at it: every
   directory containing `.tf` *directly* is a root — one root → a string
   (`"."` / `"./infra"`), several (e.g. `env/{dev,stg,prd}`) → an **array**
   (each evaluated with its own scope), mapping recognizable env folder

@@ -57,7 +57,7 @@ describe('approval reporting', () => {
     )
     expect(out).toMatch(/approval required/i)
     expect(out).toContain('platform-team')
-    expect(out).toContain('DOTZEN_REQUIRES_APPROVAL')
+    expect(out).toContain('PLUVIAN_REQUIRES_APPROVAL')
   })
 
   it('renderTerminal separates warnings from blocking', () => {

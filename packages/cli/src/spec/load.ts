@@ -2,22 +2,22 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { createJiti } from 'jiti'
 import { Result, ok, err, combineWithAllErrors } from '../result/result'
-import { DotzenError, RuleValidationError } from '../result/errors'
+import { EngineError, RuleValidationError } from '../result/errors'
 import { RuleBuilder, Rule } from './rule'
 
 /**
- * Load `.zen/spec.ts` via a pure-JS runtime TypeScript loader (jiti) —
+ * Load `.pluvian/spec.ts` via a pure-JS runtime TypeScript loader (jiti) —
  * decided in doc 06 §"Spec loading". This is the isolated seam; swapping
  * the loader touches only this function.
  */
 export async function importSpecModule(
   specPath: string,
-): Promise<Result<RuleBuilder[], DotzenError>> {
+): Promise<Result<RuleBuilder[], EngineError>> {
   if (!fs.existsSync(specPath))
     return err({ kind: 'ConfigNotFound', path: specPath })
 
   try {
-    // A scaffolded spec imports `@dotzen/dotzen`, but under `npx` the engine
+    // A scaffolded spec imports `@erkos/pluvian`, but under `npx` the engine
     // runs from the npx cache while the user's project has no local install —
     // so that bare specifier won't resolve from the spec's location. Alias it
     // to THIS running engine's own barrel (dist/index.js at runtime, or
@@ -25,7 +25,7 @@ export async function importSpecModule(
     // the right one). This is what makes the zero-install `npx` flow work.
     const enginePath = path.join(__dirname, '..', 'index')
     const jiti = createJiti(__filename, {
-      alias: { '@dotzen/dotzen': enginePath },
+      alias: { '@erkos/pluvian': enginePath },
     })
     const mod = (await jiti.import(specPath)) as { spec?: unknown }
     const spec = mod.spec
@@ -49,7 +49,7 @@ export async function importSpecModule(
  * Validate all rules, ACCUMULATING every problem (doc 06, Rule 3) rather
  * than failing on the first invalid rule.
  */
-export function loadSpec(builders: RuleBuilder[]): Result<Rule[], DotzenError> {
+export function loadSpec(builders: RuleBuilder[]): Result<Rule[], EngineError> {
   const validated = combineWithAllErrors(builders.map((b, i) => b.validate(i)))
   if (!validated.ok)
     return err({ kind: 'SpecInvalid', errors: validated.error.flat() })

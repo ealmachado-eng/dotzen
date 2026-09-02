@@ -1,6 +1,6 @@
 {
-  "name": "@dotzen/dotzen",
-  "version": "1.9.37",
+  "name": "@erkos/pluvian",
+  "version": "2.0.0",
   "description": "Prose as Code — governance for AI-generated Terraform (AWS, Azure, GCP).",
   "license": "MIT",
   "keywords": [
@@ -18,15 +18,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ealmachado-eng/dotzen.git",
+    "url": "git+https://github.com/erkos-hq/pluvian.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/ealmachado-eng/dotzen#readme",
+  "homepage": "https://github.com/erkos-hq/pluvian#readme",
   "bugs": {
-    "url": "https://github.com/ealmachado-eng/dotzen/issues"
+    "url": "https://github.com/erkos-hq/pluvian/issues"
   },
   "bin": {
-    "dotzen": "./bin/dotzen.js"
+    "pluvian": "./bin/pluvian.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

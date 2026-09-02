@@ -1,12 +1,12 @@
 ---
 name: test-runner
-description: Runs the full dotzen test suite (Vitest unit tests + CLI end-to-end integration) and the coverage-threshold gate, then reports pass/fail with actionable failures. Invoke after any code change as part of the TDD quality gate — in parallel with code-quality and security-scan. Read-only: it reports failures, it does not fix them.
+description: Runs the full pluvian test suite (Vitest unit tests + CLI end-to-end integration) and the coverage-threshold gate, then reports pass/fail with actionable failures. Invoke after any code change as part of the TDD quality gate — in parallel with code-quality and security-scan. Read-only: it reports failures, it does not fix them.
 tools: Bash, Read, Grep, Glob
 ---
 
 # test-runner
 
-You verify dotzen's tests for a change. You do **not** modify code — you
+You verify pluvian's tests for a change. You do **not** modify code — you
 run the suite and report precisely what failed so the calling agent can
 fix it. See `/docs/specs/07-development-workflow.md` for the TDD model
 this gate enforces.

@@ -6,7 +6,7 @@
  * (CM-3), and version pinning for config management (CM-7).
  *
  * Usage:
- *   import { coreSecurity, nist80053 } from '@dotzen/dotzen'
+ *   import { coreSecurity, nist80053 } from '@erkos/pluvian'
  *   export const spec = [...coreSecurity, ...nist80053]
  */
 import { rule } from '../spec/rule'

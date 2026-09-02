@@ -9,16 +9,16 @@ dogfooding on real module-based AWS repos.
 
 ## The problem (why this matters)
 
-Real org Terraform is overwhelmingly **module-based**, and dotzen today
+Real org Terraform is overwhelmingly **module-based**, and pluvian today
 sees only *direct* `resource` blocks. That splits a module-based repo into
-two halves, neither of which dotzen can fully evaluate:
+two halves, neither of which pluvian can fully evaluate:
 
 - **The environment layer** (`env/{dev,prd}`) is just `module "x" { … }`
-  calls — no direct resources — so dotzen reports **`0 checks`**.
+  calls — no direct resources — so pluvian reports **`0 checks`**.
 - **The module layer** (`modules/x`) has the resources, but their
   governance-relevant values are caller-supplied `var`s
   (`cidr_blocks = var.allowed_cidrs`, `tags = merge(local.t, var.tags)`),
-  so dotzen honestly reports **"could not evaluate."**
+  so pluvian honestly reports **"could not evaluate."**
 
 The concrete values only exist where the two meet: the env's
 `module "x" { allowed_cidrs = […], tags = {…} }` inputs flowing into the
@@ -89,7 +89,7 @@ in a later tranche.
    resolvable, leave the rest unresolved (honest).
 3. **Per-instantiation isolation** — no scope bleed between two calls of
    the same module. Evaluate each call independently.
-4. **Where you point dotzen** — with following, you point it at the **env
+4. **Where you point pluvian** — with following, you point it at the **env
    repo** (the `module {}` calls) and it descends into the local module
    dirs. This finally makes the `env/{dev,prd}` layout — the one that gave
    `0 checks` — the *correct* target.
@@ -97,7 +97,7 @@ in a later tranche.
 ## Honest limits (state these in output/docs)
 
 - Only **local** module sources are followed; remote sources are reported
-  as not-followed (could-not-evaluate, ruleId `dotzen.module-following`),
+  as not-followed (could-not-evaluate, ruleId `pluvian.module-following`),
   not silently passed.
 - A caller input that can't be resolved leaves the module's `var`
   unresolved → the dependent check stays could-not-evaluate.
@@ -130,7 +130,7 @@ in a later tranche.
 3. **Non-followed modules surfaced** (doc 08 DoD, slice into tranche 2):
    remote/registry/git sources, sources that escape the scanned project,
    and missing module dirs are recorded as `ModuleSkip` notes and surfaced
-   as `couldNotEvaluate` under the stable ruleId `dotzen.module-following`
+   as `couldNotEvaluate` under the stable ruleId `pluvian.module-following`
    — never a silent `0 checks`. — **DONE v0.3.0**
 4. **`count = 0`** disables a module (literal or var-resolving-to-0);
    followed silently (correct, no resources, no note). An unresolvable
@@ -139,7 +139,7 @@ in a later tranche.
    modules (larger; its own effort). — **DONE v0.3.0**
    - Nested: `followModules` recurses; a path-stack of resolved absolute
      dirs bounds it (a self/mutual cycle surfaces as a
-     `dotzen.module-following` could-not-evaluate, not infinite recursion).
+     `pluvian.module-following` could-not-evaluate, not infinite recursion).
      The trace accumulates the full chain: `env/prd › modules/outer/main.tf
      (db) › modules/inner/main.tf (inner_db)`.
    - `for_each`: a resolvable literal map or a var-resolved list is

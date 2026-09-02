@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { Result, ok } from '../result/result'
-import { DotzenError } from '../result/errors'
-import { readDotzenJson, enforceVersion } from '../version/config'
+import { EngineError } from '../result/errors'
+import { readEngineConfig, enforceVersion } from '../version/config'
 import { importSpecModule, loadSpec } from '../spec/load'
 import {
   parseTf,
@@ -26,8 +26,8 @@ import {
 export async function check(
   projectRoot: string,
   engineVersion: string,
-): Promise<Result<CheckReport, DotzenError>> {
-  const loaded = readDotzenJson(projectRoot)
+): Promise<Result<CheckReport, EngineError>> {
+  const loaded = readEngineConfig(projectRoot)
   if (!loaded.ok) return loaded
 
   const versioned = enforceVersion(loaded.value.config, engineVersion)
@@ -71,11 +71,11 @@ export async function check(
     skips.push(...parsed.value.skips)
   }
 
-  // Modules dotzen could NOT follow (remote/escape/missing, doc 08) surface
+  // Modules pluvian could NOT follow (remote/escape/missing, doc 08) surface
   // as could-not-evaluate so a gap is visible rather than a silent 0 checks.
   // A stable ruleId lets tooling filter them out of rule-driven entries.
   const moduleSkips: Unevaluable[] = skips.map((s) => ({
-    ruleId: 'dotzen.module-following',
+    ruleId: 'pluvian.module-following',
     resource: `module.${s.label}`,
     file: s.file,
     line: s.line,
@@ -91,11 +91,11 @@ export async function check(
     moduleCalls,
   )
 
-  // Apply inline `dotzen:ignore` directives — suppress findings (violations +
+  // Apply inline `pluvian:ignore` directives — suppress findings (violations +
   // could-not-evaluate) whose PHYSICAL file + block-start line match an
   // ignore. The physical file is the segment before any `›` trace so an ignore
   // in a module file suppresses findings from every instantiation of it.
-  // A directive WITH a ruleId (`# dotzen:ignore rule-5: reason`) suppresses
+  // A directive WITH a ruleId (`# pluvian:ignore rule-5: reason`) suppresses
   // ONLY that rule on the block; without a ruleId, suppresses ALL findings.
   const allIgnores = ignores.filter((d) => !d.ruleId)
   const perRuleIgnores = ignores.filter((d) => d.ruleId)

@@ -1,19 +1,21 @@
-# dotzen
+# pluvian
 
 **Prose as Code.** Governance for AI-generated Terraform — AWS, Azure, and GCP.
 
+*pluvian — the crocodile bird: the little bird that cleans the beast's teeth. An [erkos](https://erkos.dev) tool — we clean your AI's Terraform.*
+
 ```bash
-npx @dotzen/dotzen@1 check ./terraform/
+npx @erkos/pluvian@2 check ./terraform/
 ```
 
-![dotzen flagging an EFS mount target placed in a public subnet](https://raw.githubusercontent.com/ealmachado-eng/dotzen/main/docs/assets/demo.gif)
+![pluvian flagging an EFS mount target placed in a public subnet](https://raw.githubusercontent.com/erkos-hq/pluvian/main/docs/assets/demo.gif)
 
-*One rule, evaluated per mount target: `public_mt` violates (public subnet → Internet Gateway), `private_mt` passes. Walkthrough in [`demo/`](https://github.com/ealmachado-eng/dotzen/tree/main/demo).*
+*One rule, evaluated per mount target: `public_mt` violates (public subnet → Internet Gateway), `private_mt` passes. Walkthrough in [`demo/`](https://github.com/erkos-hq/pluvian/tree/main/demo).*
 
 A zero-install governance layer that catches policy violations in Terraform HCL —
 especially the kind AI code-gen tools produce when they don't know your
 organization's security, tagging, and compliance requirements. Rules are written
-in a readable, strongly-typed TypeScript DSL (`.zen/spec.ts`) designed to be
+in a readable, strongly-typed TypeScript DSL (`.pluvian/spec.ts`) designed to be
 reviewed by a security architect who has never written code:
 
 ```ts
@@ -25,23 +27,23 @@ rule()
 ```
 
 Every finding is **`block`** (fails the build), **`warn`**, or **`require_approval`**
-(pauses CI for sign-off). When dotzen can't statically resolve a value, it reports
+(pauses CI for sign-off). When pluvian can't statically resolve a value, it reports
 **`could not evaluate`** instead of guessing — for a governance tool, a false
 positive is worse than an honest gap.
 
 It runs wherever Terraform is written — pre-commit hook, CI pipeline, or **inside
-the AI coding agent's own loop**: the agent runs `npx @dotzen/dotzen@1 check`,
+the AI coding agent's own loop**: the agent runs `npx @erkos/pluvian@2 check`,
 reads the findings, and fixes them before you ever see the PR. Catch violations at
 the earliest, cheapest gate.
 
-> **v1.9.37** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
+> **v2.0.0** · 144 rules across 8 presets · 42 rule conditions · ~3,200 resource
 > types recognized (3 clouds) · 801 unit + 40 integration tests · published to npm
 > with [SLSA provenance](https://docs.npmjs.com/generating-provenance-statements)
 > · **0 false positives across 35+ real-world module repos** (3 clouds).
 
 ---
 
-## Why dotzen
+## Why pluvian
 
 Organizations are moving from "developers call pre-approved modules" to
 "developers generate Terraform with AI (Copilot, ChatGPT, agents)." Once the
@@ -58,7 +60,7 @@ access. The same directness that creates the risk is what makes it detectable.
 
 ### How it's different
 
-|                                  | OPA / Rego              | HashiCorp Sentinel    | tfsec / Checkov               | **dotzen**                                |
+|                                  | OPA / Rego              | HashiCorp Sentinel    | tfsec / Checkov               | **pluvian**                                |
 | -------------------------------- | ----------------------- | --------------------- | ----------------------------- | ----------------------------------------- |
 | Authoring audience               | Engineers who know Rego | Same                  | Nobody — rules hardcoded/YAML | **Security architects**, via readable DSL |
 | Local pre-commit check           | High-friction           | Cloud/Enterprise only | Yes                           | **Yes, zero-install `npx`**               |
@@ -67,38 +69,38 @@ access. The same directness that creates the risk is what makes it detectable.
 | Topology-aware (multi-hop) rules | —                       | —                     | No                            | **Yes — graph layer**                     |
 | Vendor lock-in                   | No                      | Yes                   | No                            | **No**                                    |
 
-> **Same layer as tfsec/Checkov** (static HCL, no creds/state) — dotzen doesn't
+> **Same layer as tfsec/Checkov** (static HCL, no creds/state) — pluvian doesn't
 > claim a unique layer there. The differentiator vs them is the **readable DSL**,
 > the **topology graph**, and **zero-install `npx`**. The "different layer" claim
 > is vs **OPA/Sentinel**, which run at the _plan/policy_ layer and need
 > credentials + state (or Terraform Cloud).
 
-dotzen's claim isn't "better rule engine." It's **the governance layer designed
+pluvian's claim isn't "better rule engine." It's **the governance layer designed
 for the failure mode of AI-generated infrastructure, with authoring non-engineers
 can actually review, at zero adoption friction.**
 
-### Where dotzen fits — defense in depth
+### Where pluvian fits — defense in depth
 
-dotzen **complements, not replaces**. It occupies one layer in a stack, and the
+pluvian **complements, not replaces**. It occupies one layer in a stack, and the
 layers cover each other's blind spots:
 
 ```text
- gitleaks /         dotzen                OPA / Sentinel           cloud config /
+ gitleaks /         pluvian                OPA / Sentinel           cloud config /
  secret-scan   →    (static code +    →   (plan + policy,     →   CSPM / Config
  (secrets)          config)               needs auth + state)     (running cloud)
                          ↑
-                         dotzen sits here — the fail-fast code layer:
+                         pluvian sits here — the fail-fast code layer:
                          no credentials, no state, no terraform plan
 ```
 
 - **Secrets** — gitleaks/CI secret-scanning (the plaintext key in a var).
-- **Code/config (dotzen)** — the `.tf` you're about to commit. No credentials,
+- **Code/config (pluvian)** — the `.tf` you're about to commit. No credentials,
   no state, no `terraform plan` — runs in pre-commit, CI, or an agent loop.
 - **Plan/policy** — OPA/Sentinel evaluate the resolved plan (needs auth/state;
   catches what static text can't).
 - **Deploy** — the running cloud (CSPM, Config).
 
-dotzen is the **fail-fast code layer** — the cheapest place to catch the literal
+pluvian is the **fail-fast code layer** — the cheapest place to catch the literal
 mistakes AI-generated Terraform makes by default.
 
 ---
@@ -107,16 +109,16 @@ mistakes AI-generated Terraform makes by default.
 
 Governance tools have a quirk: the person who _uses_ the tool day-to-day
 and the person who _champions_ it inside an org are rarely the same
-person. dotzen is built around both.
+person. pluvian is built around both.
 
 - **The developer generating Terraform via AI** won't add a blocker for
   its own sake — but will happily let their **coding agent** run
-  `npx @dotzen/dotzen@1 check` in its own loop, read the findings, and
+  `npx @erkos/pluvian@2 check` in its own loop, read the findings, and
   fix them before a PR ever opens. Fewer review cycles, not "I love
   policy."
 - **The security architect** authors and owns the spec. Rego locks them
   out of authoring — someone else writes the policy, they approve on
-  trust. `.zen/spec.ts` reads like prose they can review and edit
+  trust. `.pluvian/spec.ts` reads like prose they can review and edit
   directly in an MR diff.
 - **The platform engineer** wires it into CI and pre-commit. No servers,
   no database, no credentials — one pipeline step.
@@ -129,10 +131,10 @@ never blocked in the first place.
 
 ## The 30-second demo
 
-Point dotzen at any Terraform project that has a `.zen/spec.ts`:
+Point pluvian at any Terraform project that has a `.pluvian/spec.ts`:
 
 ```bash
-npx @dotzen/dotzen@1 check ./terraform/
+npx @erkos/pluvian@2 check ./terraform/
 ```
 
 ```
@@ -146,14 +148,14 @@ npx @dotzen/dotzen@1 check ./terraform/
 
 No install step, no Gatekeeper dialog on macOS, no SmartScreen on Windows, no
 cloud credentials. The `could not evaluate` count is the honest-gap signal —
-values dotzen can't resolve statically (a `var`-supplied CIDR, an unresolved
+values pluvian can't resolve statically (a `var`-supplied CIDR, an unresolved
 `for_each`) rather than a silent pass.
 
 ---
 
 ## How it works
 
-dotzen is a static-analysis pipeline. The parser is a pure-JS WASM dependency
+pluvian is a static-analysis pipeline. The parser is a pure-JS WASM dependency
 (`@cdktf/hcl2json`) — **no native binary, no `terraform plan`**, which is what
 keeps the local check fast and credential-free.
 
@@ -183,7 +185,7 @@ an error and not a silent pass.
 
 Per-resource rules ("is this RDS encrypted?") cover most CIS controls. A class of
 real controls needs **multi-hop traversal** — and no static Terraform tool does
-this as authorable rules. dotzen does:
+this as authorable rules. pluvian does:
 
 ```ts
 rule()
@@ -236,31 +238,31 @@ never a false pass. Three graph conditions ship: `denyIfReachable`,
 
 ## Quick start
 
-**1. Scaffold.** `init` writes a version-pinned `dotzen.json` + a `.zen/spec.ts`
+**1. Scaffold.** `init` writes a version-pinned `pluvian.json` + a `.pluvian/spec.ts`
 and auto-detects where your Terraform lives:
 
 ```bash
-npx @dotzen/dotzen@1 init                       # default: [...coreSecurity]
-npx @dotzen/dotzen@1 init --profile enterprise  # curated bundle (startup|enterprise|regulated)
-npx @dotzen/dotzen@1 init --presets coreSecurity,cisAws,pciDss  # à la carte (any of 8 packs)
+npx @erkos/pluvian@2 init                       # default: [...coreSecurity]
+npx @erkos/pluvian@2 init --profile enterprise  # curated bundle (startup|enterprise|regulated)
+npx @erkos/pluvian@2 init --presets coreSecurity,cisAws,pciDss  # à la carte (any of 8 packs)
 ```
 
 `--profile` picks a curated bundle; `--presets` adds framework packs
 (`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`, `pciDss`, `soc2`, `nist80053`,
 `dataProtection`). They compose: `--profile enterprise --presets pciDss` = the
 enterprise bundle + PCI. (Browse/copy templates in
-[`examples/`](https://github.com/ealmachado-eng/dotzen/tree/main/examples) too.)
+[`examples/`](https://github.com/erkos-hq/pluvian/tree/main/examples) too.)
 
-> **Version pinning:** the install (`@1`) floats within major 1; `dotzen.json`
+> **Version pinning:** the install (`@1`) floats within major 1; `pluvian.json`
 > is the **enforcement** pin — the engine does an exact match and refuses to run
 > on a mismatch, printing the corrective command. That's also what makes `@1`
-> safe in CI: a newer `1.x` than `dotzen.json` pins → loud refusal → intentional
+> safe in CI: a newer `1.x` than `pluvian.json` pins → loud refusal → intentional
 > bump, no silent drift. (`@latest` is never used — unbounded across majors.)
 
-**2. Edit** `.zen/spec.ts` — add rules / switch presets to fit your org:
+**2. Edit** `.pluvian/spec.ts` — add rules / switch presets to fit your org:
 
 ```ts
-import { coreSecurity, cisAws, rule, AwsResource, Effect } from '@dotzen/dotzen'
+import { coreSecurity, cisAws, rule, AwsResource, Effect } from '@erkos/pluvian'
 
 export const spec = [
   ...coreSecurity, // secure-by-default baseline
@@ -277,10 +279,10 @@ export const spec = [
 no `terraform plan`):
 
 ```bash
-npx @dotzen/dotzen@1 check
+npx @erkos/pluvian@2 check
 ```
 
-**4. Wire CI.** Add `npx @dotzen/dotzen@1 check` as a GitHub Actions /
+**4. Wire CI.** Add `npx @erkos/pluvian@2 check` as a GitHub Actions /
 GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
 
 ---
@@ -301,18 +303,18 @@ GitLab CI step, or upload SARIF via `github/codeql-action/upload-sarif@v3`.
 
 The engine is documented deeply in `docs/specs/`:
 
-- [`00-architecture-decision-record`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/00-architecture-decision-record.md) —
+- [`00-architecture-decision-record`](https://github.com/erkos-hq/pluvian/blob/main/docs/specs/00-architecture-decision-record.md) —
   why Node/TypeScript + `npx` won on adoption friction (decision locked).
-- [`01-product-overview`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/01-product-overview.md) — the problem,
+- [`01-product-overview`](https://github.com/erkos-hq/pluvian/blob/main/docs/specs/01-product-overview.md) — the problem,
   "Prose as Code," positioning vs OPA/Sentinel/tfsec.
-- [`02-spec-dsl`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/02-spec-dsl.md) — the `.zen/spec.ts` language spec.
-- [`03-distribution-and-cli`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/03-distribution-and-cli.md) — `npx`
+- [`02-spec-dsl`](https://github.com/erkos-hq/pluvian/blob/main/docs/specs/02-spec-dsl.md) — the `.pluvian/spec.ts` language spec.
+- [`03-distribution-and-cli`](https://github.com/erkos-hq/pluvian/blob/main/docs/specs/03-distribution-and-cli.md) — `npx`
   mechanics, version pinning, the WASM-parser choice.
-- [`10-graph-layer`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/specs/10-graph-layer.md) — the dependency-graph design.
-- [`ROADMAP`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/ROADMAP.md) — what's shipped and the remaining backlog.
+- [`10-graph-layer`](https://github.com/erkos-hq/pluvian/blob/main/docs/specs/10-graph-layer.md) — the dependency-graph design.
+- [`ROADMAP`](https://github.com/erkos-hq/pluvian/blob/main/docs/ROADMAP.md) — what's shipped and the remaining backlog.
 
 User docs (tutorial, how-tos, auto-generated rule catalog) live in
-[`docs/user/`](https://github.com/ealmachado-eng/dotzen/tree/main/docs/user).
+[`docs/user/`](https://github.com/erkos-hq/pluvian/tree/main/docs/user).
 
 ---
 
@@ -320,6 +322,6 @@ User docs (tutorial, how-tos, auto-generated rule catalog) live in
 
 Working, published, provenance-attested. The static-analysis engine is at
 diminishing returns on coverage/precision. The levers ahead are adoption
-(VS Code extension, broader dogfood data) — see [`ROADMAP`](https://github.com/ealmachado-eng/dotzen/blob/main/docs/ROADMAP.md).
+(VS Code extension, broader dogfood data) — see [`ROADMAP`](https://github.com/erkos-hq/pluvian/blob/main/docs/ROADMAP.md).
 
-MIT licensed. Issues and feedback: [github.com/ealmachado-eng/dotzen](https://github.com/ealmachado-eng/dotzen).
+MIT licensed. Issues and feedback: [github.com/erkos-hq/pluvian](https://github.com/erkos-hq/pluvian).

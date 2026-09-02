@@ -1,7 +1,0 @@
-{
-  "spec": ".zen/spec.ts",
-  "terraform": [
-    { "path": "./env/dev", "environment": "development" },
-    { "path": "./env/prd", "environment": "production" }
-  ]
-}

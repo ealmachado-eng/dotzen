@@ -1,5 +1,9 @@
 # Roadmap — resource/check backlog
 
+> *Historical note: the tool was renamed dotzen → **pluvian** (v2.0.0, 2026-09-01,
+> under the erkos umbrella — see `docs/REBRAND.md`). "dotzen" below refers to the
+> pre-rebrand tool; the log is kept as history.*
+
 ## Status at a glance
 
 **144 rules across 8 presets** (`coreSecurity`, `cisAws`, `cisAzure`, `cisGcp`,

@@ -271,7 +271,7 @@ describe('check (end-to-end)', () => {
     // env/prd calls one local module (followed → compliant DB) and one remote
     // module (git::… — cannot be fetched, not followed). doc 08's DoD says the
     // remote skip must surface, not silently pass: it lands in
-    // couldNotEvaluate under the stable ruleId `dotzen.module-following`, with
+    // couldNotEvaluate under the stable ruleId `pluvian.module-following`, with
     // the caller file+line and the source that was not followed.
     const r = await check(fixture('module-remote-skip'), '0.0.1')
     expect(r.ok).toBe(true)
@@ -282,7 +282,7 @@ describe('check (end-to-end)', () => {
       // The remote module skip is the single could-not-evaluate entry.
       expect(r.value.couldNotEvaluate).toHaveLength(1)
       const skip = r.value.couldNotEvaluate[0]
-      expect(skip?.ruleId).toBe('dotzen.module-following')
+      expect(skip?.ruleId).toBe('pluvian.module-following')
       expect(skip?.resource).toBe('module.remote')
       expect(skip?.file).toMatch(/env[/\\]prd[/\\]main\.tf$/)
       expect(skip?.reason).toMatch(/remote/)
@@ -532,7 +532,7 @@ describe('check (end-to-end)', () => {
     }
   })
 
-  it('suppresses findings on blocks with a dotzen:ignore directive (#20)', async () => {
+  it('suppresses findings on blocks with a pluvian:ignore directive (#20)', async () => {
     // "flagged" (no ignore) → violation. "ignored" (preceding-line ignore with
     // a reason) + "trailing" (same-line trailing ignore) → suppressed.
     const r = await check(fixture('ignore-directive'), '0.0.1')
@@ -777,7 +777,7 @@ describe('check (end-to-end)', () => {
     const doc = JSON.parse(
       renderSarif(r.value, {
         version: '0.0.1',
-        informationUri: 'https://github.com/ealmachado-eng/dotzen',
+        informationUri: 'https://github.com/erkos-hq/pluvian',
       }),
     ) as {
       version: string
@@ -797,7 +797,7 @@ describe('check (end-to-end)', () => {
       }>
     }
     expect(doc.version).toBe('2.1.0')
-    expect(doc.runs[0]!.tool.driver.name).toBe('@dotzen/dotzen')
+    expect(doc.runs[0]!.tool.driver.name).toBe('@erkos/pluvian')
     const ssh = doc.runs[0]!.results.find(
       (res) => res.properties.resource === 'aws_security_group.web',
     )

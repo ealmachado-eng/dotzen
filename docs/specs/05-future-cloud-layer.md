@@ -6,7 +6,7 @@ not as a v1 task list. Read `CLAUDE.md` §6 first: building any of this
 before v1 has real users is the specific mistake this document exists
 to prevent.
 
-**Trigger condition for revisiting this document:** dotzen has real
+**Trigger condition for revisiting this document:** pluvian has real
 users running it in CI/pre-commit, and they are explicitly asking for
 one of the capabilities below — not before.
 
@@ -32,8 +32,8 @@ every team requires either a monorepo (preferred, see
 `04-governance-model.md`) or manual copy-paste/submodule/npm-package
 distribution.
 
-**Design (if ever built):** Publish `.zen/spec.ts` as a versioned npm
-package (`@your-org/dotzen-spec`) that consuming repos take as a
+**Design (if ever built):** Publish `.pluvian/spec.ts` as a versioned npm
+package (`@your-org/pluvian-spec`) that consuming repos take as a
 `devDependency`. This is actually achievable **without any cloud
 infrastructure** — npm itself is the registry. A "Deno Deploy-hosted
 spec API" was considered during design specifically to avoid needing an
@@ -97,7 +97,7 @@ product would need to operate.
 ## Deferred capability 4: WASM-sandboxed community policy-pack
 ## marketplace
 
-**Problem it solves:** Once dotzen has a community, allowing anyone to
+**Problem it solves:** Once pluvian has a community, allowing anyone to
 publish and share reusable rule packs (e.g. a "PCI-DSS pack," an
 "LGPD pack") requires running **untrusted third-party code** safely —
 a materially different threat model from v1's spec, which is always
@@ -147,13 +147,13 @@ This tier would consume the violation-metadata API from capability 2
 (read-only) and never sits in the fast path any developer or CI
 pipeline waits on.
 
-## Explicitly not part of any future dotzen roadmap
+## Explicitly not part of any future pluvian roadmap
 
 The separate **AI agent authorization/policy engine** (its own runtime
 and stack, with a fluent-interface DSL for agent identity, delegation
 chains, tool-call scopes, and ephemeral permission grants) explored in
 parallel
 during this project's design phase is a **distinct product**, not a
-dotzen feature. If it is ever built, it gets its own repository and its
+pluvian feature. If it is ever built, it gets its own repository and its
 own `CLAUDE.md` — do not merge its scope into this one. See
 `CLAUDE.md` §6 for the explicit boundary statement.

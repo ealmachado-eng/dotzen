@@ -50,7 +50,7 @@ const engineVersion = (() => {
 })()
 
 const npmLatest =
-  sh('npm view @dotzen/dotzen version 2>/dev/null') ||
+  sh('npm view @erkos/pluvian version 2>/dev/null') ||
   '(unpublished or offline)'
 
 const lessonsEntries = (() => {
@@ -67,7 +67,7 @@ const handoffFresh = (() => {
   return head || 'uncommitted'
 })()
 
-console.log('─ dotzen session context ─')
+console.log('─ pluvian session context ─')
 console.log()
 console.log(`  branch         ${branch}`)
 console.log(`  local head     ${localHead}`)

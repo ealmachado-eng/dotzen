@@ -3,7 +3,7 @@ import { scanIgnores } from './parse'
 
 describe('scanIgnores — #20 inline directives', () => {
   it('targets the next block-start line after the comment', () => {
-    const text = `# dotzen:ignore
+    const text = `# pluvian:ignore
 resource "aws_s3_bucket" "x" {
   bucket = "x"
 }`
@@ -13,7 +13,7 @@ resource "aws_s3_bucket" "x" {
   })
 
   it('targets a same-line trailing comment (block-start == comment line)', () => {
-    const text = `resource "aws_s3_bucket" "x" { # dotzen:ignore
+    const text = `resource "aws_s3_bucket" "x" { # pluvian:ignore
   bucket = "x"
 }`
     expect(scanIgnores(text, 'main.tf')).toEqual([
@@ -22,7 +22,7 @@ resource "aws_s3_bucket" "x" {
   })
 
   it('captures the optional reason text', () => {
-    const text = `# dotzen:ignore: intentionally public for a static site
+    const text = `# pluvian:ignore: intentionally public for a static site
 resource "aws_s3_bucket" "pub" {}`
     expect(scanIgnores(text, 'main.tf')).toEqual([
       {
@@ -34,7 +34,7 @@ resource "aws_s3_bucket" "pub" {}`
   })
 
   it('supports // line comments', () => {
-    const text = `// dotzen:ignore
+    const text = `// pluvian:ignore
 output "pw" { value = "x" }`
     expect(scanIgnores(text, 'main.tf')).toEqual([
       { file: 'main.tf', line: 2, reason: undefined },
@@ -42,10 +42,10 @@ output "pw" { value = "x" }`
   })
 
   it('handles multiple directives in one file', () => {
-    const text = `# dotzen:ignore
+    const text = `# pluvian:ignore
 resource "aws_s3_bucket" "a" {}
 
-# dotzen:ignore: known gap
+# pluvian:ignore: known gap
 module "b" { source = "./m" }`
     const dirs = scanIgnores(text, 'main.tf')
     expect(dirs).toHaveLength(2)
@@ -55,36 +55,36 @@ module "b" { source = "./m" }`
   })
 
   it('skips a directive with no following block (no target)', () => {
-    const text = `# dotzen:ignore
+    const text = `# pluvian:ignore
 # just a comment, no block`
     expect(scanIgnores(text, 'main.tf')).toEqual([])
   })
 
   it('targets any top-level block type (data/output/variable/locals/terraform/provider)', () => {
-    const text = `# dotzen:ignore
+    const text = `# pluvian:ignore
 variable "pw" { default = "x" }
 
-# dotzen:ignore
+# pluvian:ignore
 locals { x = 1 }
 
-# dotzen:ignore
+# pluvian:ignore
 terraform { required_version = "1.0" }`
     const dirs = scanIgnores(text, 'main.tf')
     expect(dirs.map((d) => d.line)).toEqual([2, 5, 8])
   })
 
-  it('does not match non-dotzen comments', () => {
+  it('does not match non-pluvian comments', () => {
     const text = `# todo: fix later
 resource "aws_s3_bucket" "x" {}`
     expect(scanIgnores(text, 'main.tf')).toEqual([])
   })
 
   it('does NOT match the token inside a string value (false-positive guard)', () => {
-    // `description = "# dotzen:ignore"` is a string value, NOT a directive.
+    // `description = "# pluvian:ignore"` is a string value, NOT a directive.
     // Without the ^\s* anchor, the unanchored regex would match this and
     // suppress the NEXT resource — a dangerous false suppression.
     const text = `resource "aws_s3_bucket" "a" {
-  description = "# dotzen:ignore"
+  description = "# pluvian:ignore"
 }
 
 resource "aws_s3_bucket" "b" {
@@ -95,13 +95,13 @@ resource "aws_s3_bucket" "b" {
 
   it('does NOT match the token inside a quoted value with a reason', () => {
     const text = `resource "aws_s3_bucket" "a" {
-  value = "# dotzen:ignore: fake reason"
+  value = "# pluvian:ignore: fake reason"
 }`
     expect(scanIgnores(text, 'main.tf')).toEqual([])
   })
 
   it('captures a per-rule ID (stable author-chosen: no-public-ssh)', () => {
-    const text = `# dotzen:ignore no-public-ssh: bastion host — SSH is intentional
+    const text = `# pluvian:ignore no-public-ssh: bastion host — SSH is intentional
 resource "aws_security_group" "bastion" {}`
     const dirs = scanIgnores(text, 'main.tf')
     expect(dirs).toHaveLength(1)
@@ -110,7 +110,7 @@ resource "aws_security_group" "bastion" {}`
   })
 
   it('captures a per-rule ID (positional: rule-5)', () => {
-    const text = `# dotzen:ignore rule-5: known exception
+    const text = `# pluvian:ignore rule-5: known exception
 resource "aws_s3_bucket" "cdn" {}`
     const dirs = scanIgnores(text, 'main.tf')
     expect(dirs[0]?.ruleId).toBe('rule-5')
@@ -118,7 +118,7 @@ resource "aws_s3_bucket" "cdn" {}`
   })
 
   it('without a ruleId, ruleId is undefined (suppress all)', () => {
-    const text = `# dotzen:ignore: suppress everything on this block
+    const text = `# pluvian:ignore: suppress everything on this block
 resource "aws_s3_bucket" "x" {}`
     const dirs = scanIgnores(text, 'main.tf')
     expect(dirs[0]?.ruleId).toBeUndefined()
@@ -126,7 +126,7 @@ resource "aws_s3_bucket" "x" {}`
   })
 
   it('trailing comment with a per-rule ID', () => {
-    const text = `resource "aws_s3_bucket" "x" { # dotzen:ignore no-public-ssh
+    const text = `resource "aws_s3_bucket" "x" { # pluvian:ignore no-public-ssh
   bucket = "x"
 }`
     const dirs = scanIgnores(text, 'main.tf')

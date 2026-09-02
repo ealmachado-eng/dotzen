@@ -8,7 +8,7 @@ r/terraform skews practitioner/feature-curious. Both lead with the problem
 
 ## Show HN
 
-**Title:** Show HN: dotzen — readable governance rules for AI-generated Terraform (AWS/Azure/GCP)
+**Title:** Show HN: pluvian — readable governance rules for AI-generated Terraform (AWS/Azure/GCP)
 
 **Body:**
 
@@ -19,13 +19,13 @@ security group is `0.0.0.0/0` or the RDS instance landed in a public subnet.
 The old guardrail ("just use our approved modules") stops working the moment the
 model writes the HCL itself.
 
-I open-sourced dotzen to fix this — and the part I'm most excited about is that
+I open-sourced pluvian to fix this — and the part I'm most excited about is that
 it's cheap and self-contained enough to run **inside the agent's own loop**: the
-agent writes Terraform, runs `npx @dotzen/dotzen@1 check`, reads the findings,
+agent writes Terraform, runs `npx @erkos/pluvian@1 check`, reads the findings,
 and fixes them before it ever opens a PR. Fail at the cheapest gate, not at plan
 or in prod.
 
-    npx @dotzen/dotzen@1 check ./terraform/
+    npx @erkos/pluvian@1 check ./terraform/
 
 Three things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
 
@@ -49,7 +49,7 @@ Three things make it different from the OPA/Sentinel/Checkov/tfsec lineup:
 3. **It's the only one with topology-aware rules.** "No EFS mount target in a
    public subnet" isn't a per-resource check — it's a 5-hop walk
    (mount target → subnet → route_table_association → route_table → internet_gateway),
-   forward and reverse. dotzen's graph layer does this as an authorable rule:
+   forward and reverse. pluvian's graph layer does this as an authorable rule:
 
        rule()
          .resource(AwsResource.EfsMountTarget)
@@ -68,7 +68,7 @@ PCI/SOC2/NIST/data-protection), ~3,200 resource types recognized, published to
 npm with SLSA provenance. Copy-paste spec templates for startup / enterprise /
 regulated orgs are in the repo's `examples/`.
 
-Repo + docs: https://github.com/ealmachado-eng/dotzen
+Repo + docs: https://github.com/erkos-hq/pluvian
 
 I'd love feedback on three things: (a) does the "rules readable by non-engineers"
 framing resonate, or is it solving a problem you don't have? (b) what's the first
@@ -79,7 +79,7 @@ or noisy?
 
 ## r/terraform
 
-**Title:** dotzen — a zero-install policy check for Terraform, with rules a security architect can actually read
+**Title:** pluvian — a zero-install policy check for Terraform, with rules a security architect can actually read
 
 **Body:**
 
@@ -89,21 +89,21 @@ new security group is open to `0.0.0.0/0` or the RDS instance landed in a public
 subnet. The "just use our approved modules" guardrail doesn't hold when the model
 writes the HCL directly.
 
-I open-sourced a static governance tool for this — dotzen. Run it with no install:
+I open-sourced a static governance tool for this — pluvian. Run it with no install:
 
-    npx @dotzen/dotzen@1 check ./terraform/
+    npx @erkos/pluvian@1 check ./terraform/
 
 What it does that's a bit different:
 
-- **Readable rules.** The policy file (`.zen/spec.ts`) is TypeScript constrained
+- **Readable rules.** The policy file (`.pluvian/spec.ts`) is TypeScript constrained
   to read like English, so security/compliance folks can review it in a PR without
   learning Rego:
-  https://github.com/ealmachado-eng/dotzen#why-dotzen
+  https://github.com/erkos-hq/pluvian#why-pluvian
 - **No credentials, no `terraform plan`.** It's pure static HCL analysis (WASM
   parser), so it runs in pre-commit and CI without cloud access.
 - **Topology-aware rules.** Things like "no resource in a public subnet" or "no SG
   shared between a public LB and a private DB" need multi-hop graph traversal,
-  not per-resource checks. dotzen has a dependency-graph layer for these.
+  not per-resource checks. pluvian has a dependency-graph layer for these.
 - **Honest gaps.** When it can't resolve a value statically, it says
   `could not evaluate` instead of silently passing.
 - **Ships baselines.** 144 rules / 8 presets — `coreSecurity` + CIS AWS/Azure/GCP
@@ -117,7 +117,7 @@ It's been dogfooded against real module repos (terraform-aws-modules,
 terraform-google-modules, Azure/, cloudposse) — chasing 0 false positives, which
 matters more to me than catch-rate for a tool that fails CI.
 
-Repo: https://github.com/ealmachado-eng/dotzen
-Docs: https://github.com/ealmachado-eng/dotzen#documentation
+Repo: https://github.com/erkos-hq/pluvian
+Docs: https://github.com/erkos-hq/pluvian#documentation
 
 Curious what's missing for your stack — what rule would you want first?

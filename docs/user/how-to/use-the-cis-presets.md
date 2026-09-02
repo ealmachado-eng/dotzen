@@ -7,7 +7,7 @@
 Every preset is a plain `Rule[]`. You **spread** the ones you want into your `spec` and add your own rules on top. Nothing is forced on you; nothing is hidden.
 
 ```ts
-import { coreSecurity, cisAws, pciDss } from '@dotzen/dotzen'
+import { coreSecurity, cisAws, pciDss } from '@erkos/pluvian'
 
 export const spec = [
   ...coreSecurity,   // the shared 80% baseline (always start here)
@@ -38,7 +38,7 @@ The framework packs (`pciDss`, `soc2`, `nist80053`, `dataProtection`) **compose 
 A team on AWS handling cardholder data, with EU residency obligations:
 
 ```ts
-import { coreSecurity, cisAws, pciDss } from "@dotzen/dotzen";
+import { coreSecurity, cisAws, pciDss } from "@erkos/pluvian";
 
 enum OrgTag {
   Owner = "owner",
@@ -80,10 +80,10 @@ Two options:
 1. **Override the effect** in your own spec by adding a rule with the same target + a different `.onViolation(Effect.Warn)` — but preset rules don't auto-dedupe, so this is clumsy.
 2. **Don't spread that preset.** Fork the relevant lines into your own spec and edit. The presets are plain TS — copy what you want, drop what you don't, and you own the policy.
 
-dotzen deliberately does not provide a "disable rule X from preset Y" knob — the clean, reviewable path is to compose explicitly from the source.
+pluvian deliberately does not provide a "disable rule X from preset Y" knob — the clean, reviewable path is to compose explicitly from the source.
 
 ## See also
 
 - [Rule catalog](../reference/rules/all-rules.md) — every shipped rule, what it checks.
 - [Add a custom rule](./add-a-custom-rule.md) — your rules on top of the presets.
-- `packages/cli/examples/ai-generated/.zen/spec.ts` — the canonical comprehensive spec reference (~100+ rules composed).
+- `packages/cli/examples/ai-generated/.pluvian/spec.ts` — the canonical comprehensive spec reference (~100+ rules composed).

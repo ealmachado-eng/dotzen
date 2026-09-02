@@ -31,7 +31,7 @@ resolved `terraform plan` (credentials, state access, network
 connectivity), catches the large majority of real violations in
 AI-generated code. The same property of the code that creates the risk
 (directness, literalness) is what makes it detectable. This is why
-dotzen's local check does not require Terraform credentials or state —
+pluvian's local check does not require Terraform credentials or state —
 see `/docs/specs/03-distribution-and-cli.md` §"Static analysis vs
 `terraform plan`."
 
@@ -68,8 +68,8 @@ authoring and review loop entirely — policies get written by whoever on
 the platform team knows Rego, and reviewed by trust rather than
 comprehension.
 
-dotzen's core bet is that **governance rules should be legible to the
-person accountable for them.** The `.zen/spec.ts` DSL is TypeScript
+pluvian's core bet is that **governance rules should be legible to the
+person accountable for them.** The `.pluvian/spec.ts` DSL is TypeScript
 under the hood but is deliberately disciplined (see
 `/docs/specs/02-spec-dsl.md`) to read like structured prose:
 
@@ -87,7 +87,7 @@ unreviewable Rego.
 
 ## Positioning against existing tools
 
-| | OPA / Rego | HashiCorp Sentinel | tfsec / Checkov | **dotzen** |
+| | OPA / Rego | HashiCorp Sentinel | tfsec / Checkov | **pluvian** |
 |---|---|---|---|---|
 | Authoring audience | Platform/security engineers who know Rego | Same, Rego-adjacent | Nobody — rules are hardcoded/YAML | Security architects directly, via readable DSL |
 | Local pre-commit check | Possible but high-friction (multi-step CLI, JSON plan wrangling) | Not available outside Terraform Cloud/Enterprise | Yes | Yes, first-class, zero-install via `npx` |
@@ -96,7 +96,7 @@ unreviewable Rego.
 | Vocabulary customizable to org | Yes (Rego) | Yes (Sentinel) | Limited (mostly generic rules) | Yes — org-specific enums generated from schema |
 | Install friction | Binary install | Enterprise product | Binary install | **Zero** — `npx` |
 
-dotzen's differentiated claim is not "better rule engine" — it is
+pluvian's differentiated claim is not "better rule engine" — it is
 **"the governance layer designed for the specific failure mode of
 AI-generated infrastructure, with an authoring experience non-engineers
 can actually review, and zero adoption friction."**
@@ -113,9 +113,9 @@ that meet in the middle.
 The developer generating Terraform via AI is the *user*. They will not adopt a
 governance check for its own sake — but they *will* adopt a tool that their
 **AI coding agent runs in its own loop**: the agent writes Terraform, runs
-`npx @dotzen/dotzen@1 check`, reads the findings, and fixes them before the
+`npx @erkos/pluvian@1 check`, reads the findings, and fixes them before the
 developer ever opens a PR. The dev's win is fewer review cycles and less
-rework, not "I love policy." This is why dotzen must be zero-install (`npx`)
+rework, not "I love policy." This is why pluvian must be zero-install (`npx`)
 and credential-free — the agent loop only works if the check is instant and
 self-contained. This bottom-up wedge is how adoption starts before any
 organizational mandate (the eslint/Prettier playbook), and the agent loop is
@@ -124,21 +124,21 @@ will voluntarily add a blocker" is not a believable thesis.
 
 ### Top-down — security architect + platform engineer (the org-wide driver)
 
-The *advocates/buyers* who actually put dotzen into CI:
+The *advocates/buyers* who actually put pluvian into CI:
 
 - **The security architect** authors and approves the spec. This is often the
-  person who *brings* dotzen in — OPA/Rego lock them out of authoring (someone
+  person who *brings* pluvian in — OPA/Rego lock them out of authoring (someone
   who knows Rego writes the policy; the architect reviews it on trust), and
-  dotzen's readable DSL lets them read `.zen/spec.ts` directly in a
+  pluvian's readable DSL lets them read `.pluvian/spec.ts` directly in a
   GitLab/GitHub MR diff and own the rules themselves. They are the internal
   champion.
-- **The platform engineer** puts dotzen into the CI pipeline and pre-commit
+- **The platform engineer** puts pluvian into the CI pipeline and pre-commit
   hooks. Needs it to be a single, well-documented pipeline step, not an
   infrastructure project of its own (hence: no servers, no database, no cloud
   dependency for v1 — see `/docs/specs/05-future-cloud-layer.md`).
 
 In most orgs this ramp is the real adoption driver: the architect champions,
-the platform team mandates, and the developer (often already using dotzen via
+the platform team mandates, and the developer (often already using pluvian via
 the agent loop) complies. The two ramps reinforce each other rather than one
 strictly preceding the other.
 
@@ -157,11 +157,11 @@ independent layers, each covering what the others might miss:
 
 1. **Generation-time (optional, future):** an authoring skill injects
    the organization's spec into the LLM's context so generated code is
-   compliant from the first draft. Not required for dotzen to function.
+   compliant from the first draft. Not required for pluvian to function.
 2. **Local (pre-commit hook, via `npx`):** static HCL analysis, instant
    feedback, before a commit is even made. This is the fail-fast layer.
 3. **Pipeline (CI gate, via `npx`):** the same engine and same
-   `dotzen.json`-pinned version, run again before `terraform apply`.
+   `pluvian.json`-pinned version, run again before `terraform apply`.
    This is the layer that cannot be bypassed by a developer skipping
    their local hook — it is the non-negotiable institutional gate.
 
@@ -169,12 +169,12 @@ No single layer needs to be perfect because the layers overlap. See
 `/docs/specs/04-governance-model.md` for the full model including
 production-approval gates via CI manual jobs.
 
-## What dotzen explicitly is not (v1)
+## What pluvian explicitly is not (v1)
 
 - Not a `terraform plan` replacement or a cost-estimation tool.
 - Not a secrets scanner (though a rule *could* be written to flag
   hardcoded values that look like secrets — this is a rule authors can
-  write, not a built-in dotzen feature).
+  write, not a built-in pluvian feature).
 - Not a general-purpose OPA/Rego alternative for non-Terraform domains
   (Kubernetes admission control, API gateways, etc.) — though the
   underlying "spec-driven development" pattern generalizes, and other
@@ -182,4 +182,4 @@ production-approval gates via CI manual jobs.
   sensitive data, CI/CD pipeline gates, feature flags, DB migrations —
   see `/docs/specs/00-architecture-decision-record.md` context and the
   original design conversation for the full list). None of these are
-  in scope for the dotzen v1 repository.
+  in scope for the pluvian v1 repository.

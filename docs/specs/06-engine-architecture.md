@@ -1,7 +1,7 @@
 # 06 — Engine Architecture (internal)
 
 Status: **Decided.** This document defines the *internal* structure of
-the dotzen engine — the pipeline, its error-handling model, and the
+the pluvian engine — the pipeline, its error-handling model, and the
 module boundaries. It is distinct from the DSL surface (`02-spec-dsl.md`,
 what spec authors write) and the distribution mechanics
 (`03-distribution-and-cli.md`, how the tool ships). Read those first for
@@ -13,20 +13,20 @@ independently testable and the HCL parser is swappable.
 
 ## The pipeline
 
-A `dotzen check` run is a linear sequence of fallible stages:
+A `pluvian check` run is a linear sequence of fallible stages:
 
 ```
-readDotzenJson ─► enforceVersion ─► loadSpec ─┐
+readEngineConfig ─► enforceVersion ─► loadSpec ─┐
                                               ├─► evaluate ─► report
                           parseTf ─► normalize┘
 ```
 
-- **readDotzenJson / enforceVersion** — read the pinned config, refuse
+- **readEngineConfig / enforceVersion** — read the pinned config, refuse
   to run on a version mismatch (see `03-distribution-and-cli.md` and the
   engine-dev skill; this is always the first thing that happens).
-- **loadSpec** — load `.zen/spec.ts`, produce validated `RuleBuilder[]`.
+- **loadSpec** — load `.pluvian/spec.ts`, produce validated `RuleBuilder[]`.
 - **parseTf** — read `.tf` files through the HCL parser adapter.
-- **normalize** — convert the parser's raw output into dotzen's own
+- **normalize** — convert the parser's raw output into pluvian's own
   resource model (see "The normalized resource model" below).
 - **evaluate** — run every rule against the normalized model, producing
   a `CheckReport`.
@@ -34,7 +34,7 @@ readDotzenJson ─► enforceVersion ─► loadSpec ─┐
 
 ## Railway Oriented Programming — the model and its hard rules
 
-Each pipeline stage is a total function `(input) => Result<Output, DotzenError>`,
+Each pipeline stage is a total function `(input) => Result<Output, EngineError>`,
 composed so that an operational failure short-circuits the remaining
 stages. This keeps error handling explicit (no thrown exceptions
 crossing module boundaries) and makes every stage unit-testable in
@@ -45,24 +45,24 @@ make it correct for *this* domain rather than cargo-culted.
 
 This is the single most important distinction in the whole engine.
 
-- The **failure track (`Err<DotzenError>`)** is for *operational*
+- The **failure track (`Err<EngineError>`)** is for *operational*
   failures only: cannot read the target directory, HCL parser blew up,
-  `spec.ts` is invalid, `dotzen.json` version mismatch, unreadable file.
-  These mean *dotzen could not do its job*.
+  `spec.ts` is invalid, `pluvian.json` version mismatch, unreadable file.
+  These mean *pluvian could not do its job*.
 - The **success track (`Ok`)** carries a `CheckReport`. A rule violation
   is a **successful** outcome — the check ran correctly and found a
   policy breach. Violations are data *inside* the `Ok` payload, not
   errors.
 
-Conflating the two corrupts exit-code semantics and reporting: "dotzen
-crashed" and "dotzen worked and your Terraform is non-compliant" are
+Conflating the two corrupts exit-code semantics and reporting: "pluvian
+crashed" and "pluvian worked and your Terraform is non-compliant" are
 different events that must be distinguishable by callers (CI especially).
 This formalizes the existing rule in the engine-dev skill: *"a parse
 error is not a violation."*
 
 ### Rule 2 — there are THREE outcomes, not two; model the third in the payload
 
-A binary `Result<T, E>` cannot express dotzen's real outcome space. The
+A binary `Result<T, E>` cannot express pluvian's real outcome space. The
 `CheckReport` therefore carries three categories explicitly:
 
 ```
@@ -107,14 +107,14 @@ builds the success payload at the *end* of the railway — not a stage that
 returns `Result`. Wrapping total functions in `Result` "for consistency"
 is the most common ROP over-application; avoid it.
 
-### `DotzenError` is a discriminated union
+### `EngineError` is a discriminated union
 
 The failure track is a single discriminated union so the `report/` layer
 renders each variant exhaustively (the same Layer-4 exhaustiveness
 benefit sought for resource types — see `02-spec-dsl.md`):
 
 ```
-type DotzenError =
+type EngineError =
   | { kind: 'VersionMismatch'; required: string; running: string }
   | { kind: 'ConfigNotFound';  path: string }
   | { kind: 'SpecInvalid';     errors: RuleValidationError[] }
@@ -143,7 +143,7 @@ a concrete justification, not a default.
 ## The normalized resource model — decouple the engine from the parser
 
 The `engine/` (evaluation) must **never** see the HCL parser's raw output
-type. The `hcl/` layer converts whatever the parser emits into dotzen's
+type. The `hcl/` layer converts whatever the parser emits into pluvian's
 own stable model:
 
 ```
@@ -182,7 +182,7 @@ Three reasons this boundary is mandatory, not optional:
 
 ```
 packages/cli/
-├── bin/dotzen.js          ← thin Node entry; execs the compiled CLI
+├── bin/pluvian.js          ← thin Node entry; execs the compiled CLI
 └── src/
     ├── vocabulary/        ← const enums (AwsResource, Port, Effect, …)
     │                        LEAF module: depends on nothing; imported by
@@ -196,9 +196,9 @@ packages/cli/
     │                        kind (deny-ingress, must-have-attr, must-have-
     │                        tags, deny-acl…), so adding a condition adds
     │                        one evaluator rather than editing a monolith
-    ├── report/            ← CheckReport / DotzenError → terminal | JSON
-    ├── version/           ← dotzen.json read + enforcement
-    └── result/            ← Result<T,E> + DotzenError (if hand-rolled)
+    ├── report/            ← CheckReport / EngineError → terminal | JSON
+    ├── version/           ← pluvian.json read + enforcement
+    └── result/            ← Result<T,E> + EngineError (if hand-rolled)
 ```
 
 Dependency direction: `vocabulary/` is the leaf. `spec/`, `hcl/`, and
@@ -208,7 +208,7 @@ types. Nothing depends on `report/`. The CLI entry composes the stages.
 
 ## Spec loading — decided: pure-JS runtime loader (`jiti`)
 
-`.zen/spec.ts` is TypeScript authored by the user, so the engine must
+`.pluvian/spec.ts` is TypeScript authored by the user, so the engine must
 transpile-and-execute it at runtime to obtain the exported
 `RuleBuilder[]`. **Decision: load it through a pure-JavaScript runtime
 TypeScript loader (`jiti`). No build step is imposed on spec authors.**
@@ -219,8 +219,8 @@ alternatives:
 
 - **Zero authoring friction (product).** The spec author is a security
   architect / platform engineer; "Prose as Code" means they write
-  `.zen/spec.ts` and it just works. Requiring a `tsc`/build step before
-  `dotzen check` reintroduces the friction the product exists to remove,
+  `.pluvian/spec.ts` and it just works. Requiring a `tsc`/build step before
+  `pluvian check` reintroduces the friction the product exists to remove,
   and adds a CI stage where `spec.ts`/`spec.js` can drift. So the engine
   transpiles the `.ts` itself.
 - **Stays pure-JS (architecture) — the deciding factor for *which*
@@ -243,7 +243,7 @@ Caveats to carry into implementation:
 - **Runtime loaders strip types; they do not type-check.** The
   type-safety value (enum autocomplete, typo-as-compile-error) comes from
   the author's editor (TS language server) plus an optional
-  `tsc --noEmit`, **not** from `dotzen check` itself. Document a
+  `tsc --noEmit`, **not** from `pluvian check` itself. Document a
   `tsc --noEmit` on the spec in CI as belt-and-suspenders for a
   governance tool. **Layer 6 `validate()` is the runtime backstop** — a
   bad enum member resolves to `undefined` at runtime rather than a
@@ -290,7 +290,7 @@ export const andThen: <T, U, E>(r: Result<T, E>, f: (t: T) => Result<U, E>) => R
 export const combineWithAllErrors: <T, E>(rs: Result<T, E>[]) => Result<T[], E[]>
 
 // The failure track. Operational failures ONLY (Rule 1). Never violations.
-export type DotzenError =
+export type EngineError =
   | { kind: 'ConfigNotFound';  path: string }
   | { kind: 'VersionMismatch'; required: string; running: string }
   | { kind: 'SpecLoadFailed';  path: string; detail: string }
@@ -384,8 +384,8 @@ export class RuleBuilder {
 export const rule: () => RuleBuilder
 
 // Two stages, split so the OPEN loader decision is isolated:
-export const importSpecModule: (path: string)             => Result<RuleBuilder[], DotzenError>  // loader TBD
-export const loadSpec:         (builders: RuleBuilder[])  => Result<Rule[], DotzenError>
+export const importSpecModule: (path: string)             => Result<RuleBuilder[], EngineError>  // loader TBD
+export const loadSpec:         (builders: RuleBuilder[])  => Result<Rule[], EngineError>
 //   loadSpec folds builder.validate() via combineWithAllErrors →
 //   Err({ kind: 'SpecInvalid', errors }) reporting EVERY bad rule at once (Rule 3)
 ```
@@ -426,8 +426,8 @@ export interface NormalizedResource {
 
 export interface RawHclFile { readonly path: string; readonly ast: unknown }  // parser-specific, never leaves hcl/
 
-export const parseTf:   (dir: string)          => Result<RawHclFile[], DotzenError>
-export const normalize: (files: RawHclFile[])  => Result<NormalizedResource[], DotzenError>
+export const parseTf:   (dir: string)          => Result<RawHclFile[], EngineError>
+export const normalize: (files: RawHclFile[])  => Result<NormalizedResource[], EngineError>
 ```
 
 ### `engine/` — evaluation (total, three-way, folded)
@@ -481,14 +481,14 @@ export const evaluate: (rules: Rule[], resources: NormalizedResource[]) => Check
 ### `version/` and `report/`
 
 ```typescript
-export interface DotzenConfig { readonly version?: string; readonly spec: string; readonly terraform: string }
+export interface EngineConfig { readonly version?: string; readonly spec: string; readonly terraform: string }
 
-export const readDotzenJson: (cwd: string)                           => Result<DotzenConfig, DotzenError>
-export const enforceVersion: (config: DotzenConfig, running: string) => Result<DotzenConfig, DotzenError>
+export const readEngineConfig: (cwd: string)                           => Result<EngineConfig, EngineError>
+export const enforceVersion: (config: EngineConfig, running: string) => Result<EngineConfig, EngineError>
 
 export const renderTerminal: (report: CheckReport) => string
 export const renderJson:     (report: CheckReport) => string
-export const renderError:    (error: DotzenError)  => string   // exhaustive switch on DotzenError.kind
+export const renderError:    (error: EngineError)  => string   // exhaustive switch on EngineError.kind
 
 // exit-code semantics keep the three states distinguishable for CI:
 //   Ok + no violations → 0 ;  Ok + violations → 1 ;  Err (operational) → 2
@@ -498,8 +498,8 @@ export const reportExitCode: (report: CheckReport) => 0 | 1
 ### The composed pipeline — where rails end and the fold/total step begins
 
 ```typescript
-export function check(cwd: string): Result<CheckReport, DotzenError> {
-  return andThen(readDotzenJson(cwd), (cfg) =>
+export function check(cwd: string): Result<CheckReport, EngineError> {
+  return andThen(readEngineConfig(cwd), (cfg) =>
     andThen(enforceVersion(cfg, ENGINE_VERSION), () =>
       andThen(importSpecModule(cfg.spec), (builders) =>
         andThen(loadSpec(builders), (rules) =>          // fold happens INSIDE loadSpec

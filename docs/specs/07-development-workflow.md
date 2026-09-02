@@ -1,6 +1,6 @@
 # 07 — Development Workflow (TDD + quality/security gate)
 
-Status: **Decided.** This document defines *how dotzen itself is built*:
+Status: **Decided.** This document defines *how pluvian itself is built*:
 test-driven development as the mandated authoring loop, and a standing
 quality/security gate that runs on every change — locally via Claude
 subagents for fast feedback, and in GitHub Actions as the
@@ -9,7 +9,7 @@ build) with *how to build it safely*.
 
 ## Test-Driven Development is mandatory
 
-dotzen is developed **test-first**, red → green → refactor, without
+pluvian is developed **test-first**, red → green → refactor, without
 exception:
 
 1. **Red** — write a failing test that expresses the next small
@@ -20,7 +20,7 @@ exception:
 
 No production code is written before a failing test exists for it. "A
 feature" is small: each pipeline stage, each condition evaluator, each
-`Result` combinator, each `DotzenError` variant's handling gets its test
+`Result` combinator, each `EngineError` variant's handling gets its test
 first.
 
 ### Why TDD fits this codebase specifically
@@ -28,7 +28,7 @@ first.
 The architecture in `06-engine-architecture.md` was chosen partly because
 it is trivially testable, and TDD is how that payoff is realized:
 
-- Every pipeline stage is a total function `(input) => Result<Output, DotzenError>`
+- Every pipeline stage is a total function `(input) => Result<Output, EngineError>`
   — pure, so a unit test is input → assert on the returned `Result`, no
   mocking.
 - `evaluate` is total and consumes the **normalized model**, so it is
@@ -42,7 +42,7 @@ it is trivially testable, and TDD is how that payoff is realized:
 - **Unit** (Vitest) — `result/`, `spec/` (`RuleBuilder.validate`
   accumulation), `engine/` condition evaluators, `hcl/normalize`,
   `version/` enforcement, `report/` rendering (including exhaustive
-  `DotzenError` rendering).
+  `EngineError` rendering).
 - **Integration** (Vitest, end-to-end) — build the CLI and run `check`
   against fixture terraform, asserting on violations, exit code
   (`0`/`1`/`2` per `06-engine-architecture.md`), and `--format json`
@@ -176,7 +176,7 @@ otherwise-valid lock. `npm install` honors the committed lockfile (still the
 source of truth, still committed) but tolerates that per-platform optional
 resolution; the prod deps (`@cdktf/hcl2json`, `jiti`) are unaffected either
 way. **Actions should be digest-pinned** — a governance tool should not float
-its own CI on mutable tags, mirroring the `dotzen.json` no-`@latest` principle.
+its own CI on mutable tags, mirroring the `pluvian.json` no-`@latest` principle.
 `renovate.json` is configured (`:pinDigests`, npm + `github-actions` managers,
 grouped, weekly) to pin and bump both the Action SHAs and the CLI dependencies.
 
@@ -188,7 +188,7 @@ grouped, weekly) to pin and bump both the Action SHAs and the CLI dependencies.
 > becomes worth it.
 >
 > **osv-scanner is intentionally not wired into CI.** Its differentiated
-> value is polyglot repos; dotzen is npm-only, so it would duplicate
+> value is polyglot repos; pluvian is npm-only, so it would duplicate
 > `npm audit` (overlapping advisory data) plus Renovate's vulnerability
 > alerts. Re-add it if/when the repo becomes polyglot.
 

@@ -1,15 +1,15 @@
-# dotzen — user documentation
+# pluvian — user documentation
 
 **Governance-as-code for Terraform.** Statically analyze your `.tf` (HCL) against a readable TypeScript rule spec — across AWS, Azure, and GCP — before `terraform plan`. Zero-install (`npx`), static-only (no credentials, no plan), honest (no guessing — reports "could not evaluate" rather than false positives).
 
 ```bash
-npx @dotzen/dotzen check ./terraform/
+npx @erkos/pluvian check ./terraform/
 ```
 
 ## Start here
 
-- **[What dotzen does — and doesn't](./what-it-does.md)** — the 5-minute orientation. Read this first.
-- **[Tutorial — dotzen in 5 minutes](./tutorial.md)** — scaffold a project, add a custom rule, see a violation, fix it, wire CI.
+- **[What pluvian does — and doesn't](./what-it-does.md)** — the 5-minute orientation. Read this first.
+- **[Tutorial — pluvian in 5 minutes](./tutorial.md)** — scaffold a project, add a custom rule, see a violation, fix it, wire CI.
 
 ## How-tos
 
@@ -26,7 +26,7 @@ Use-case recipes for spec authors and security reviewers:
 
 - **[Rule catalog](./reference/rules/all-rules.md)** — every shipped rule (140 across 8 presets), what it checks, its rationale, and framework mapping. Auto-generated from source; never drifts.
 - [Resource → rules index](./reference/rules/resource-index.md) — the per-resource view: which rules apply to each governed type.
-- [DSL reference](./reference/dsl.md) — the `.zen/spec.ts` language: every condition, scope knob, and effect.
+- [DSL reference](./reference/dsl.md) — the `.pluvian/spec.ts` language: every condition, scope knob, and effect.
 - Per-preset pages: [`core-security`](./reference/rules/core-security.md) · [`cis-aws`](./reference/rules/cis-aws.md) · [`cis-azure`](./reference/rules/cis-azure.md) · [`cis-gcp`](./reference/rules/cis-gcp.md) · [`pci-dss`](./reference/rules/pci-dss.md) · [`soc2`](./reference/rules/soc2.md) · [`nist-800-53`](./reference/rules/nist-800-53.md) · [`data-protection`](./reference/rules/data-protection.md)
 
 ## Also in this repo

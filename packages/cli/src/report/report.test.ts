@@ -38,7 +38,7 @@ describe('report', () => {
     ).toBe(1)
   })
 
-  it('renderError produces a message for every DotzenError kind', () => {
+  it('renderError produces a message for every EngineError kind', () => {
     expect(renderError({ kind: 'ConfigNotFound', path: 'x' })).toMatch(
       /config/i,
     )

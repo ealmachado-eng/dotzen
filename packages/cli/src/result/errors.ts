@@ -5,7 +5,7 @@ export interface RuleValidationError {
   readonly problem: string
 }
 
-export type DotzenError =
+export type EngineError =
   | { readonly kind: 'ConfigNotFound'; readonly path: string }
   | {
       readonly kind: 'VersionMismatch'
