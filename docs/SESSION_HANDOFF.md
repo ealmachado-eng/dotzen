@@ -187,3 +187,22 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 5. Phase E: tag `v2.0.0` → publish w/ provenance → verify → `npm deprecate @dotzen/dotzen@*` → re-record demo GIF (demo.tape updated; the gif still shows old output) → launch post rewrite/post.
 - Note: VS Code extension P1 (spec 11) unblocks after merge.
 
+## Session N+7 — 2026-09-02 — v2.0.0 SHIPPED: dotzen → @erkos/pluvian
+
+**Shipped:**
+- PR #12 squash-merged (`834d8fe`); tag `v2.0.0`; **`@erkos/pluvian@2.0.0` published with SLSA provenance** (trusted publishing, fully tokenless); `@dotzen/dotzen@*` deprecated with migration pointer. Repo live at `github.com/erkos-hq/pluvian`.
+- En route fixes (all in the squashed PR): fast-uri HIGH advisories (`npm audit fix`, lockfile-only); **gitleaks job → direct checksum-pinned v8.30.1 binary** (gitleaks-action demands a per-org license after the transfer; free key from gitleaks.io must match org name exactly — see LESSONS 2026-09-02).
+- **Demo GIF re-recorded** against the published package (pluvian branding, clean output; tape: `--yes` on the visible command, portable `cd demo`, 30s pre-warm) — on branch `docs/demo-gif` (org ruleset now REQUIRES PRs; no more owner bypass).
+
+**Org-transfer facts (new):**
+- Org rulesets decline direct main pushes (no inherited owner bypass) — everything is PRs now unless a bypass list is added in org Settings → Rules.
+- Renovate did NOT follow the transfer — install the app on `erkos-hq` or dep updates silently stop.
+- PAT needs `workflow` scope for workflow-file pushes.
+
+**Remaining (next session):**
+1. Merge `docs/demo-gif` (PR via compare link) — README embed then shows pluvian.
+2. Launch-post rewrite for pluvian (`docs/launch/launch-post.md` — name-swept only) + actually post (Show HN / r/terraform).
+3. Renovate install on `erkos-hq`; optionally re-request GITLEAKS_LICENSE for org `erkos-hq` and restore the action.
+4. VS Code extension P1 (spec 11; prereq: export `check` from the package index — its own version-bearing release).
+5. Optional: register erkos.dev.
+

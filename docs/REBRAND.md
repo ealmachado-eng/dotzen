@@ -1,6 +1,6 @@
 # Rebrand — dotzen → erkos/pluvian (pre-launch)
 
-> **Status: NAME LOCKED — pluvian (2026-09-01). Umbrella: erkos.** Phase C (org/repo/TP registration — user actions) and Phase D (mechanical rebrand — playbook below) are active. This file reconstructs the rebrand discussion (the original was lost with a session; this capture prevents recurrence). Read `docs/SESSION_HANDOFF.md` Sessions N+2/N+5/N+6 for the arcs.
+> **Status: EXECUTED 2026-09-02 — `@erkos/pluvian@2.0.0` live on npm (provenance, trusted publishing); `@dotzen/dotzen` deprecated; repo at `erkos-hq/pluvian`.** Remaining post-launch: launch-post rewrite+post, Renovate install on the org, VS Code P1 (spec 11), optional erkos.dev + correctly-issued GITLEAKS_LICENSE. This file is now the historical record of the rebrand decision process.
 
 ## Trigger
 
