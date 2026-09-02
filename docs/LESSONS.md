@@ -113,6 +113,21 @@
 **AVOID** (don't repeat):
 - Pushing straight to main as owner bypasses the required-checks ruleset ("Bypassed rule violations: 8 of 8"). CI ran afterward, but the protection record shows bypasses. For version-bearing changes prefer a PR; accept the bypass consciously only for docs/dev-dep-only commits.
 
+## 2026-09-02 — release — v2.0.0 rebrand ship (org-transfer landmines + demo GIF)
+
+**KEEP** (do again):
+- Squashing the rebrand branch to ONE commit before the PR made the red CI diagnosable — failures had to be lockfile/action, not history or content.
+- Reproduce CI scanner failures locally before touching anything (`brew install gitleaks` + repo config, scan diff AND full history) — proved the code clean in minutes and redirected diagnosis to the workflow gate.
+- `script -q /tmp/out.txt zsh -c '<cmd>'` pseudo-TTY runs to ground-truth what a command ACTUALLY prints on a TTY — settled the npx-prompt question instantly after two rounds of contradictory evidence.
+- `--yes` on the visible command is the ONLY reliable npx prompt suppressor: npm 11's interactive "Ok to proceed?" honors the flag, not `npm_config_yes`, and pre-warming does not reliably silence it.
+
+**AVOID** (don't repeat):
+- **`gitleaks-action` on an ORG repo requires a per-org `GITLEAKS_LICENSE`** (free from gitleaks.io, but issued for the org name typed in their form — must match the GitHub owner EXACTLY). A personal→org repo transfer turns the job red with zero findings. Fallback shipped in `ci.yml`: direct checksum-pinned binary.
+- **Classic PATs need the `workflow` scope** to push commits touching `.github/workflows/`. Scope-up the existing token (the value survives scope edits — no keychain update).
+- **Org rulesets don't inherit the owner bypass** — after transfer, direct pushes to main are DECLINED (the personal-repo "bypass with warning" behavior is gone). Everything goes through PRs now (or add an explicit bypass list in the org ruleset).
+- Asking vision models leading questions when verifying screenshots ("is X visible?") — they parrot the quoted strings back. Transcribe neutrally, then grep the transcript yourself.
+- `git add -A` from the repo root on a long-lived clone — it sweeps the untracked tooling dirs into the commit. Add by path.
+
 ## 2026-09-01 — docs — hand-written user docs rotted behind the generated catalog
 
 **KEEP** (do again):
