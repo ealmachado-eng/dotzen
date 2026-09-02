@@ -20,9 +20,10 @@ Type "export BAT_THEME=Dracula"
 Enter
 Type "alias bat='bat --paging=never'"
 Enter
-# npm 11's npx can re-install (and, on a TTY, prompt) even on a warm cache
-# for range specs — auto-yes + quiet loglevel make the visible run clean
-# regardless of cache state.
+# npm 11's npx can re-install range specs (and, on a TTY, interactively
+# prompt) even on a warm cache. Ground-truthed with `script` (pseudo-TTY):
+# npm_config_yes + loglevel=error keep the visible run pristine — no prompt,
+# no "npm warn exec" line. The hidden pre-warm below is extra insurance.
 Type "export npm_config_yes=true npm_config_loglevel=error"
 Enter
 Type "npx --yes @erkos/pluvian@2 check >/dev/null 2>&1"
@@ -49,9 +50,9 @@ Enter
 Sleep 4s
 
 # 3. The catch: public DB flagged, private DB clean.
-# (--yes on-camera: npm 11's npx interactive "Ok to proceed?" prompt only
-# honors the flag, not npm_config_yes — this keeps the visible run clean.)
-Type "npx --yes @erkos/pluvian@2 check"
+# (Prompt suppression is the hidden `export npm_config_yes=true` above —
+# ground-truthed via pseudo-TTY — so the visible command stays pristine.)
+Type "npx @erkos/pluvian@2 check"
 Sleep 500ms
 Enter
 Sleep 1s
