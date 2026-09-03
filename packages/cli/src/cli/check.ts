@@ -18,6 +18,17 @@ import {
   NormalizedModuleCall,
 } from '../hcl/model'
 
+export interface CheckOptions {
+  /**
+   * `false` runs the check even when `pluvian.json` pins a different
+   * `version` than the running engine. For surfaces that surface the
+   * mismatch to the user themselves (the VS Code extension notifies and
+   * runs anyway) instead of refusing like the CLI/CI must. Default:
+   * enforce — a mismatch is an error.
+   */
+  readonly enforcePin?: boolean
+}
+
 /**
  * The pipeline (doc 06). Railway: every operational stage short-circuits
  * on error. `evaluate` is total, so it is the final `.map`-style step,
@@ -26,12 +37,18 @@ import {
 export async function check(
   projectRoot: string,
   engineVersion: string,
+  opts?: CheckOptions,
 ): Promise<Result<CheckReport, EngineError>> {
   const loaded = readEngineConfig(projectRoot)
   if (!loaded.ok) return loaded
 
   const versioned = enforceVersion(loaded.value.config, engineVersion)
-  if (!versioned.ok) return versioned
+  if (
+    !versioned.ok &&
+    (versioned.error.kind !== 'VersionMismatch' || opts?.enforcePin !== false)
+  ) {
+    return versioned
+  }
 
   const { baseDir } = loaded.value
   const { spec, terraform } = loaded.value.config

@@ -9,6 +9,32 @@ whether re-reading their spec is warranted.
 > Pre-2.0.0 entries below were published as `@dotzen/dotzen` — the same tool,
 > before the rebrand (see 2.0.0).
 
+## 2.1.0
+
+**Public engine API.** `check` (and its report/finding types) is now exported
+from the package index, so embedders run the exact engine the CLI runs —
+in-process, identical verdicts. First consumer: the pluvian VS Code extension
+(in-editor diagnostics from the same `check()` the pipeline uses).
+
+### Added
+
+- `check(projectRoot, engineVersion, opts?)` exported from the package index,
+  with `CheckReport`, `Violation`, `Unevaluable`, `EngineError`,
+  `RuleValidationError`, and `Result` types.
+- `readEngineConfig` + `EngineConfig` / `LoadedConfig` / `TerraformRoot`
+  exported (embedders read the `pluvian.json` pin themselves).
+- New `opts.enforcePin` (default `true`): `false` runs the check even when
+  `pluvian.json` pins a different `version` — for surfaces that surface the
+  mismatch to the user instead of refusing (the extension notifies and runs;
+  the CLI/CI keep refusing).
+- `./package.json` subpath export (embedders read the bundled engine version
+  for the pin comparison).
+
+### Unchanged
+
+- CLI behavior, verdicts, rule catalog, presets, and outputs are untouched —
+  this release only widens the public API surface.
+
 ## 2.0.0
 
 **Rebrand: dotzen → pluvian.** Same engine, same verdicts, same discipline —

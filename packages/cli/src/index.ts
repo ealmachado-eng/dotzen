@@ -53,3 +53,18 @@ export { pciDss } from './presets/pci-dss'
 export { soc2 } from './presets/soc2'
 export { nist80053 } from './presets/nist-800-53'
 export { dataProtection } from './presets/data-protection'
+
+// Engine API — for embedders (e.g. the VS Code extension) that run checks
+// in-process against the same engine the CLI uses. Verdicts are identical
+// by construction: one `check()`, two surfaces.
+export { check } from './cli/check'
+export type { CheckOptions } from './cli/check'
+export type { CheckReport, Violation, Unevaluable } from './engine/evaluate'
+export type { EngineError, RuleValidationError } from './result/errors'
+export type { Result } from './result/result'
+export { readEngineConfig } from './version/config'
+export type {
+  EngineConfig,
+  LoadedConfig,
+  TerraformRoot,
+} from './version/config'

@@ -826,3 +826,48 @@ describe('check (end-to-end)', () => {
     expect(v[0]?.message).toMatch(/public subnet/)
   })
 })
+
+describe('check version pin (pluvian.json `version`)', () => {
+  // The fixture pins "1.2.3". Default behavior: any other running version
+  // is an error (CI must refuse). `enforcePin: false` (the VS Code
+  // extension's policy): run anyway — the surface notifies the user itself.
+  it('refuses to run when the pin does not match the running engine', async () => {
+    const r = await check(fixture('version-pin'), '9.9.9')
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error.kind).toBe('VersionMismatch')
+      if (r.error.kind === 'VersionMismatch') {
+        expect(r.error.required).toBe('1.2.3')
+        expect(r.error.running).toBe('9.9.9')
+      }
+    }
+  })
+
+  it('runs when the pin matches the running engine', async () => {
+    const r = await check(fixture('version-pin'), '1.2.3')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(0)
+      expect(r.value.passed).toBeGreaterThan(0)
+    }
+  })
+
+  it('enforcePin: false runs anyway on a mismatch (extension policy)', async () => {
+    const r = await check(fixture('version-pin'), '9.9.9', {
+      enforcePin: false,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.value.violations).toHaveLength(0)
+      expect(r.value.passed).toBeGreaterThan(0)
+    }
+  })
+
+  it('enforcePin: false is a no-op when the pin matches', async () => {
+    const r = await check(fixture('version-pin'), '1.2.3', {
+      enforcePin: false,
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.violations).toHaveLength(0)
+  })
+})
