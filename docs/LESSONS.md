@@ -149,3 +149,18 @@
 - Mirroring an `overrides` entry into a dependent package's package.json to satisfy `npm list` — npm does not apply a foreign root's overrides to a file:-linked, already-installed tree (still ELSPROBLEMS).
 - `.vscodeignore` `!` re-includes under `node_modules/` — vsce's default exclusion wins.
 - `grep -c` inside an `&&` chain when zero matches is the GOOD outcome — grep exits 1 and silently kills the rest of the chain (cost a phantom "module not found").
+
+## 2026-09-03 — ci — repo-ruleset writes need admin authorization the gh token lacks
+
+~~**KEEP**/​**AVOID** as written below~~ — **superseded same day**: the 404 was NOT
+authorization. Ruleset updates use **PUT**, not PATCH — GitHub returns 404 for
+an unregistered method on a valid path, so PATCH failed even after
+`gh auth refresh -s admin:org`. KEEP: check `source_type` on
+`GET /repos/{o}/{r}/rulesets` to tell repo- from org-level. AVOID: assume
+REST update verbs — the rulesets API is PUT-based.
+
+**KEEP** (do again):
+- `gh api /repos/{o}/{r}/rulesets` reads fine with `repo` scope — and check `source_type` ("Repository" vs "Organization") before assuming where a ruleset lives.
+
+**AVOID** (don't repeat):
+- Expecting `PATCH /repos/{o}/{r}/rulesets/{id}` to work because the user is repo ADMIN and the token has `repo` — GitHub 404s the write when the browser-issued gh OAuth token lacks effective admin-write authorization. Either change it in the UI, or `gh auth refresh -h github.com -s admin:org` first and retry the API.

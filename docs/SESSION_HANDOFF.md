@@ -202,7 +202,7 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 **Remaining (next session):**
 1. Merge `docs/demo-gif` (PR via compare link) — README embed then shows pluvian.
 2. Launch-post rewrite for pluvian (`docs/launch/launch-post.md` — name-swept only) + actually post (Show HN / r/terraform).
-3. Renovate install on `erkos-hq`; optionally re-request GITLEAKS_LICENSE for org `erkos-hq` and restore the action.
+3. ~~Renovate install on `erkos-hq`~~ (done — superseded 2026-09-03); optionally re-request GITLEAKS_LICENSE for org `erkos-hq` and restore the action.
 4. VS Code extension P1 (spec 11; prereq: export `check` from the package index — its own version-bearing release).
 5. Optional: register erkos.dev.
 
