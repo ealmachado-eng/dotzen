@@ -20,7 +20,14 @@ for (const name of PROFILE_NAMES) {
   })
   const file = path.join(repoRoot, 'examples', name, '.pluvian', 'spec.ts')
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const prev = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  // Read directly and treat "missing" as empty — no existsSync-then-use
+  // window (CodeQL js/file-system-race) and one syscall fewer.
+  let prev = ''
+  try {
+    prev = fs.readFileSync(file, 'utf8')
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+  }
   if (prev !== content) {
     fs.writeFileSync(file, content)
     changed++
