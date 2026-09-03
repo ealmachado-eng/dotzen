@@ -200,9 +200,34 @@ Then read `docs/ROADMAP.md` (remaining items + dogfood log) + this file (session
 - PAT needs `workflow` scope for workflow-file pushes.
 
 **Remaining (next session):**
-1. Merge `docs/demo-gif` (PR via compare link) — README embed then shows pluvian.
+1. ~~Merge `docs/demo-gif` (PR via compare link) — README embed then shows pluvian.~~ (done — merged as #13, `2e0bfb5`)
 2. Launch-post rewrite for pluvian (`docs/launch/launch-post.md` — name-swept only) + actually post (Show HN / r/terraform).
 3. ~~Renovate install on `erkos-hq`~~ (done — superseded 2026-09-03); optionally re-request GITLEAKS_LICENSE for org `erkos-hq` and restore the action.
-4. VS Code extension P1 (spec 11; prereq: export `check` from the package index — its own version-bearing release).
+4. ~~VS Code extension P1 (spec 11; prereq: export `check` from the package index — its own version-bearing release).~~ (done — N+8, 2026-09-03)
 5. Optional: register erkos.dev.
+
+## Session N+8 — 2026-09-03 — VS Code extension P1 SHIPPED + v2.1.0
+
+**Goal:** understand the project whole, then build the VS Code extension P1 (spec 11) as two PRs feeding one v2.1.0 release.
+
+**Shipped:**
+- **PR #14** (`04148ff`) — engine public API: `check` + `CheckReport`/`Violation`/`Unevaluable`/`EngineError`/`Result` types + `readEngineConfig` exported from `packages/cli/src/index.ts`; `check(opts.enforcePin)` (false = run despite a `pluvian.json` version-pin mismatch — the extension's notify-and-run policy); `./package.json` subpath export; `tests/integration/fixtures/version-pin/` + 4 integration tests.
+- **PR #15** (`6ab3164`) — `packages/vscode` (spec 11 P1): pure `diagnostics.ts`/`engine-bridge.ts`/`debounce.ts` + `extension.ts` glue; severity per spec table; CNE Hint default-on, ungoverned behind setting; 16 tests incl. real in-process `check()` vs `demo/` + lockstep version guard; **staged-closure VSIX packaging** (`scripts/package.mjs` — engine as REAL files: jiti `__dirname` alias + hcl2json WASM can't be esbuild-inlined; `file:../cli` breaks vsce's `npm list`) + **VSIX smoke gate** (`scripts/smoke.mjs` — unzip + run bundled engine vs `demo/`) + `vscode` CI job in `ci.yml`.
+- **v2.1.0 released** — tag pushed; gate+publish green; `@erkos/pluvian@2.1.0` on npm with SLSA provenance (verified via `npm view`).
+- **PR #16** (`c017a96`) — Renovate esbuild ^0.28.0 (vscode devDep; already lock-resolved, spec alignment only).
+- **PR #17** (`054d05a`) — CodeQL High alert #8 (`js/file-system-race`, `gen-examples.ts`) fixed via read-directly-ENOENT; alert state now `fixed`, 0 open code-scanning alerts. Other cleared `existsSync` sites deliberately untouched.
+- **Ruleset:** `require-ci-on-main` (repo-level, id 20022018) now requires the `vscode` check — added via API **PUT** (PATCH 404s — GitHub returns 404 for an unregistered method on a valid path; LESSONS entry supersedes the wrong token-blame diagnosis).
+- **PR #18** (`a9b6006`) — memory docs (ruleset PUT lesson; Renovate-done strike).
+- **gh CLI adopted** this session (`brew install gh`): PR create/checks/merge all via gh; token now carries `admin:org`.
+- **Advisory (no repo change):** consulting-company partnership discussion — protect via trademark registration (pluvian, classes 9+42) + certified-partner agreement (trademark license + revenue share + non-circumvention) + open core (FSL for spec-05 surfaces) + CLA; fork risk assessed low (maintenance treadmill is the moat). No decision taken; thread open.
+
+**Deferred / blocked:**
+- **VS Code P2** — ignore Quick Fix, multi-root workspaces.
+- **VS Code P3** — Marketplace + Open VSX publish (needs publisher account, `VSCE_PAT`, OVSX token; final marketplace id decided then — manifest is `pluvian-vscode`/publisher `erkos`).
+- Launch post rewrite/post for pluvian (`docs/launch/launch-post.md`) — still the #1 traction lever; natural pairing with P3 (extension installable at launch).
+- N+3 leftovers still open: README trust-boundary note (spec.ts exec), C0/C1 control-char strip in `makePaint` (`packages/cli/src/report/report.ts:23`), stale `wip-2026-08-18-1540` tag deletion.
+- Optional: register erkos.dev.
+
+**Next resume step:**
+- `npm run context` from `packages/cli/`; pick between launch post (P3-pairing recommended: publish the VSIX, then post) or VS Code P2. Engine/CI/ruleset current; nothing mid-flight (no WIP tag — clean tree; this section + the DECISIONS line below are uncommitted by design, per `/handoff`).
 
