@@ -136,3 +136,16 @@
 
 **AVOID** (don't repeat):
 - Shipping an engine feature without sweeping hand-written docs for claims it invalidates — "no multi-hop dependency graph (yet)" sat in `what-it-does.md` for ~10 releases while the graph layer was the README's headline differentiator. Engine-release checklist: grep `docs/user/` (hand-written pages only — the catalog regenerates itself) for the feature's keywords.
+
+## 2026-09-03 — packaging — vsce + file:-linked engine dependency
+
+**KEEP** (do again):
+- Stage-and-pack (`packages/vscode/scripts/package.mjs`): copy the runtime closure into `.vsce-pack/` with REAL pinned dependency specs and run `vsce package` THERE — a self-consistent tree passes vsce's `npm list` and packs exactly the closure (185-file, 2.3 MB VSIX).
+- Smoke-test the artifact, not the source tree: unzip the VSIX and run the bundled engine against `demo/` (`scripts/smoke.mjs`, wired into CI). Proves the shipped closure — engine dist, jiti alias, hcl2json WASM — works end-to-end before any human installs it.
+- Probe ground truth instead of deriving from doc comments: a 10-line jiti script settled the module-trace file format (`env/prd › modules/rds/main.tf (db_bad)`) that three different comments described three different ways.
+
+**AVOID** (don't repeat):
+- `vsce package --no-dependencies` when node_modules must ship — vsce's built-in ignore list drops node_modules wholesale (silent 6-file VSIX).
+- Mirroring an `overrides` entry into a dependent package's package.json to satisfy `npm list` — npm does not apply a foreign root's overrides to a file:-linked, already-installed tree (still ELSPROBLEMS).
+- `.vscodeignore` `!` re-includes under `node_modules/` — vsce's default exclusion wins.
+- `grep -c` inside an `&&` chain when zero matches is the GOOD outcome — grep exits 1 and silently kills the rest of the chain (cost a phantom "module not found").
