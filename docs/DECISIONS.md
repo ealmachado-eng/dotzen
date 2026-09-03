@@ -54,3 +54,6 @@ Choice: `packages/vscode/scripts/package.mjs` stages the runtime closure (engine
 
 ## 2026-09-03 — vscode-ext — module-finding squiggle targets the LAST ` › ` hop
 Choice: `physicalFile()` in the extension takes the last ` › `-separated segment minus the `(label)` suffix. Why: ground-truth probe shows findings carry `<root> › <module file> (label)` — the resource lives in the LAST hop's file. The CLI's ignore-matching split (FIRST segment) serves a different job (root-keyed suppression) and is deliberately not unified with it. Rejected: reusing check.ts's `physicalFile` (squiggles would point at the root directory).
+
+## 2026-09-03 — vscode-ext — manifest name `pluvian-vscode` (unscoped)
+Choice: unscoped manifest name `pluvian-vscode`, publisher `erkos` (id `erkos.pluvian-vscode`). Why: vsce rejects scoped names; P3 owns the final marketplace id anyway, so no reason to claim `pluvian` pre-publish. Rejected: `pluvian` (would pre-commit the marketplace id before the P3 naming pass); keeping `@erkos/pluvian-vscode` (vsce: invalid extension name).
