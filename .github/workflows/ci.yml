@@ -58,6 +58,40 @@ jobs:
       # output. A preset change without regenerating blocks the gate.
       - run: npm run check-docs
 
+  # ── VS Code extension (spec 11) — gates + staged-VSIX smoke ──
+  vscode:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vscode
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            packages/cli/package-lock.json
+            packages/vscode/package-lock.json
+      # The engine link (file:../cli) resolves its runtime deps from
+      # packages/cli/node_modules and its TYPES from packages/cli/dist —
+      # install + build the engine package first.
+      - name: Install engine package
+        run: npm install --no-audit --no-fund
+        working-directory: packages/cli
+      - name: Build engine dist
+        run: npm run build
+        working-directory: packages/cli
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - name: Package VSIX (staged closure)
+        run: npm run package
+      - name: Smoke — bundled engine checks demo/ from the extracted VSIX
+        run: npm run smoke
+
   # ── security-scan agent's tools, run authoritatively ──
   audit:
     runs-on: ubuntu-latest

@@ -1,11 +1,13 @@
 # 11 — VS Code Extension (in-editor findings)
 
-Status: **Designed, not built.** This document captures the agreed design for
-inline `.tf` findings in VS Code — the #2 roadmap item after launch/adoption
-(`docs/SESSION_HANDOFF.md`). Build is **gated on the rebrand name decision**
-(`docs/REBRAND.md`): the extension id, publisher name, icon, and README are all
-brand-bearing, and marketplace ids are painful to rename. Everything below is
-name-agnostic; only identifiers swap post-rename.
+Status: **P1 BUILT (2026-09-03), unpublished.** `packages/vscode` exists —
+diagnostics, watchers, command, status bar, staged-closure VSIX packaging +
+smoke gate in CI. Marketplace/Open VSX publishing is P3 (publisher account,
+`VSCE_PAT`, OVSX token — not started). ~~Designed, not built.~~
+~~Build is gated on the rebrand name decision~~ (superseded 2026-09-01 —
+pluvian locked; manifest name `pluvian-vscode`, publisher `erkos`,
+final marketplace id decided at P3). Everything below is the as-built
+design; deviations from the original text are marked inline.
 
 ## The problem
 
@@ -156,20 +158,23 @@ warnings, no upside for a single-engine product.)
 
 ## Phasing
 
-- **P1 (MVP):** export `check` + finding types from the engine package index
-  (separate version-bearing PR); scaffold `packages/vscode` (esbuild, yo-code
-  harness); diagnostics + command + status bar; e2e against `demo/terraform`
-  and an `examples/` spec.
-- **P2:** ignore Quick Fix; ungoverned/couldNotEvaluate visibility toggles;
-  multi-root workspaces.
-- **P3:** CI publish pipeline (Marketplace + Open VSX), listing icon/README —
-  **all gated on the rebrand name**. P1/P2 may proceed under a placeholder id
-  (`publisher.<name>-dev`) if the name is still open when build starts.
+- **P1 (MVP): ✅ DONE (2026-09-03).** export `check` + finding types from
+  the engine package index (PR #14, version-bearing 2.1.0); `packages/vscode`
+  (esbuild glue-bundle, staged-closure packaging via `scripts/package.mjs`,
+  smoke gate via `scripts/smoke.mjs`); diagnostics + command + status bar;
+  bridge proven in-process against `demo/`. *Deviation from plan: engine
+  delivery is "staged real files in the VSIX", not a single esbuild bundle —
+  see the packaging scripts; the jiti alias and hcl2json WASM require real
+  files.*
+- **P2:** ignore Quick Fix; ungoverned/couldNotEvaluate visibility toggles
+  *(the toggles shipped in P1 via settings; the Quick Fix and multi-root
+  remain)*; multi-root workspaces.
+- **P3:** CI publish pipeline (Marketplace + Open VSX), listing icon/README.
 
 ## Open decisions (at build time)
 
-- Placeholder publisher/id if rebrand still unresolved when P1 starts (P3 is
-  the hard gate; P1–P2 only need a stable internal name).
+- ~~Placeholder publisher/id if rebrand still unresolved when P1 starts~~
+  (resolved: `erkos` / `pluvian-vscode`; final marketplace id at P3).
 - Whether couldNotEvaluate diagnostics default-on in-editor or output-channel
-  only (hint noise vs. the "gaps must be visible" discipline — lean
-  default-on, severity Hint, per the table above).
+  only — **resolved 2026-09-03: default-on, severity Hint** (setting
+  `pluvian.showCouldNotEvaluate`), per the "gaps must be visible" discipline.

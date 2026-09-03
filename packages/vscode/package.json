@@ -1,0 +1,79 @@
+{
+  "name": "pluvian-vscode",
+  "displayName": "pluvian",
+  "description": "In-editor pluvian findings for Terraform — the same engine, spec, and verdicts as the CLI, as you save.",
+  "version": "2.1.0",
+  "private": true,
+  "license": "MIT",
+  "publisher": "erkos",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/erkos-hq/pluvian.git",
+    "directory": "packages/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "overrides": {
+    "typed-rest-client": {
+      "qs": "6.16.0"
+    }
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "workspaceContains:pluvian.json",
+    "workspaceContains:.pluvian/pluvian.json"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pluvian.checkProject",
+        "title": "pluvian: Check Project"
+      }
+    ],
+    "configuration": {
+      "title": "pluvian",
+      "properties": {
+        "pluvian.showCouldNotEvaluate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show could-not-evaluate findings as editor hints (severity Hint). pluvian's discipline is that gaps must be visible, not silent."
+        },
+        "pluvian.showUngoverned": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show resources whose type is not in pluvian's vocabulary (ungoverned) as editor hints."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "package": "node esbuild.js && node scripts/package.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@cdktf/hcl2json": "^0.21.0",
+    "@erkos/pluvian": "file:../cli",
+    "jiti": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.8.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
+}
